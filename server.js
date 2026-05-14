@@ -7,6 +7,7 @@ const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
 const Anthropic = require("@anthropic-ai/sdk");
+const { facturarOXXO } = require("./bots/oxxo");
 
 const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -167,6 +168,65 @@ Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicion
     );
 
     res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR });
+  } catch (err) {
+    console.error("❌ Error:", err.message);
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
+// BOT FACTURAR
+app.post("/facturar/:ticketId", auth, async (req, res) => {
+  try {
+    const { ticketId } = req.params;
+
+    // Obtener datos del ticket
+    const [tickets] = await db.query(
+      "SELECT * FROM tickets WHERE id = ? AND user_id = ?",
+      [ticketId, req.session.userId]
+    );
+    if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
+    const ticket = tickets[0];
+    const datos = JSON.parse(ticket.ocr_json || "{}");
+
+    // Obtener perfil fiscal del usuario
+    const [users] = await db.query(
+      "SELECT rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
+      [req.session.userId]
+    );
+    if (users.length === 0) return res.json({ ok: false, msg: "Perfil fiscal no encontrado" });
+    const perfil = users[0];
+
+    if (!perfil.rfc) return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
+    if (!datos.folio) return res.json({ ok: false, msg: "El ticket no tiene folio detectado" });
+
+    // Actualizar status a procesando
+    await db.query("UPDATE tickets SET status = 'procesando' WHERE id = ?", [ticketId]);
+
+    // Ejecutar bot
+    const resultado = await facturarOXXO({
+      fecha: datos.fecha,
+      folio: datos.folio,
+      idVenta: datos.idVenta,
+      total: datos.total,
+      rfc: perfil.rfc,
+      razonSocial: perfil.razon_social,
+      codigoPostal: perfil.codigo_postal,
+      regimenFiscal: perfil.regimen_fiscal,
+      usoCfdi: perfil.uso_cfdi || "G03",
+    });
+
+    if (resultado.ok) {
+      await db.query(
+        "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
+        [req.session.userId, ticketId, ticket.comercio, resultado.pdf, resultado.xml, "completado"]
+      );
+      await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticketId]);
+      res.json({ ok: true, pdf: resultado.pdf, xml: resultado.xml });
+    } else {
+      await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]);
+      res.json({ ok: false, msg: resultado.msg });
+    }
+
   } catch (err) {
     console.error("❌ Error:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
