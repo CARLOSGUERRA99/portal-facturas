@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi Perfil - Portal Facturas</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #0d0d0d; color: #fff; }
+    .header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #7AC142; }
+    .header h1 { color: #7AC142; font-size: 20px; }
+    .nav a { color: #aaa; text-decoration: none; margin-left: 1rem; font-size: 14px; }
+    .nav a:hover { color: #7AC142; }
+    .container { max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    h2 { color: #7AC142; margin-bottom: 1.5rem; }
+    .card { background: #1a1a1a; border-radius: 12px; padding: 2rem; border: 1px solid #333; }
+    label { font-size: 13px; color: #aaa; display: block; margin-bottom: 4px; }
+    input, select { width: 100%; padding: 10px; margin-bottom: 16px; border-radius: 6px; border: 1px solid #444; background: #111; color: #fff; font-size: 14px; }
+    button { width: 100%; padding: 12px; background: #7AC142; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; }
+    button:hover { background: #6ab33a; }
+    .msg { text-align: center; margin-top: 1rem; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Portal Facturas</h1>
+    <div class="nav">
+      <a href="/dashboard">Inicio</a>
+      <a href="/mis-tickets">Mis Tickets</a>
+      <a href="/mis-facturas">Mis Facturas</a>
+      <a href="/perfil">Mi Perfil</a>
+      <a href="/logout">Salir</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <h2>👤 Mi Perfil Fiscal</h2>
+    <div class="card">
+      <label>RFC</label>
+      <input type="text" id="rfc" placeholder="XAXX010101000" maxlength="13">
+      <label>Razón Social</label>
+      <input type="text" id="razon_social" placeholder="Nombre o empresa como aparece en el SAT">
+      <label>Código Postal</label>
+      <input type="text" id="codigo_postal" placeholder="33000" maxlength="5">
+      <label>Régimen Fiscal</label>
+      <select id="regimen_fiscal">
+        <option value="">Selecciona tu régimen</option>
+        <option value="601">601 - General de Ley Personas Morales</option>
+        <option value="603">603 - Personas Morales con Fines no Lucrativos</option>
+        <option value="605">605 - Sueldos y Salarios</option>
+        <option value="606">606 - Arrendamiento</option>
+        <option value="608">608 - Demás ingresos</option>
+        <option value="612">612 - Personas Físicas con Actividades Empresariales</option>
+        <option value="616">616 - Sin obligaciones fiscales</option>
+        <option value="621">621 - Incorporación Fiscal</option>
+        <option value="625">625 - Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas</option>
+        <option value="626">626 - Régimen Simplificado de Confianza (RESICO)</option>
+      </select>
+      <label>Uso de CFDI</label>
+      <select id="uso_cfdi">
+        <option value="G03">G03 - Gastos en general</option>
+        <option value="G01">G01 - Adquisición de mercancias</option>
+        <option value="G02">G02 - Devoluciones, descuentos o bonificaciones</option>
+        <option value="I01">I01 - Construcciones</option>
+        <option value="S01">S01 - Sin efectos fiscales</option>
+      </select>
+      <button onclick="guardarPerfil()">Guardar datos fiscales</button>
+      <p class="msg" id="msg"></p>
+    </div>
+  </div>
+
+  <script>
+    async function cargarPerfil() {
+      const res = await fetch("/api/perfil");
+      const data = await res.json();
+      if (data.ok && data.perfil) {
+        document.getElementById("rfc").value = data.perfil.rfc || "";
+        document.getElementById("razon_social").value = data.perfil.razon_social || "";
+        document.getElementById("codigo_postal").value = data.perfil.codigo_postal || "";
+        document.getElementById("regimen_fiscal").value = data.perfil.regimen_fiscal || "";
+        document.getElementById("uso_cfdi").value = data.perfil.uso_cfdi || "G03";
+      }
+    }
+
+    async function guardarPerfil() {
+      const msg = document.getElementById("msg");
+      const body = {
+        rfc: document.getElementById("rfc").value,
+        razon_social: document.getElementById("razon_social").value,
+        codigo_postal: document.getElementById("codigo_postal").value,
+        regimen_fiscal: document.getElementById("regimen_fiscal").value,
+        uso_cfdi: document.getElementById("uso_cfdi").value
+      };
+      const res = await fetch("/api/perfil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        msg.style.color = "#7AC142";
+        msg.textContent = "✅ Datos fiscales guardados correctamente";
+      } else {
+        msg.style.color = "#ff6b6b";
+        msg.textContent = "❌ Error: " + data.msg;
+      }
+    }
+
+    cargarPerfil();
+  </script>
+</body>
+</html>
