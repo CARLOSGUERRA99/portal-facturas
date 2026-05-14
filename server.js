@@ -114,7 +114,7 @@ app.post("/api/perfil", auth, async (req, res) => {
   }
 });
 
-// SUBIR TICKET + OCR CON CLAUDE VISION
+// SUBIR TICKET + OCR CON CLAUDE VISION (Haiku para economizar)
 app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, msg: "No se recibió archivo" });
@@ -123,21 +123,26 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
     const base64Image = imageData.toString("base64");
     const mimeType = req.file.mimetype;
 
-    console.log("🔍 Analizando ticket con Claude Vision...");
+    console.log("🔍 Analizando ticket con Claude Haiku...");
 
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mimeType, data: base64Image },
-          },
-          {
-            type: "text",
-            text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
+    // Intento 1 — Haiku (económico)
+    let datosOCR = {};
+    let textoOCR = "";
+
+    try {
+      const response = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1000,
+        messages: [{
+          role: "user",
+          content: [
+            {
+              type: "image",
+              source: { type: "base64", media_type: mimeType, data: base64Image },
+            },
+            {
+              type: "text",
+              text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
 {
   "comercio": "nombre del comercio (OXXO, 7-Eleven, Walmart, etc)",
   "fecha": "fecha en formato DD/MM/YYYY",
@@ -147,19 +152,57 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "ok": true
 }
 Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.`
-          }
-        ],
-      }],
-    });
+            }
+          ],
+        }],
+      });
 
-    const textoOCR = response.content[0].text;
-    console.log("✅ Claude respondió:", textoOCR);
-
-    let datosOCR = {};
-    try {
+      textoOCR = response.content[0].text;
       datosOCR = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
-    } catch {
-      datosOCR = { ok: false, raw: textoOCR };
+      console.log("✅ Haiku respondió:", textoOCR);
+
+    } catch (e) {
+      console.log("⚠️ Haiku falló, intentando con Sonnet...");
+    }
+
+    // Intento 2 — Sonnet como fallback si folio o idVenta son null
+    if (!datosOCR.folio || !datosOCR.idVenta) {
+      console.log("🔄 Campos críticos vacíos, reintentando con Sonnet 4.5...");
+      try {
+        const response2 = await anthropic.messages.create({
+          model: "claude-sonnet-4-5",
+          max_tokens: 1000,
+          messages: [{
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: mimeType, data: base64Image },
+              },
+              {
+                type: "text",
+                text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
+{
+  "comercio": "nombre del comercio (OXXO, 7-Eleven, Walmart, etc)",
+  "fecha": "fecha en formato DD/MM/YYYY",
+  "folio": "número de folio o ticket",
+  "idVenta": "ID de venta si existe",
+  "total": número sin signos solo el número,
+  "ok": true
+}
+Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.`
+              }
+            ],
+          }],
+        });
+
+        textoOCR = response2.content[0].text;
+        datosOCR = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
+        console.log("✅ Sonnet respondió:", textoOCR);
+        datosOCR._modelo = "sonnet";
+      } catch (e2) {
+        datosOCR = { ok: false, raw: textoOCR };
+      }
     }
 
     await db.query(
@@ -179,7 +222,6 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
   try {
     const { ticketId } = req.params;
 
-    // Obtener datos del ticket
     const [tickets] = await db.query(
       "SELECT * FROM tickets WHERE id = ? AND user_id = ?",
       [ticketId, req.session.userId]
@@ -188,7 +230,6 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     const ticket = tickets[0];
     const datos = JSON.parse(ticket.ocr_json || "{}");
 
-    // Obtener perfil fiscal del usuario
     const [users] = await db.query(
       "SELECT rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
       [req.session.userId]
@@ -199,10 +240,8 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     if (!perfil.rfc) return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
     if (!datos.folio) return res.json({ ok: false, msg: "El ticket no tiene folio detectado" });
 
-    // Actualizar status a procesando
     await db.query("UPDATE tickets SET status = 'procesando' WHERE id = ?", [ticketId]);
 
-    // Ejecutar bot
     const resultado = await facturarOXXO({
       fecha: datos.fecha,
       folio: datos.folio,
