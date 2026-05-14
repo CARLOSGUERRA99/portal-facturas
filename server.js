@@ -50,6 +50,7 @@ app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "login.ht
 app.get("/dashboard", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
 app.get("/mis-tickets", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-tickets.html")));
 app.get("/mis-facturas", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-facturas.html")));
+app.get("/perfil", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "perfil.html")));
 
 // REGISTRO
 app.post("/register", async (req, res) => {
@@ -85,6 +86,32 @@ app.get("/api/me", auth, (req, res) => {
 });
 
 app.get("/logout", (req, res) => req.session.destroy(() => res.redirect("/")));
+
+// PERFIL FISCAL
+app.get("/api/perfil", auth, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
+      [req.session.userId]
+    );
+    res.json({ ok: true, perfil: rows[0] });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+app.post("/api/perfil", auth, async (req, res) => {
+  try {
+    const { rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi } = req.body;
+    await db.query(
+      "UPDATE users SET rfc=?, razon_social=?, codigo_postal=?, regimen_fiscal=?, uso_cfdi=? WHERE id=?",
+      [rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi, req.session.userId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
 
 // SUBIR TICKET + OCR CON CLAUDE VISION
 app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
@@ -149,7 +176,10 @@ Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicion
 // LISTAR TICKETS
 app.get("/api/tickets", auth, async (req, res) => {
   try {
-    const [rows] = await db.query("SELECT id, nombre_archivo, comercio, status, creado, ocr_json FROM tickets WHERE user_id = ? ORDER BY creado DESC", [req.session.userId]);
+    const [rows] = await db.query(
+      "SELECT id, nombre_archivo, comercio, status, creado, ocr_json FROM tickets WHERE user_id = ? ORDER BY creado DESC",
+      [req.session.userId]
+    );
     res.json({ ok: true, tickets: rows });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
@@ -159,7 +189,10 @@ app.get("/api/tickets", auth, async (req, res) => {
 // LISTAR FACTURAS
 app.get("/api/facturas", auth, async (req, res) => {
   try {
-    const [rows] = await db.query("SELECT id, comercio, status, xml_url, pdf_url, creado FROM facturas WHERE user_id = ? ORDER BY creado DESC", [req.session.userId]);
+    const [rows] = await db.query(
+      "SELECT id, comercio, status, xml_url, pdf_url, creado FROM facturas WHERE user_id = ? ORDER BY creado DESC",
+      [req.session.userId]
+    );
     res.json({ ok: true, facturas: rows });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
