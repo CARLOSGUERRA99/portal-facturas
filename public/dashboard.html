@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard - Portal Facturas</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #0d0d0d; color: #fff; }
+    .header { background: #1a1a1a; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #7AC142; }
+    .header h1 { color: #7AC142; font-size: 20px; }
+    .nav a { color: #aaa; text-decoration: none; margin-left: 1rem; font-size: 14px; }
+    .nav a:hover { color: #7AC142; }
+    .container { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    .welcome { font-size: 18px; margin-bottom: 2rem; color: #aaa; }
+    .welcome span { color: #7AC142; font-weight: bold; }
+    .upload-card { background: #1a1a1a; border: 2px dashed #7AC142; border-radius: 12px; padding: 2rem; text-align: center; }
+    .upload-card h3 { color: #7AC142; margin-bottom: 1rem; }
+    .upload-card p { color: #aaa; font-size: 13px; margin-bottom: 1.5rem; }
+    input[type="file"] { display: none; }
+    .btn-upload { background: #7AC142; color: #000; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; display: inline-block; }
+    .btn-upload:hover { background: #6ab33a; }
+    .preview { margin-top: 1rem; }
+    .preview img { max-width: 200px; border-radius: 8px; border: 1px solid #444; }
+    .btn-procesar { width: 100%; padding: 12px; background: #7AC142; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; margin-top: 1rem; display: none; }
+    .resultado { margin-top: 1.5rem; background: #111; border-radius: 8px; padding: 1rem; text-align: left; display: none; }
+    .resultado h4 { color: #7AC142; margin-bottom: 0.5rem; }
+    .resultado p { font-size: 13px; color: #ccc; margin: 4px 0; }
+    .msg { text-align: center; margin-top: 1rem; font-size: 14px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 2rem; }
+    .stat { background: #1a1a1a; border-radius: 8px; padding: 1rem; text-align: center; border: 1px solid #333; }
+    .stat .num { font-size: 28px; font-weight: bold; color: #7AC142; }
+    .stat .lbl { font-size: 12px; color: #aaa; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Portal Facturas</h1>
+    <div class="nav">
+      <a href="/dashboard">Inicio</a>
+      <a href="/mis-tickets">Mis Tickets</a>
+      <a href="/mis-facturas">Mis Facturas</a>
+      <a href="/logout">Salir</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <p class="welcome">Bienvenido, <span id="nombre">...</span></p>
+
+    <div class="stats">
+      <div class="stat"><div class="num" id="totalTickets">0</div><div class="lbl">Tickets subidos</div></div>
+      <div class="stat"><div class="num" id="totalFacturas">0</div><div class="lbl">Facturas generadas</div></div>
+      <div class="stat"><div class="num" id="totalPendientes">0</div><div class="lbl">Pendientes</div></div>
+    </div>
+
+    <div class="upload-card">
+      <h3>📷 Sube tu ticket</h3>
+      <p>Toma una foto de tu ticket de OXXO y lo facturamos automáticamente</p>
+      <label for="ticketFile" class="btn-upload">Seleccionar foto</label>
+      <input type="file" id="ticketFile" accept="image/*" onchange="previewTicket()">
+      <div class="preview" id="preview"></div>
+      <button class="btn-procesar" id="btnProcesar" onclick="subirTicket()">Procesar ticket con IA</button>
+      <p class="msg" id="msg"></p>
+      <div class="resultado" id="resultado">
+        <h4>✅ Datos detectados</h4>
+        <p id="res-comercio"></p>
+        <p id="res-fecha"></p>
+        <p id="res-folio"></p>
+        <p id="res-total"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function cargarDatos() {
+      const res = await fetch("/api/me");
+      const data = await res.json();
+      document.getElementById("nombre").textContent = data.nombre;
+
+      const t = await fetch("/api/tickets");
+      const td = await t.json();
+      if (td.ok) {
+        document.getElementById("totalTickets").textContent = td.tickets.length;
+        document.getElementById("totalPendientes").textContent = td.tickets.filter(t => t.status === "pendiente").length;
+      }
+
+      const f = await fetch("/api/facturas");
+      const fd = await f.json();
+      if (fd.ok) document.getElementById("totalFacturas").textContent = fd.facturas.length;
+    }
+
+    function previewTicket() {
+      const file = document.getElementById("ticketFile").files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        document.getElementById("preview").innerHTML = `<img src="${e.target.result}">`;
+        document.getElementById("btnProcesar").style.display = "block";
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function subirTicket() {
+      const file = document.getElementById("ticketFile").files[0];
+      if (!file) return;
+      const msg = document.getElementById("msg");
+      msg.textContent = "⏳ Analizando ticket con IA...";
+      msg.style.color = "#7AC142";
+
+      const formData = new FormData();
+      formData.append("ticket", file);
+
+      const res = await fetch("/upload-ticket", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (data.ok) {
+        msg.textContent = "✅ Ticket procesado correctamente";
+        const d = data.datos;
+        document.getElementById("res-comercio").textContent = "🏪 Comercio: " + (d.comercio || "No detectado");
+        document.getElementById("res-fecha").textContent = "📅 Fecha: " + (d.fecha || "No detectada");
+        document.getElementById("res-folio").textContent = "🔢 Folio: " + (d.folio || "No detectado");
+        document.getElementById("res-total").textContent = "💰 Total: $" + (d.total || "No detectado");
+        document.getElementById("resultado").style.display = "block";
+        cargarDatos();
+      } else {
+        msg.style.color = "#ff6b6b";
+        msg.textContent = "❌ Error: " + data.msg;
+      }
+    }
+
+    cargarDatos();
+  </script>
+</body>
+</html>
