@@ -13,12 +13,19 @@
     .nav a:hover { color: #7AC142; }
     .container { max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
     h2 { color: #7AC142; margin-bottom: 1.5rem; }
-    .card { background: #1a1a1a; border-radius: 12px; padding: 2rem; border: 1px solid #333; }
-    label { font-size: 13px; color: #aaa; display: block; margin-bottom: 4px; }
-    input, select { width: 100%; padding: 10px; margin-bottom: 16px; border-radius: 6px; border: 1px solid #444; background: #111; color: #fff; font-size: 14px; }
-    button { width: 100%; padding: 12px; background: #7AC142; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; }
+    .card { background: #1a1a1a; border-radius: 12px; padding: 1.5rem; border: 1px solid #333; }
+    .seccion { font-size: 12px; color: #7AC142; text-transform: uppercase; letter-spacing: 1px; margin: 1.5rem 0 0.75rem; border-bottom: 1px solid #333; padding-bottom: 4px; }
+    .seccion:first-child { margin-top: 0; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+    .field label { font-size: 12px; color: #aaa; }
+    .field input, .field select { padding: 9px 10px; border-radius: 6px; border: 1px solid #444; background: #111; color: #fff; font-size: 14px; }
+    .field input:focus, .field select:focus { outline: none; border-color: #7AC142; }
+    button { width: 100%; padding: 12px; background: #7AC142; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; margin-top: 1rem; }
     button:hover { background: #6ab33a; }
-    .msg { text-align: center; margin-top: 1rem; font-size: 14px; }
+    .msg { text-align: center; margin-top: 10px; font-size: 13px; }
+    .msg.ok { color: #7AC142; }
+    .msg.err { color: #ff6b6b; }
   </style>
 </head>
 <body>
@@ -36,61 +43,154 @@
   <div class="container">
     <h2>👤 Mi Perfil Fiscal</h2>
     <div class="card">
-      <label>RFC</label>
-      <input type="text" id="rfc" placeholder="XAXX010101000" maxlength="13">
-      <label>Razón Social</label>
-      <input type="text" id="razon_social" placeholder="Nombre o empresa como aparece en el SAT">
-      <label>Código Postal</label>
-      <input type="text" id="codigo_postal" placeholder="33000" maxlength="5">
-      <label>Régimen Fiscal</label>
-      <select id="regimen_fiscal">
-        <option value="">Selecciona tu régimen</option>
-        <option value="601">601 - General de Ley Personas Morales</option>
-        <option value="603">603 - Personas Morales con Fines no Lucrativos</option>
-        <option value="605">605 - Sueldos y Salarios</option>
-        <option value="606">606 - Arrendamiento</option>
-        <option value="608">608 - Demás ingresos</option>
-        <option value="612">612 - Personas Físicas con Actividades Empresariales</option>
-        <option value="616">616 - Sin obligaciones fiscales</option>
-        <option value="621">621 - Incorporación Fiscal</option>
-        <option value="625">625 - Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas</option>
-        <option value="626">626 - Régimen Simplificado de Confianza (RESICO)</option>
-      </select>
-      <label>Uso de CFDI</label>
-      <select id="uso_cfdi">
-        <option value="G03">G03 - Gastos en general</option>
-        <option value="G01">G01 - Adquisición de mercancias</option>
-        <option value="G02">G02 - Devoluciones, descuentos o bonificaciones</option>
-        <option value="I01">I01 - Construcciones</option>
-        <option value="S01">S01 - Sin efectos fiscales</option>
-      </select>
-      <button onclick="guardarPerfil()">Guardar datos fiscales</button>
+
+      <div class="seccion">Datos fiscales</div>
+      <div class="field">
+        <label>RFC *</label>
+        <input type="text" id="rfc" placeholder="XAXX010101000" maxlength="13">
+      </div>
+      <div class="field">
+        <label>Razón Social *</label>
+        <input type="text" id="razon_social" placeholder="Nombre o empresa">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>Régimen Fiscal *</label>
+          <select id="regimen_fiscal">
+            <option value="">Seleccionar...</option>
+            <option value="601">601 - General Ley Personas Morales</option>
+            <option value="612">612 - Personas Físicas Act. Empresariales</option>
+            <option value="616">616 - Sin obligaciones fiscales</option>
+            <option value="621">621 - Incorporación Fiscal</option>
+            <option value="626">626 - Régimen Simplificado Confianza</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Uso CFDI *</label>
+          <select id="uso_cfdi">
+            <option value="">Seleccionar...</option>
+            <option value="G01">G01 - Adquisición de mercancias</option>
+            <option value="G03">G03 - Gastos en general</option>
+            <option value="I01">I01 - Construcciones</option>
+            <option value="S01">S01 - Sin efectos fiscales</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="seccion">Domicilio fiscal</div>
+      <div class="field">
+        <label>Calle *</label>
+        <input type="text" id="calle" placeholder="Nombre de la calle">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>Número Exterior *</label>
+          <input type="text" id="num_ext" placeholder="123">
+        </div>
+        <div class="field">
+          <label>Número Interior</label>
+          <input type="text" id="num_int" placeholder="Opcional">
+        </div>
+      </div>
+      <div class="field">
+        <label>Colonia *</label>
+        <input type="text" id="colonia" placeholder="Nombre de la colonia">
+      </div>
+      <div class="grid2">
+        <div class="field">
+          <label>Municipio / Delegación *</label>
+          <input type="text" id="municipio" placeholder="Ciudad Obregón">
+        </div>
+        <div class="field">
+          <label>Código Postal *</label>
+          <input type="text" id="codigo_postal" placeholder="85000" maxlength="5">
+        </div>
+      </div>
+      <div class="field">
+        <label>Estado *</label>
+        <select id="estado">
+          <option value="">Seleccionar...</option>
+          <option value="AGUASCALIENTES">Aguascalientes</option>
+          <option value="BAJA CALIFORNIA">Baja California</option>
+          <option value="BAJA CALIFORNIA SUR">Baja California Sur</option>
+          <option value="CAMPECHE">Campeche</option>
+          <option value="CHIAPAS">Chiapas</option>
+          <option value="CHIHUAHUA">Chihuahua</option>
+          <option value="CIUDAD DE MEXICO">Ciudad de México</option>
+          <option value="COAHUILA">Coahuila</option>
+          <option value="COLIMA">Colima</option>
+          <option value="DURANGO">Durango</option>
+          <option value="ESTADO DE MEXICO">Estado de México</option>
+          <option value="GUANAJUATO">Guanajuato</option>
+          <option value="GUERRERO">Guerrero</option>
+          <option value="HIDALGO">Hidalgo</option>
+          <option value="JALISCO">Jalisco</option>
+          <option value="MICHOACAN">Michoacán</option>
+          <option value="MORELOS">Morelos</option>
+          <option value="NAYARIT">Nayarit</option>
+          <option value="NUEVO LEON">Nuevo León</option>
+          <option value="OAXACA">Oaxaca</option>
+          <option value="PUEBLA">Puebla</option>
+          <option value="QUERETARO">Querétaro</option>
+          <option value="QUINTANA ROO">Quintana Roo</option>
+          <option value="SAN LUIS POTOSI">San Luis Potosí</option>
+          <option value="SINALOA">Sinaloa</option>
+          <option value="SONORA">Sonora</option>
+          <option value="TABASCO">Tabasco</option>
+          <option value="TAMAULIPAS">Tamaulipas</option>
+          <option value="TLAXCALA">Tlaxcala</option>
+          <option value="VERACRUZ">Veracruz</option>
+          <option value="YUCATAN">Yucatán</option>
+          <option value="ZACATECAS">Zacatecas</option>
+        </select>
+      </div>
+
+      <button onclick="guardar()">💾 Guardar perfil</button>
       <p class="msg" id="msg"></p>
     </div>
   </div>
 
   <script>
-    async function cargarPerfil() {
+    async function cargar() {
       const res = await fetch("/api/perfil");
       const data = await res.json();
-      if (data.ok && data.perfil) {
-        document.getElementById("rfc").value = data.perfil.rfc || "";
-        document.getElementById("razon_social").value = data.perfil.razon_social || "";
-        document.getElementById("codigo_postal").value = data.perfil.codigo_postal || "";
-        document.getElementById("regimen_fiscal").value = data.perfil.regimen_fiscal || "";
-        document.getElementById("uso_cfdi").value = data.perfil.uso_cfdi || "G03";
-      }
+      if (!data.ok) return;
+      const p = data.perfil;
+      document.getElementById("rfc").value = p.rfc || "";
+      document.getElementById("razon_social").value = p.razon_social || "";
+      document.getElementById("regimen_fiscal").value = p.regimen_fiscal || "";
+      document.getElementById("uso_cfdi").value = p.uso_cfdi || "";
+      document.getElementById("calle").value = p.calle || "";
+      document.getElementById("num_ext").value = p.num_ext || "";
+      document.getElementById("num_int").value = p.num_int || "";
+      document.getElementById("colonia").value = p.colonia || "";
+      document.getElementById("municipio").value = p.municipio || "";
+      document.getElementById("codigo_postal").value = p.codigo_postal || "";
+      document.getElementById("estado").value = p.estado || "";
     }
 
-    async function guardarPerfil() {
+    async function guardar() {
       const msg = document.getElementById("msg");
       const body = {
-        rfc: document.getElementById("rfc").value,
-        razon_social: document.getElementById("razon_social").value,
-        codigo_postal: document.getElementById("codigo_postal").value,
+        rfc: document.getElementById("rfc").value.trim().toUpperCase(),
+        razon_social: document.getElementById("razon_social").value.trim().toUpperCase(),
         regimen_fiscal: document.getElementById("regimen_fiscal").value,
-        uso_cfdi: document.getElementById("uso_cfdi").value
+        uso_cfdi: document.getElementById("uso_cfdi").value,
+        calle: document.getElementById("calle").value.trim().toUpperCase(),
+        num_ext: document.getElementById("num_ext").value.trim(),
+        num_int: document.getElementById("num_int").value.trim(),
+        colonia: document.getElementById("colonia").value.trim().toUpperCase(),
+        municipio: document.getElementById("municipio").value.trim().toUpperCase(),
+        codigo_postal: document.getElementById("codigo_postal").value.trim(),
+        estado: document.getElementById("estado").value,
       };
+
+      if (!body.rfc || !body.razon_social || !body.calle || !body.num_ext || !body.colonia || !body.municipio || !body.codigo_postal || !body.estado) {
+        msg.className = "msg err";
+        msg.textContent = "❌ Llena todos los campos obligatorios";
+        return;
+      }
+
       const res = await fetch("/api/perfil", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -98,15 +198,15 @@
       });
       const data = await res.json();
       if (data.ok) {
-        msg.style.color = "#7AC142";
-        msg.textContent = "✅ Datos fiscales guardados correctamente";
+        msg.className = "msg ok";
+        msg.textContent = "✅ Perfil guardado correctamente";
       } else {
-        msg.style.color = "#ff6b6b";
+        msg.className = "msg err";
         msg.textContent = "❌ Error: " + data.msg;
       }
     }
 
-    cargarPerfil();
+    cargar();
   </script>
 </body>
 </html>
