@@ -4,12 +4,12 @@ const { subirArchivoR2 } = require("../storage/r2");
 async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
   try {
     console.log("🔄 Fallback: reimpresión OXXO...");
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(4000);
     await page.goto(
       "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/reimpresionFactura.do",
       { waitUntil: "networkidle2", timeout: 30000 }
     );
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     await page.evaluate(() => {
       const tabs = Array.from(document.querySelectorAll("a, button, li"));
@@ -314,26 +314,36 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       return el && !el.disabled;
     }, { timeout: 10000 });
     await page.select("#form\\:estado_input", estado || "SONORA");
-    console.log('✅ Estado seleccionado, esperando que habilite Régimen Fiscal...');
-    await page.waitForTimeout(3000);
+    console.log('✅ Estado seleccionado, esperando Régimen Fiscal...');
 
-    // Régimen fiscal — esperar que se habilite
+    // Keepalive mientras el portal carga las opciones de régimen
+    await page.waitForTimeout(1000);
+    await page.mouse.move(400, 300);
+    await page.waitForTimeout(1000);
+    await page.mouse.move(400, 400);
+    await page.waitForTimeout(1000);
+
+    // Régimen fiscal — esperar que se habilite y tenga opciones
     await page.waitForFunction(() => {
       const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
-      return el && !el.disabled;
-    }, { timeout: 10000 });
+      return el && !el.disabled && el.options.length > 1;
+    }, { timeout: 20000 });
     await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "601"));
-    console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
-    await page.waitForTimeout(2000);
+    console.log('✅ Régimen fiscal, esperando Uso CFDI...');
 
-    // Uso CFDI — esperar que se habilite
+    // Keepalive mientras el portal carga las opciones de uso CFDI
+    await page.waitForTimeout(1000);
+    await page.mouse.move(400, 300);
+    await page.waitForTimeout(1000);
+
+    // Uso CFDI — esperar que se habilite y tenga opciones
     await page.waitForFunction(() => {
       const el = document.querySelector("#form\\:selectOneMenuCFDI_input");
-      return el && !el.disabled;
-    }, { timeout: 10000 });
+      return el && !el.disabled && el.options.length > 1;
+    }, { timeout: 20000 });
     await page.select("#form\\:selectOneMenuCFDI_input", usoCfdi || "G03");
     console.log('✅ Uso CFDI seleccionado');
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(500);
 
     // ── GENERAR FACTURA ──
     console.log("🧾 Generando factura...");
