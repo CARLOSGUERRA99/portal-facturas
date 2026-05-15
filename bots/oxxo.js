@@ -267,16 +267,27 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.waitForTimeout(3000);
 
     // ── DATOS FISCALES ──
-    console.log("📋 Llenando datos fiscales...");
+    // RFC — esperar que se habilite
+    console.log('📋 Llenando RFC...');
     await page.waitForFunction(() => {
       const el = document.querySelector("#form\\:rfc");
       return el && !el.disabled;
     }, { timeout: 15000 });
-
     await page.click("#form\\:rfc", { clickCount: 3 });
     await page.type("#form\\:rfc", rfc, { delay: 80 });
+    console.log('✅ RFC llenado, esperando que habilite razón social...');
+    await page.waitForTimeout(3000);
+
+    // Razón social — esperar que se habilite
+    await page.waitForFunction(() => {
+      const el = document.querySelector("#form\\:razon");
+      return el && !el.disabled;
+    }, { timeout: 10000 });
     await page.click("#form\\:razon", { clickCount: 3 });
     await page.type("#form\\:razon", razonSocial, { delay: 50 });
+    await page.waitForTimeout(500);
+
+    // Calle, ext, int, colonia, municipio — llenar directo
     await page.click("#form\\:calle", { clickCount: 3 });
     await page.type("#form\\:calle", calle || "", { delay: 50 });
     await page.click("#form\\:ext", { clickCount: 3 });
@@ -289,78 +300,88 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.type("#form\\:colonia", colonia || "", { delay: 50 });
     await page.click("#form\\:dele", { clickCount: 3 });
     await page.type("#form\\:dele", municipio || "", { delay: 50 });
+
+    // Código postal — esperar que habilite Estado
+    console.log('📮 Llenando código postal...');
     await page.click("#form\\:codigo", { clickCount: 3 });
-    await page.type("#form\\:codigo", String(codigoPostal), { delay: 50 });
+    await page.type("#form\\:codigo", String(codigoPostal), { delay: 80 });
+    console.log('✅ CP llenado, esperando que habilite Estado...');
+    await page.waitForTimeout(3000);
+
+    // Estado — esperar que se habilite
+    await page.waitForFunction(() => {
+      const el = document.querySelector("#form\\:estado_input");
+      return el && !el.disabled;
+    }, { timeout: 10000 });
     await page.select("#form\\:estado_input", estado || "SONORA");
-    await page.waitForTimeout(300);
-    await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "612"));
-    await page.waitForTimeout(300);
+    console.log('✅ Estado seleccionado, esperando que habilite Régimen Fiscal...');
+    await page.waitForTimeout(3000);
+
+    // Régimen fiscal — esperar que se habilite
+    await page.waitForFunction(() => {
+      const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
+      return el && !el.disabled;
+    }, { timeout: 10000 });
+    await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "601"));
+    console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
+    await page.waitForTimeout(2000);
+
+    // Uso CFDI — esperar que se habilite
+    await page.waitForFunction(() => {
+      const el = document.querySelector("#form\\:selectOneMenuCFDI_input");
+      return el && !el.disabled;
+    }, { timeout: 10000 });
     await page.select("#form\\:selectOneMenuCFDI_input", usoCfdi || "G03");
-    await page.waitForTimeout(500);
+    console.log('✅ Uso CFDI seleccionado');
+    await page.waitForTimeout(1000);
 
     // ── GENERAR FACTURA ──
     console.log("🧾 Generando factura...");
     await page.click("#form\\:generarFactura");
     await page.waitForTimeout(8000);
 
-    // ── BUSCAR Y DESCARGAR XML/PDF ──
-    console.log("📥 Buscando links XML/PDF...");
-    let xmlUrl = null;
-    let pdfUrl = null;
-    const ts = Date.now();
+    // Esperar pantalla de descarga
+    await page.waitForFunction(() => {
+      const body = document.body.innerText;
+      return body.includes('Descargar PDF') ||
+             body.includes('Descargar XML') ||
+             body.includes('Enviar correo') ||
+             body.includes('Envía o descarga');
+    }, { timeout: 15000 });
+    console.log('✅ Pantalla de descarga detectada');
 
-    // ── XML ──
-    const newPageXmlPromise = new Promise(resolve =>
-      browser.once('targetcreated', t => resolve(t.page()))
-    );
-    const xmlClicked = await page.evaluate(() => {
-      const anchors = Array.from(document.querySelectorAll('a, button'));
-      const xml = anchors.find(a =>
-        a.href?.includes('.xml') ||
-        a.textContent?.includes('XML') ||
-        a.textContent?.includes('xml')
-      );
-      if (xml) { xml.click(); return true; }
-      return false;
-    });
-    if (xmlClicked) {
-      const newPage = await Promise.race([
-        newPageXmlPromise,
-        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
-      ]).catch(() => null);
-      if (newPage) {
-        await newPage.waitForTimeout(2000);
-        const response = await newPage.waitForResponse(
-          r => r.status() === 200, { timeout: 10000 }
-        ).catch(() => null);
-        if (response) {
-          const buf = await response.buffer().catch(() => null);
-          if (buf) {
-            xmlUrl = await subirArchivoR2(buf, `facturas/oxxo_${ts}.xml`, 'application/xml') || null;
-          }
-        }
-        await newPage.close().catch(() => {});
-      }
+    // Enviar al correo de captura IMAP
+    const emailInput = await page.$('input[type="email"], input[placeholder*="correo"], input[placeholder*="dominio"]');
+    if (emailInput) {
+      await emailInput.click({ clickCount: 3 });
+      await emailInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
+      await page.waitForTimeout(500);
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('a, button'));
+        const btn = btns.find(b => b.textContent?.includes('Enviar correo'));
+        if (btn) btn.click();
+      });
+      console.log('📧 Correo enviado a buzonfacturas@serviciosga.site');
+      await page.waitForTimeout(2000);
     }
 
-    // ── PDF ──
+    // ── INTERCEPTAR PDF ──
+    let pdfUrl = null;
+    let xmlUrl = null;
+
     const newPagePdfPromise = new Promise(resolve =>
       browser.once('targetcreated', t => resolve(t.page()))
     );
     const pdfClicked = await page.evaluate(() => {
-      const anchors = Array.from(document.querySelectorAll('a, button'));
-      const pdf = anchors.find(a =>
-        a.href?.includes('.pdf') ||
-        a.textContent?.includes('PDF') ||
-        a.textContent?.includes('pdf')
-      );
-      if (pdf) { pdf.click(); return true; }
+      const btn = Array.from(document.querySelectorAll('a, button'))
+        .find(b => b.textContent?.includes('Descargar PDF'));
+      if (btn) { btn.click(); return true; }
       return false;
     });
     if (pdfClicked) {
       const newPage = await Promise.race([
         newPagePdfPromise,
-        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+        new Promise((_, r) => setTimeout(() => r(), 8000))
       ]).catch(() => null);
       if (newPage) {
         await newPage.waitForTimeout(2000);
@@ -370,15 +391,51 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         if (response) {
           const buf = await response.buffer().catch(() => null);
           if (buf) {
-            pdfUrl = await subirArchivoR2(buf, `facturas/oxxo_${ts}.pdf`, 'application/pdf') || null;
+            pdfUrl = await subirArchivoR2(buf, `facturas/oxxo_${Date.now()}.pdf`, 'application/pdf');
+            console.log('✅ PDF subido a R2:', pdfUrl);
           }
         }
         await newPage.close().catch(() => {});
       }
     }
 
-    console.log('✅ XML URL:', xmlUrl);
-    console.log('✅ PDF URL:', pdfUrl);
+    // ── INTERCEPTAR XML ──
+    const newPageXmlPromise = new Promise(resolve =>
+      browser.once('targetcreated', t => resolve(t.page()))
+    );
+    const xmlClicked = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('a, button'))
+        .find(b => b.textContent?.includes('Descargar XML'));
+      if (btn) { btn.click(); return true; }
+      return false;
+    });
+    if (xmlClicked) {
+      const newPage = await Promise.race([
+        newPageXmlPromise,
+        new Promise((_, r) => setTimeout(() => r(), 8000))
+      ]).catch(() => null);
+      if (newPage) {
+        await newPage.waitForTimeout(2000);
+        const response = await newPage.waitForResponse(
+          r => r.status() === 200, { timeout: 10000 }
+        ).catch(() => null);
+        if (response) {
+          const buf = await response.buffer().catch(() => null);
+          if (buf) {
+            xmlUrl = await subirArchivoR2(buf, `facturas/oxxo_${Date.now()}.xml`, 'application/xml');
+            console.log('✅ XML subido a R2:', xmlUrl);
+          }
+        }
+        await newPage.close().catch(() => {});
+      }
+    }
+
+    // Si no se capturaron archivos → IMAP los recogerá del correo
+    if (!xmlUrl && !pdfUrl) {
+      console.log('⚠️ Sin archivos directos, IMAP recogerá del correo');
+      await browser.close();
+      return { ok: true, procesandoCorreo: true };
+    }
 
     await browser.close();
     return { ok: true, xmlUrl, pdfUrl };
