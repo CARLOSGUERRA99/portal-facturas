@@ -175,27 +175,59 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       }
     }, dia, mes, anio);
 
-    await page.waitForTimeout(1500);
-    const fechaValor = await page.$eval("#form\\:fecha_input", el => el.value);
-    console.log("📅 Fecha en campo:", fechaValor);
+    // Esperar que el calendario se cierre
+    await page.waitForTimeout(1000);
+
+    // Si el calendario sigue abierto, forzar cierre
+    const calAbierto = await page.$('.ui-datepicker:not([style*="display: none"])');
+    if (calAbierto) {
+      await page.click('#form\\:fecha_input');
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(500);
+    }
+
+    const fechaValor = await page.$eval('#form\\:fecha_input', el => el.value);
+    console.log('📅 Fecha confirmada en campo:', fechaValor);
+
+    // Fallback: escribir la fecha directamente si el datepicker no la registró
+    if (!fechaValor || fechaValor.trim() === '') {
+      console.log('⚠️ Datepicker falló, escribiendo fecha directo...');
+      await page.evaluate((fecha) => {
+        const input = document.querySelector('#form\\:fecha_input');
+        if (input) {
+          input.removeAttribute('readonly');
+          input.value = fecha;
+          ['input', 'change', 'blur'].forEach(ev =>
+            input.dispatchEvent(new Event(ev, { bubbles: true }))
+          );
+        }
+      }, fecha);
+      await page.waitForTimeout(1000);
+    }
+
+    await page.waitForTimeout(3000);
 
     // ── FOLIO ──
     console.log("🔢 Llenando folio...");
     await page.click("#form\\:folio", { clickCount: 3 });
     await page.type("#form\\:folio", String(folio), { delay: 100 });
     await page.waitForTimeout(400);
+    console.log("🔢 Folio en campo:", await page.$eval("#form\\:folio", el => el.value));
 
     // ── ID VENTA ──
     console.log("🔑 Llenando ID venta...");
     await page.click("#form\\:venta", { clickCount: 3 });
     await page.type("#form\\:venta", String(idVenta).toUpperCase(), { delay: 100 });
     await page.waitForTimeout(400);
+    console.log("🔑 ID venta en campo:", await page.$eval("#form\\:venta", el => el.value));
 
     // ── TOTAL ──
     console.log("💰 Llenando total...");
     await page.click("#form\\:total", { clickCount: 3 });
     await page.type("#form\\:total", parseFloat(total).toFixed(2), { delay: 100 });
     await page.waitForTimeout(500);
+    console.log("💰 Total en campo:", await page.$eval("#form\\:total", el => el.value));
 
     const ss2 = await page.screenshot({ encoding: "base64" });
     console.log("📸 Screenshot 2 - antes de validar");
