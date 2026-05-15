@@ -10,6 +10,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const nodemailer = require("nodemailer");
 const { detectarYFacturar } = require("./bots/index");
 const { borrarArchivoR2 } = require("./storage/r2");
+const { esperarFacturaPorCorreo } = require("./mail/imap");
 
 const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -133,6 +134,10 @@ async function initDB() {
   try {
     await db.query("ALTER TABLE tickets ADD COLUMN portal_url VARCHAR(255) NULL");
   } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets MODIFY COLUMN status ENUM('pendiente','procesando','procesando_correo','procesado','error') NOT NULL DEFAULT 'pendiente'");
+  } catch(e) { /* enum ya actualizado */ }
 
   try {
     await db.query(`CREATE TABLE IF NOT EXISTS notificaciones (
@@ -540,6 +545,11 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
       return res.json({ ok: false, msg: "Portal de facturación no reconocido. El administrador ha sido notificado." });
     }
 
+    if (resultado.ok && resultado.procesandoCorreo) {
+      await db.query("UPDATE tickets SET status = 'procesando_correo' WHERE id = ?", [ticketId]);
+      return res.json({ ok: true, procesandoCorreo: true, msg: "Factura generada — esperando correo con archivos XML/PDF. Te avisaremos cuando estén listos." });
+    }
+
     if (resultado.ok) {
       const pdfUrl = resultado.pdfUrl || resultado.pdf || null;
       const xmlUrl = resultado.xmlUrl || resultado.xml || null;
@@ -820,6 +830,119 @@ async function limpiarFacturasVencidas() {
 }
 limpiarFacturasVencidas();
 setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
+
+// ── JOB IMAP: procesar tickets en espera de correo ──
+async function procesarTicketsPorCorreo() {
+  let rows;
+  try {
+    [rows] = await db.query(
+      `SELECT t.id, t.ocr_json, t.comercio, t.user_id, u.email, u.nombre AS user_nombre
+       FROM tickets t
+       JOIN users u ON t.user_id = u.id
+       WHERE t.status = 'procesando_correo'
+       ORDER BY t.creado ASC
+       LIMIT 5`
+    );
+  } catch (e) {
+    console.log("⚠️ procesarTicketsPorCorreo query:", e.message);
+    return;
+  }
+  if (!rows.length) return;
+
+  console.log(`📬 Job IMAP: ${rows.length} ticket(s) esperando correo`);
+
+  for (const ticket of rows) {
+    const datos = JSON.parse(ticket.ocr_json || "{}");
+    const codigoTicket = datos.codigoTicket || String(ticket.id);
+
+    try {
+      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000);
+
+      const ts = Date.now();
+      let xmlUrl = null, pdfUrl = null;
+      if (xmlBuffer) {
+        const { subirArchivoR2 } = require("./storage/r2");
+        xmlUrl = await subirArchivoR2(xmlBuffer, `facturas/imap_${ts}.xml`, "application/xml");
+      }
+      if (pdfBuffer) {
+        const { subirArchivoR2 } = require("./storage/r2");
+        pdfUrl = await subirArchivoR2(pdfBuffer, `facturas/imap_${ts}.pdf`, "application/pdf");
+      }
+
+      await db.query(
+        "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
+        [ticket.user_id, ticket.id, ticket.comercio, pdfUrl, xmlUrl, "completado"]
+      );
+      await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticket.id]);
+      console.log(`✅ Job IMAP: ticket #${ticket.id} procesado`);
+
+      try {
+        if (ticket.email) {
+          await transporter.sendMail({
+            from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
+            to: ticket.email,
+            subject: "✅ Tu factura está lista — GPN Pinturas y Recubrimientos",
+            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;">
+                <h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2>
+                <p style="color:#C0DD97;margin:4px 0 0;">Portal de Facturación Automática</p>
+              </div>
+              <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
+                <p>Hola <strong>${ticket.user_nombre || ""}</strong>,</p>
+                <p>Tu factura de <strong>${ticket.comercio || "comercio"}</strong> está lista para descargar.</p>
+                <div style="margin:20px 0;">
+                  ${xmlUrl ? `<a href="${xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ""}
+                  ${pdfUrl ? `<a href="${pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ""}
+                </div>
+                <a href="https://portal-facturas-production.up.railway.app/mis-facturas" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">Ver mis facturas →</a>
+                <p style="color:#999;font-size:12px;margin-top:20px;">Los archivos estarán disponibles 60 días.</p>
+              </div>
+            </div>`,
+          });
+          console.log(`📧 Job IMAP: correo enviado a ${ticket.email}`);
+        }
+      } catch (mailErr) {
+        console.log("⚠️ Job IMAP: error enviando correo:", mailErr.message);
+      }
+
+    } catch (imapErr) {
+      console.log(`⚠️ Job IMAP: no llegó correo para ticket #${ticket.id} — intentando Estrategia B...`);
+
+      try {
+        const { facturarBuzonFacturas } = require("./bots/buzonfacturas");
+        const datos = JSON.parse(ticket.ocr_json || "{}");
+        const r = await facturarBuzonFacturas({ ...datos, ticketId: ticket.id, rfc: null });
+        if (r.ok && (r.xmlUrl || r.pdfUrl)) {
+          await db.query(
+            "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
+            [ticket.user_id, ticket.id, ticket.comercio, r.pdfUrl || null, r.xmlUrl || null, "completado"]
+          );
+          await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticket.id]);
+          console.log(`✅ Job IMAP: Estrategia B exitosa para ticket #${ticket.id}`);
+        } else {
+          throw new Error(r.msg || "Estrategia B sin archivos");
+        }
+      } catch (bErr) {
+        console.log(`❌ Job IMAP: Estrategia B falló para ticket #${ticket.id}:`, bErr.message);
+        await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticket.id]);
+        await crearNotificacion(
+          ticket.user_id,
+          "factura_error",
+          `No se pudieron recuperar los archivos de tu factura de ${ticket.comercio || "comercio"}. Por favor intenta de nuevo o contacta al administrador.`
+        );
+        const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
+        if (adminRows.length > 0) {
+          await crearNotificacion(
+            adminRows[0].id,
+            "factura_error_admin",
+            `Error recuperando factura del ticket #${ticket.id} (${ticket.comercio || "?"}): ${bErr.message}`
+          );
+        }
+      }
+    }
+  }
+}
+setInterval(procesarTicketsPorCorreo, 2 * 60 * 1000);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));

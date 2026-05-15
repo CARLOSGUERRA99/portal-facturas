@@ -3,7 +3,6 @@ const path = require('path');
 const fs = require('fs');
 const unzipper = require('unzipper');
 const { subirArchivoR2 } = require('../storage/r2');
-const { esperarFacturaPorCorreo } = require('../mail/imap');
 
 async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fecha, folio, total, ticketId }) {
   console.log('🤖 Iniciando bot BuzonFacturas...');
@@ -84,17 +83,21 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
 
       const pdfBuffer = await interceptarDescarga(() =>
         page.evaluate(() => {
-          const icons = document.querySelectorAll('table tbody tr:first-child td:last-child img, table tbody tr:first-child td:last-child a');
+          const icons = document.querySelectorAll(
+            'table tbody tr:first-child td:last-child img, table tbody tr:first-child td:last-child a'
+          );
           if (icons[0]) icons[0].click();
         })
-      );
+      ).catch(() => null);
 
       const xmlBuffer = await interceptarDescarga(() =>
         page.evaluate(() => {
-          const icons = document.querySelectorAll('table tbody tr:first-child td:last-child img, table tbody tr:first-child td:last-child a');
+          const icons = document.querySelectorAll(
+            'table tbody tr:first-child td:last-child img, table tbody tr:first-child td:last-child a'
+          );
           if (icons[1]) icons[1].click();
         })
-      );
+      ).catch(() => null);
 
       if (!xmlBuffer && !pdfBuffer) throw new Error('No se interceptaron archivos en Estrategia B');
 
@@ -112,7 +115,9 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
   try {
     // PASO 1 — Navegar y RFC
     console.log('🌐 PASO 1 — Navegando a BuzonFacturas...');
-    const url = portalUrl || 'https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0';
+    const url = (portalUrl && portalUrl.startsWith('http'))
+      ? portalUrl
+      : 'https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0';
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
     console.log('🔑 Esperando input RFC...');
@@ -279,33 +284,19 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
       if (pdfBuf) pdfBuffer = pdfBuf;
     }
 
-    // Si Estrategia A no funcionó → esperar correo IMAP
+    // Si Estrategia A no funcionó → marcar para job IMAP asíncrono
     if (!xmlBuffer && !pdfBuffer) {
-      console.log('⚠️ Estrategia A falló, esperando correo IMAP...');
-      try {
-        const correoResult = await esperarFacturaPorCorreo(codigoTicket, 90000);
-        xmlBuffer = correoResult.xmlBuffer;
-        pdfBuffer = correoResult.pdfBuffer;
-        console.log('✅ Archivos obtenidos por IMAP');
-      } catch (imapErr) {
-        console.log('⚠️ IMAP falló:', imapErr.message, '— intentando recuperador...');
-      }
-    }
-
-    // Si IMAP tampoco → Estrategia B
-    if (!xmlBuffer && !pdfBuffer) {
-      const r = await runEstrategiaB(folioGenerado);
+      console.log('⚠️ Estrategia A falló — marcando ticket para procesamiento IMAP asíncrono...');
       await browser.close();
-      return r;
+      return { ok: true, procesandoCorreo: true, folioGenerado };
     }
 
     const xmlUrl = await guardarEnR2(xmlBuffer, 'xml');
     const pdfUrl = await guardarEnR2(pdfBuffer, 'pdf');
 
     if (!xmlUrl && !pdfUrl) {
-      const r = await runEstrategiaB(folioGenerado);
       await browser.close();
-      return r;
+      return { ok: true, procesandoCorreo: true, folioGenerado };
     }
 
     await browser.close();
