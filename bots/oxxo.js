@@ -9,8 +9,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
-
-  // Simular navegador real
   await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
   try {
@@ -22,87 +20,119 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
     await page.waitForTimeout(3000);
 
-    // Screenshot para debug
-    const ss1 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 1 tomado, página cargada");
-
-    // ── FECHA via JavaScript directo ──
-    console.log("📅 Llenando fecha via JS...");
-    await page.waitForSelector("#form\\:fecha_input", { timeout: 15000 });
-
-    // Convertir fecha DD/MM/YYYY a MM/DD/YYYY para el datepicker
-    let fechaFormateada = fecha;
-    if (fecha && fecha.includes("/")) {
-      const partes = fecha.split("/");
-      if (partes.length === 3) {
-        fechaFormateada = `${partes[1]}/${partes[0]}/${partes[2]}`;
-      }
+    // ── CERRAR POPUP INICIAL ──
+    console.log("❌ Cerrando popup...");
+    try {
+      await page.waitForSelector(".ui-dialog-titlebar-close", { timeout: 5000 });
+      await page.click(".ui-dialog-titlebar-close");
+      console.log("✅ Popup cerrado");
+      await page.waitForTimeout(1000);
+    } catch {
+      console.log("ℹ️ No apareció popup");
     }
 
-    await page.evaluate((f) => {
-      const input = document.querySelector("#form\\:fecha_input");
-      if (input) {
-        input.removeAttribute("readonly");
-        input.value = f;
-        // Disparar todos los eventos necesarios
-        ["focus", "input", "change", "blur", "keyup"].forEach(ev => {
-          input.dispatchEvent(new Event(ev, { bubbles: true }));
-        });
-        // También intentar con jQuery si está disponible
-        if (typeof jQuery !== "undefined") {
-          jQuery(input).val(f).trigger("change");
+    // ── FECHA via datepicker ──
+    console.log("📅 Abriendo datepicker...");
+    await page.waitForSelector("#form\\:fecha_input", { timeout: 15000 });
+    await page.click("#form\\:fecha_input");
+    await page.waitForTimeout(1500);
+
+    // Parsear fecha DD/MM/YYYY
+    const partes = fecha.split("/");
+    const dia = parseInt(partes[0]);
+    const mes = parseInt(partes[1]) - 1; // 0-indexed
+    const anio = parseInt(partes[2]);
+
+    console.log(`📅 Fecha a seleccionar: día=${dia}, mes=${mes}, año=${anio}`);
+
+    // Navegar al mes/año correcto en el datepicker
+    await page.evaluate(async (dia, mes, anio) => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      
+      for (let intento = 0; intento < 24; intento++) {
+        const mesSpan = document.querySelector(".ui-datepicker-month");
+        const anioSpan = document.querySelector(".ui-datepicker-year");
+        if (!mesSpan || !anioSpan) break;
+
+        const mesActual = parseInt(mesSpan.getAttribute("data-month") || 
+          ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
+          .indexOf(mesSpan.textContent.toLowerCase()));
+        const anioActual = parseInt(anioSpan.textContent);
+
+        // Calcular mes actual desde el texto
+        const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        const mesIdx = meses.indexOf(mesSpan.textContent.toLowerCase().trim());
+
+        if (mesIdx === mes && anioActual === anio) break;
+
+        // Determinar si ir adelante o atrás
+        const fechaActual = new Date(anioActual, mesIdx === -1 ? 0 : mesIdx, 1);
+        const fechaTarget = new Date(anio, mes, 1);
+
+        if (fechaTarget < fechaActual) {
+          const prev = document.querySelector(".ui-datepicker-prev");
+          if (prev) prev.click();
+        } else {
+          const next = document.querySelector(".ui-datepicker-next:not(.ui-state-disabled)");
+          if (next) next.click();
+        }
+        await sleep(800);
+      }
+
+      // Hacer clic en el día correcto
+      const celdas = document.querySelectorAll(".ui-datepicker-calendar td[data-handler='selectDay']");
+      for (const celda of celdas) {
+        const link = celda.querySelector("a");
+        if (link && parseInt(link.textContent) === dia) {
+          link.click();
+          break;
         }
       }
-    }, fechaFormateada);
+    }, dia, mes, anio);
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
+
+    // Verificar que la fecha se llenó
+    const fechaValor = await page.$eval("#form\\:fecha_input", el => el.value);
+    console.log("📅 Fecha en campo:", fechaValor);
 
     // ── FOLIO ──
     console.log("🔢 Llenando folio...");
-    await page.waitForSelector("#form\\:folio", { timeout: 10000 });
     await page.click("#form\\:folio", { clickCount: 3 });
     await page.type("#form\\:folio", String(folio), { delay: 100 });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(400);
 
     // ── ID VENTA ──
     console.log("🔑 Llenando ID venta...");
     await page.click("#form\\:venta", { clickCount: 3 });
-    await page.type("#form\\:venta", String(idVenta), { delay: 100 });
-    await page.waitForTimeout(500);
+    await page.type("#form\\:venta", String(idVenta).toUpperCase(), { delay: 100 });
+    await page.waitForTimeout(400);
 
     // ── TOTAL ──
     console.log("💰 Llenando total...");
     await page.click("#form\\:total", { clickCount: 3 });
-    // Total con 2 decimales
     const totalStr = parseFloat(total).toFixed(2);
     await page.type("#form\\:total", totalStr, { delay: 100 });
     await page.waitForTimeout(500);
 
     // Screenshot antes de validar
     const ss2 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 2 - antes de validar");
+    console.log("📸 Screenshot antes de validar");
 
-    // ── VALIDAR TICKET via click en span ──
+    // ── VALIDAR TICKET ──
     console.log("✅ Validando ticket...");
     await page.evaluate(() => {
       const spans = Array.from(document.querySelectorAll("span"));
       const validar = spans.find(s => s.textContent.trim() === "Validar Ticket");
-      if (validar) {
-        validar.click();
-      } else {
-        // Intentar con el botón directo
-        const btn = document.querySelector("input[value='Validar Ticket'], button[value='Validar Ticket']");
-        if (btn) btn.click();
-      }
+      if (validar) validar.click();
     });
 
     await page.waitForTimeout(5000);
 
-    // Screenshot después de validar
     const ss3 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 3 - después de validar");
+    console.log("📸 Screenshot después de validar");
 
-    // Verificar si el botón continuar se habilitó
+    // Verificar si Continuar se habilitó
     const continuarHabilitado = await page.evaluate(() => {
       const btn = document.querySelector("#form\\:continuar");
       return btn && !btn.disabled;
@@ -111,17 +141,17 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log("▶️ Continuar habilitado:", continuarHabilitado);
 
     if (!continuarHabilitado) {
-      // Ver mensaje de error del portal
       const mensajeError = await page.evaluate(() => {
-        const msgs = document.querySelectorAll(".ui-messages-error, .ui-message-error-detail, [class*='error'], [class*='mensaje']");
-        return Array.from(msgs).map(m => m.textContent.trim()).join(" | ");
+        const msgs = document.querySelectorAll(".ui-messages-error, .ui-message-error-detail, [class*='error']");
+        return Array.from(msgs).map(m => m.textContent.trim()).filter(t => t).join(" | ");
       });
-      console.log("⚠️ Mensaje del portal:", mensajeError);
+      console.log("⚠️ Mensaje portal:", mensajeError);
       await browser.close();
-      return { ok: false, msg: `Portal no validó el ticket. ${mensajeError || "Verifica fecha, folio, ID y total"}`, screenshot: ss3 };
+      return { ok: false, msg: `Portal no validó el ticket. ${mensajeError || "Verifica los datos del ticket"}`, screenshot: ss3 };
     }
 
     // ── CONTINUAR ──
+    console.log("▶️ Clic Continuar...");
     await page.click("#form\\:continuar");
     await page.waitForTimeout(3000);
 
@@ -138,7 +168,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
     await page.click("#form\\:razon", { clickCount: 3 });
     await page.type("#form\\:razon", razonSocial, { delay: 50 });
-    await page.waitForTimeout(300);
 
     await page.click("#form\\:calle", { clickCount: 3 });
     await page.type("#form\\:calle", calle || "", { delay: 50 });
@@ -175,7 +204,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.waitForTimeout(8000);
 
     // ── BUSCAR LINKS ──
-    console.log("📥 Buscando links de descarga...");
+    console.log("📥 Buscando links...");
     const links = await page.evaluate(() => {
       const anchors = Array.from(document.querySelectorAll("a"));
       const pdf = anchors.find(a => a.href.includes(".pdf") || a.textContent.includes("PDF"));
