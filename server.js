@@ -106,6 +106,25 @@ function corregirIdVentaOxxo(id) {
   return result.join('').toUpperCase();
 }
 
+function corregirFolioOxxo(folio) {
+  if (!folio) return folio;
+  return String(folio).replace(/[OoSsIiTt]/g,
+    c => ({ O:'0', o:'0', S:'5', s:'5', I:'1', i:'1', T:'1', t:'1' }[c] || c)
+  );
+}
+
+function validarDatosOxxo(datos) {
+  const errores = [];
+  if (!datos.folio || !/^\d+$/.test(String(datos.folio).replace(/\s/, '')))
+    errores.push('folio inválido: ' + datos.folio);
+  if (!datos.idVenta || !/^\d{2}[A-Z]{3}\d{2}[A-Z0-9]+\d{1,2}$/.test(
+    corregirIdVentaOxxo(String(datos.idVenta).toUpperCase())
+  )) errores.push('idVenta inválido: ' + datos.idVenta);
+  if (!datos.total || isNaN(parseFloat(datos.total)))
+    errores.push('total inválido: ' + datos.total);
+  return errores;
+}
+
 // ── MIGRACIÓN DB ──
 async function initDB() {
   try {
@@ -521,6 +540,43 @@ Responde SOLO este JSON sin texto adicional:
       console.log("⚠️ Haiku falló, intentando Sonnet...");
     }
 
+    // Validación específica para tickets OXXO — reintento dirigido con Sonnet
+    if ((datosOCR.comercio || '').toLowerCase().includes('oxxo') || datosOCR.idVenta) {
+      const erroresHaiku = validarDatosOxxo(datosOCR);
+      if (erroresHaiku.length > 0) {
+        console.log('⚠️ Haiku tuvo errores:', erroresHaiku, '— reintentando con Sonnet...');
+        try {
+          const respuestaSonnet = await anthropic.messages.create({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
+                { type: 'text', text: promptOCR + `
+ATENCIÓN ESPECIAL — Este es un ticket OXXO.
+Haiku leyó estos datos con errores: ${erroresHaiku.join(', ')}
+Verifica especialmente:
+- Folio: SOLO números (ejemplo: 1238066)
+- ID de venta: 2números+3letras+2números+alfanumérico+1-2números
+  Ejemplo: 10NLA50XFU1. Último carácter SIEMPRE es número.
+- Total: número con exactamente 2 decimales` }
+              ]
+            }]
+          });
+          const datosSonnet = JSON.parse(
+            respuestaSonnet.content[0].text.replace(/```json|```/g, '').trim()
+          );
+          if (datosSonnet.folio) datosOCR.folio = datosSonnet.folio;
+          if (datosSonnet.idVenta) datosOCR.idVenta = datosSonnet.idVenta;
+          if (datosSonnet.total) datosOCR.total = datosSonnet.total;
+          console.log('✅ Sonnet corrigió datos:', datosOCR);
+        } catch (e) {
+          console.log('⚠️ Error parseando Sonnet:', e.message);
+        }
+      }
+    }
+
     if (!datosOCR.folio && !datosOCR.codigoTicket) {
       console.log("🔄 Reintentando con Sonnet...");
       try {
@@ -542,6 +598,10 @@ Responde SOLO este JSON sin texto adicional:
         datosOCR = { ok: false, raw: textoOCR };
       }
     }
+
+    // Aplicar correcciones automáticas siempre, después de Haiku/Sonnet
+    datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
+    datosOCR.idVenta = corregirIdVentaOxxo(datosOCR.idVenta);
 
     const portalUrl = datosOCR.portal || null;
 
@@ -568,6 +628,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = tickets[0];
     const datos = JSON.parse(ticket.ocr_json || "{}");
+    datos.folio = corregirFolioOxxo(datos.folio);
     datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
 
     const [userRows] = await db.query(
