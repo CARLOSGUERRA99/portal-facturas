@@ -142,7 +142,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "comercio": "nombre del comercio (OXXO, 7-Eleven, Walmart, etc)",
   "fecha": "fecha en formato DD/MM/YYYY",
   "folio": "número de folio o ticket",
-  "idVenta": "ID de venta si existe",
+  "idVenta": "1OOBR500NG1",
   "total": número sin signos solo el número,
   "ok": true
 }
