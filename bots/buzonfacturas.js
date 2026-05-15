@@ -80,6 +80,7 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
         if (btn) btn.click();
       });
       await page.waitForTimeout(3000);
+      await page.waitForSelector('table tbody tr', { timeout: 10000 });
 
       const pdfBuffer = await interceptarDescarga(() =>
         page.evaluate(() => {
@@ -216,16 +217,33 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
       if (btn) { console.log('🔘 Botón:', btn.textContent || btn.value); btn.click(); }
     });
 
-    await page.waitForFunction(() => {
-      const inputs = Array.from(document.querySelectorAll('input'));
-      return inputs.some(i => i.id?.includes('Folio') && i.value?.match(/[A-Z]{2,6}-\d+/));
-    }, { timeout: 15000 });
+    const paso5 = await page.waitForFunction(() => {
+      const body = document.body.innerText;
+      // Condición 1: factura generada exitosamente
+      const folioInput = Array.from(document.querySelectorAll('input'))
+        .find(i => i.id?.includes('Folio') && i.value?.match(/[A-Z]{2,6}-\d+/));
+      if (folioInput) return { tipo: 'generado', folio: folioInput.value };
 
-    const folioGenerado = await page.evaluate(() => {
-      const inputs = Array.from(document.querySelectorAll('input'));
-      const f = inputs.find(i => i.id?.includes('Folio') && i.value?.match(/[A-Z]{2,6}-\d+/));
-      return f?.value || null;
-    });
+      // Condición 2: ya estaba facturado
+      const yaFacturado = body.match(
+        /ya fue facturado|ya existe|ya procesado|previously|ya tiene factura/i
+      );
+      if (yaFacturado) return { tipo: 'yaFacturado' };
+
+      return false;
+    }, { timeout: 15000 }).catch(() => null);
+
+    const paso5Val = paso5 ? await paso5.jsonValue().catch(() => null) : null;
+    console.log('📋 PASO 5 resultado:', paso5Val);
+
+    if (paso5Val?.tipo === 'yaFacturado') {
+      console.log('⚠️ PASO 5: ticket ya facturado — saltando a runEstrategiaB...');
+      const r = await runEstrategiaB(null);
+      await browser.close();
+      return r;
+    }
+
+    const folioGenerado = paso5Val?.folio || null;
     console.log('✅ Factura generada. Folio:', folioGenerado);
     const ss3 = await page.screenshot({ encoding: 'base64' });
     console.log('📸 Screenshot 3 — factura generada');
