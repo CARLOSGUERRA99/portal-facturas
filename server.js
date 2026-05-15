@@ -46,14 +46,14 @@ function auth(req, res, next) {
   next();
 }
 
-// RUTAS WEB
+// ── RUTAS WEB ──
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "login.html")));
 app.get("/dashboard", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
 app.get("/mis-tickets", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-tickets.html")));
 app.get("/mis-facturas", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-facturas.html")));
 app.get("/perfil", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "perfil.html")));
 
-// REGISTRO
+// ── REGISTRO ──
 app.post("/register", async (req, res) => {
   try {
     const { nombre, email, password } = req.body;
@@ -65,7 +65,7 @@ app.post("/register", async (req, res) => {
   }
 });
 
-// LOGIN
+// ── LOGIN ──
 app.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -88,7 +88,7 @@ app.get("/api/me", auth, (req, res) => {
 
 app.get("/logout", (req, res) => req.session.destroy(() => res.redirect("/")));
 
-// PERFIL FISCAL - GET
+// ── PERFIL FISCAL - GET ──
 app.get("/api/perfil", auth, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -101,7 +101,7 @@ app.get("/api/perfil", auth, async (req, res) => {
   }
 });
 
-// PERFIL FISCAL - SAVE
+// ── PERFIL FISCAL - SAVE ──
 app.post("/api/perfil", auth, async (req, res) => {
   try {
     const { rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi } = req.body;
@@ -115,7 +115,7 @@ app.post("/api/perfil", auth, async (req, res) => {
   }
 });
 
-// SUBIR TICKET + OCR CON CLAUDE VISION
+// ── SUBIR TICKET + OCR CON CLAUDE VISION ──
 app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, msg: "No se recibió archivo" });
@@ -129,6 +129,25 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
     let datosOCR = {};
     let textoOCR = "";
 
+    const promptOCR = `Analiza este ticket de compra de OXXO y extrae EXACTAMENTE estos datos en formato JSON.
+
+IMPORTANTE para tickets OXXO:
+- "folio" es el número que aparece después de "Fol_Vta:" o "Folio:"
+- "idVenta" es el código alfanumérico que aparece después de "ID=" (ejemplo: 1OOBR500NG1)
+- Son campos DIFERENTES, no los confundas
+- "fecha" es la fecha de la compra en formato DD/MM/YYYY
+- "total" es el monto total en números sin signos
+
+Responde SOLO este JSON sin texto adicional:
+{
+  "comercio": "nombre del comercio",
+  "fecha": "DD/MM/YYYY",
+  "folio": "solo números del Fol_Vta",
+  "idVenta": "código alfanumérico del ID=",
+  "total": número sin signos,
+  "ok": true
+}`;
+
     try {
       const response = await anthropic.messages.create({
         model: "claude-haiku-4-5-20251001",
@@ -137,16 +156,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
-            { type: "text", text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
-{
-  "comercio": "nombre del comercio (OXXO, 7-Eleven, Walmart, etc)",
-  "fecha": "fecha en formato DD/MM/YYYY",
-  "folio": "número de folio o ticket",
-  "idVenta": "1OOBR500NG1",
-  "total": número sin signos solo el número,
-  "ok": true
-}
-Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.` }
+            { type: "text", text: promptOCR }
           ],
         }],
       });
@@ -167,16 +177,7 @@ Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicion
             role: "user",
             content: [
               { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
-              { type: "text", text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
-{
-  "comercio": "nombre del comercio (OXXO, 7-Eleven, Walmart, etc)",
-  "fecha": "fecha en formato DD/MM/YYYY",
-  "folio": "número de folio o ticket",
-  "idVenta": "ID de venta si existe",
-  "total": número sin signos solo el número,
-  "ok": true
-}
-Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.` }
+              { type: "text", text: promptOCR }
             ],
           }],
         });
@@ -200,7 +201,7 @@ Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicion
   }
 });
 
-// BOT FACTURAR
+// ── BOT FACTURAR ──
 app.post("/facturar/:ticketId", auth, async (req, res) => {
   try {
     const { ticketId } = req.params;
@@ -222,6 +223,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
 
     if (!perfil.rfc) return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
     if (!datos.folio) return res.json({ ok: false, msg: "El ticket no tiene folio detectado" });
+    if (!datos.idVenta) return res.json({ ok: false, msg: "El ticket no tiene ID de venta detectado" });
 
     await db.query("UPDATE tickets SET status = 'procesando' WHERE id = ?", [ticketId]);
 
@@ -261,7 +263,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
   }
 });
 
-// LISTAR TICKETS
+// ── LISTAR TICKETS ──
 app.get("/api/tickets", auth, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -274,7 +276,7 @@ app.get("/api/tickets", auth, async (req, res) => {
   }
 });
 
-// LISTAR FACTURAS
+// ── LISTAR FACTURAS ──
 app.get("/api/facturas", auth, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -286,13 +288,13 @@ app.get("/api/facturas", auth, async (req, res) => {
     res.json({ ok: false, msg: e.message });
   }
 });
-// RUTA DEBUG - ver screenshot del bot
+
+// ── DEBUG SCREENSHOT ──
 app.get("/debug-screenshot", auth, async (req, res) => {
-  const { facturarOXXO } = require("./bots/oxxo");
   const resultado = await facturarOXXO({
     fecha: "10/05/2026",
     folio: "4682868",
-    idVenta: "TEST",
+    idVenta: "1OOBR500NG1",
     total: "57.00",
     rfc: "XAXX010101000",
     razonSocial: "PUBLICO EN GENERAL",
