@@ -18,18 +18,38 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       timeout: 30000
     });
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
 
     // ── CERRAR POPUP INICIAL ──
     console.log("❌ Cerrando popup...");
     try {
-      await page.waitForSelector(".ui-dialog-titlebar-close", { timeout: 5000 });
-      await page.click(".ui-dialog-titlebar-close");
-      console.log("✅ Popup cerrado");
+      await page.waitForSelector(".ui-dialog-titlebar-close", { timeout: 8000 });
       await page.waitForTimeout(1000);
+      await page.evaluate(() => {
+        const btns = document.querySelectorAll(".ui-dialog-titlebar-close, .ui-dialog-titlebar-icon");
+        btns.forEach(b => b.click());
+      });
+      console.log("✅ Popup cerrado via JS");
+      await page.waitForTimeout(2000);
+
+      // Verificar si sigue visible
+      const popupVisible = await page.evaluate(() => {
+        const dialog = document.querySelector(".ui-dialog");
+        return dialog && dialog.style.display !== "none";
+      });
+
+      if (popupVisible) {
+        await page.keyboard.press("Escape");
+        console.log("✅ Popup cerrado via Escape");
+        await page.waitForTimeout(1000);
+      }
     } catch {
       console.log("ℹ️ No apareció popup");
     }
+
+    // Screenshot después de cerrar popup
+    const ss1 = await page.screenshot({ encoding: "base64" });
+    console.log("📸 Screenshot 1 - popup cerrado");
 
     // ── FECHA via datepicker ──
     console.log("📅 Abriendo datepicker...");
@@ -45,27 +65,20 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
     console.log(`📅 Fecha a seleccionar: día=${dia}, mes=${mes}, año=${anio}`);
 
-    // Navegar al mes/año correcto en el datepicker
     await page.evaluate(async (dia, mes, anio) => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
-      
+
       for (let intento = 0; intento < 24; intento++) {
         const mesSpan = document.querySelector(".ui-datepicker-month");
         const anioSpan = document.querySelector(".ui-datepicker-year");
         if (!mesSpan || !anioSpan) break;
 
-        const mesActual = parseInt(mesSpan.getAttribute("data-month") || 
-          ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"]
-          .indexOf(mesSpan.textContent.toLowerCase()));
-        const anioActual = parseInt(anioSpan.textContent);
-
-        // Calcular mes actual desde el texto
         const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
         const mesIdx = meses.indexOf(mesSpan.textContent.toLowerCase().trim());
+        const anioActual = parseInt(anioSpan.textContent);
 
         if (mesIdx === mes && anioActual === anio) break;
 
-        // Determinar si ir adelante o atrás
         const fechaActual = new Date(anioActual, mesIdx === -1 ? 0 : mesIdx, 1);
         const fechaTarget = new Date(anio, mes, 1);
 
@@ -92,7 +105,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
     await page.waitForTimeout(1500);
 
-    // Verificar que la fecha se llenó
     const fechaValor = await page.$eval("#form\\:fecha_input", el => el.value);
     console.log("📅 Fecha en campo:", fechaValor);
 
@@ -117,7 +129,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
     // Screenshot antes de validar
     const ss2 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot antes de validar");
+    console.log("📸 Screenshot 2 - antes de validar");
 
     // ── VALIDAR TICKET ──
     console.log("✅ Validando ticket...");
@@ -130,9 +142,8 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.waitForTimeout(5000);
 
     const ss3 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot después de validar");
+    console.log("📸 Screenshot 3 - después de validar");
 
-    // Verificar si Continuar se habilitó
     const continuarHabilitado = await page.evaluate(() => {
       const btn = document.querySelector("#form\\:continuar");
       return btn && !btn.disabled;
