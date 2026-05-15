@@ -131,19 +131,34 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
 
     const promptOCR = `Analiza este ticket de compra de OXXO y extrae EXACTAMENTE estos datos en formato JSON.
 
-IMPORTANTE para tickets OXXO:
-- "folio" es el número que aparece después de "Fol_Vta:" o "Folio:"
-- "idVenta" es el código alfanumérico que aparece después de "ID=" (ejemplo: 1OOBR500NG1)
-- Son campos DIFERENTES, no los confundas
-- "fecha" es la fecha de la compra en formato DD/MM/YYYY
-- "total" es el monto total en números sin signos
+REGLAS CRÍTICAS para tickets OXXO:
+
+1. "folio" — es SOLO números, aparece después de "Fol_Vta:" en el ticket.
+   Ejemplo: Fol_Vta:4682868 → folio = "4682868"
+
+2. "idVenta" — aparece después de "ID=" en el ticket. Tiene este formato exacto:
+   - Posición 1-2: SOLO NÚMEROS (ejemplo: 10)
+   - Posición 3-5: SOLO LETRAS MAYÚSCULAS (ejemplo: OBR)
+   - Posición 6-8: SOLO NÚMEROS (ejemplo: 500)
+   - Posición 9-10: LETRAS Y NÚMEROS mezclados (ejemplo: NG)
+   - Posición 11: SOLO UN NÚMERO (ejemplo: 1)
+   - Resultado final ejemplo: 10OBR500NG1
+   - MUY IMPORTANTE: NO confundas el número CERO (0) con la letra O mayúscula.
+     Donde el formato dice NÚMEROS escribe dígitos 0-9, NUNCA letras.
+     Donde el formato dice LETRAS escribe letras A-Z, NUNCA números.
+
+3. "fecha" — fecha de la compra en formato DD/MM/YYYY
+
+4. "total" — monto total en número sin signos ni texto
+
+5. "folio" e "idVenta" son campos COMPLETAMENTE DIFERENTES, no los confundas.
 
 Responde SOLO este JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
   "fecha": "DD/MM/YYYY",
   "folio": "solo números del Fol_Vta",
-  "idVenta": "código alfanumérico del ID=",
+  "idVenta": "código exacto del ID=",
   "total": número sin signos,
   "ok": true
 }`;
@@ -294,7 +309,7 @@ app.get("/debug-screenshot", auth, async (req, res) => {
   const resultado = await facturarOXXO({
     fecha: "10/05/2026",
     folio: "4682868",
-    idVenta: "1OOBR500NG1",
+    idVenta: "10OBR500NG1",
     total: "57.00",
     rfc: "XAXX010101000",
     razonSocial: "PUBLICO EN GENERAL",
