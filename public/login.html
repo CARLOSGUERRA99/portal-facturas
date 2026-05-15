@@ -3,77 +3,363 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Portal Facturas - Login</title>
+  <title>GPN — Portal Facturas</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; background: #0d0d0d; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-    .card { background: #1a1a1a; padding: 2rem; border-radius: 12px; width: 100%; max-width: 380px; border: 1px solid #333; }
-    h2 { color: #7AC142; text-align: center; margin-bottom: 1.5rem; font-size: 24px; }
-    input { width: 100%; padding: 10px; margin-bottom: 12px; border-radius: 6px; border: 1px solid #444; background: #111; color: #fff; font-size: 14px; }
-    button { width: 100%; padding: 12px; background: #7AC142; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; }
-    button:hover { background: #6ab33a; }
-    .toggle { text-align: center; margin-top: 1rem; color: #aaa; font-size: 13px; }
-    .toggle span { color: #7AC142; cursor: pointer; }
-    .msg { text-align: center; margin-top: 10px; font-size: 13px; color: #ff6b6b; }
-    .form { display: none; }
-    .form.active { display: block; }
+    body {
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .login-wrapper {
+      display: flex;
+      width: 100%;
+      max-width: 900px;
+      min-height: 580px;
+      border-radius: 28px;
+      overflow: hidden;
+      box-shadow: 0 8px 48px rgba(59,109,17,0.18);
+    }
+
+    .login-brand {
+      background: var(--green);
+      flex: 0 0 360px;
+      padding: 44px 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .brand-deco {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .brand-deco-1 { width: 300px; height: 300px; bottom: -90px; right: -90px; background: rgba(255,255,255,0.05); }
+    .brand-deco-2 { width: 160px; height: 160px; top: -30px; right: -30px; background: rgba(255,255,255,0.04); }
+    .brand-deco-3 { width: 100px; height: 100px; bottom: 130px; left: -30px; background: rgba(255,255,255,0.04); }
+    .brand-deco-4 { width: 55px; height: 55px; top: 105px; right: 44px; background: rgba(255,255,255,0.06); }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      position: relative;
+    }
+
+    .brand-logo-icon {
+      width: 52px;
+      height: 52px;
+      background: rgba(255,255,255,0.18);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+    }
+
+    .brand-logo-name { font-size: 1.6rem; font-weight: 800; color: white; letter-spacing: -0.02em; line-height: 1; }
+    .brand-logo-sub { font-size: 0.7rem; color: rgba(255,255,255,0.65); font-weight: 400; margin-top: 2px; }
+
+    .brand-body { position: relative; }
+
+    .brand-headline {
+      color: white;
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      margin-bottom: 14px;
+    }
+
+    .brand-desc {
+      color: rgba(255,255,255,0.68);
+      font-size: 0.84rem;
+      line-height: 1.65;
+      margin-bottom: 26px;
+    }
+
+    .brand-features { display: flex; flex-direction: column; gap: 11px; }
+
+    .brand-feature {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: rgba(255,255,255,0.82);
+      font-size: 0.82rem;
+    }
+
+    .brand-feature-dot {
+      width: 7px; height: 7px;
+      background: rgba(255,255,255,0.4);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .brand-footer { color: rgba(255,255,255,0.35); font-size: 0.69rem; position: relative; }
+
+    .login-form-panel {
+      background: white;
+      flex: 1;
+      padding: 48px 44px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .form-eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--green);
+      margin-bottom: 8px;
+    }
+
+    .form-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      color: var(--text);
+      margin-bottom: 6px;
+    }
+
+    .form-sub {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+    }
+
+    .form-toggle {
+      display: flex;
+      background: var(--bg);
+      border-radius: 13px;
+      padding: 4px;
+      margin-bottom: 26px;
+    }
+
+    .toggle-btn {
+      flex: 1;
+      padding: 9px;
+      border: none;
+      background: transparent;
+      border-radius: 10px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s;
+      color: var(--text-muted);
+      font-family: inherit;
+    }
+
+    .toggle-btn.active {
+      background: white;
+      color: var(--green);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .form-section { display: none; }
+    .form-section.active { display: block; }
+
+    @media (max-width: 720px) {
+      .login-wrapper { flex-direction: column; min-height: auto; max-width: 440px; }
+      .login-brand { flex: none; padding: 32px 28px; }
+      .brand-body { display: none; }
+      .login-form-panel { padding: 32px 28px; }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>Portal Facturas</h2>
+  <div class="login-wrapper">
 
-    <div id="formLogin" class="form active">
-      <input type="email" id="loginEmail" placeholder="Correo electrónico">
-      <input type="password" id="loginPass" placeholder="Contraseña">
-      <button onclick="login()">Entrar</button>
-      <div class="toggle">¿No tienes cuenta? <span onclick="toggle()">Regístrate</span></div>
+    <!-- LEFT: Branding -->
+    <div class="login-brand">
+      <div class="brand-deco brand-deco-1"></div>
+      <div class="brand-deco brand-deco-2"></div>
+      <div class="brand-deco brand-deco-3"></div>
+      <div class="brand-deco brand-deco-4"></div>
+
+      <div class="brand-logo">
+        <div class="brand-logo-icon">🎨</div>
+        <div>
+          <div class="brand-logo-name">GPN</div>
+          <div class="brand-logo-sub">Pinturas y Recubrimientos</div>
+        </div>
+      </div>
+
+      <div class="brand-body">
+        <div class="brand-headline">Recupera tus facturas<br>en segundos</div>
+        <div class="brand-desc">
+          Sube tu ticket de OXXO y nuestro sistema genera tu factura automáticamente usando inteligencia artificial.
+        </div>
+        <div class="brand-features">
+          <div class="brand-feature"><div class="brand-feature-dot"></div>OCR con Claude Vision AI</div>
+          <div class="brand-feature"><div class="brand-feature-dot"></div>Facturación automática en OXXO</div>
+          <div class="brand-feature"><div class="brand-feature-dot"></div>Descarga XML y PDF al instante</div>
+          <div class="brand-feature"><div class="brand-feature-dot"></div>Historial completo de facturas</div>
+        </div>
+      </div>
+
+      <div class="brand-footer">© 2026 GPN Pinturas y Recubrimientos</div>
     </div>
 
-    <div id="formRegister" class="form">
-      <input type="text" id="regNombre" placeholder="Nombre completo">
-      <input type="email" id="regEmail" placeholder="Correo electrónico">
-      <input type="password" id="regPass" placeholder="Contraseña">
-      <button onclick="register()">Crear cuenta</button>
-      <div class="toggle">¿Ya tienes cuenta? <span onclick="toggle()">Inicia sesión</span></div>
+    <!-- RIGHT: Form -->
+    <div class="login-form-panel">
+      <div class="form-eyebrow">Portal Facturas</div>
+      <div class="form-title">Bienvenido</div>
+      <div class="form-sub">Ingresa a tu portal para recuperar facturas</div>
+
+      <div class="form-toggle">
+        <button class="toggle-btn active" id="btn-tab-login" onclick="showForm('login', this)">Iniciar sesión</button>
+        <button class="toggle-btn" id="btn-tab-register" onclick="showForm('register', this)">Crear cuenta</button>
+      </div>
+
+      <!-- Login form -->
+      <div class="form-section active" id="form-login">
+        <div id="login-error" class="alert alert-error"></div>
+        <div class="form-group">
+          <label class="label">Correo electrónico</label>
+          <input type="email" id="login-email" class="input" placeholder="tu@empresa.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label class="label">Contraseña</label>
+          <input type="password" id="login-password" class="input" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-login" onclick="doLogin()">Iniciar sesión</button>
+      </div>
+
+      <!-- Register form -->
+      <div class="form-section" id="form-register">
+        <div id="reg-error" class="alert alert-error"></div>
+        <div id="reg-success" class="alert alert-success"></div>
+        <div class="form-group">
+          <label class="label">Nombre completo</label>
+          <input type="text" id="reg-nombre" class="input" placeholder="Carlos Guerra" autocomplete="name">
+        </div>
+        <div class="form-group">
+          <label class="label">Correo electrónico</label>
+          <input type="email" id="reg-email" class="input" placeholder="tu@empresa.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label class="label">Contraseña</label>
+          <input type="password" id="reg-password" class="input" placeholder="Mínimo 6 caracteres" autocomplete="new-password">
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-register" onclick="doRegister()">Crear cuenta</button>
+      </div>
     </div>
 
-    <p class="msg" id="msg"></p>
   </div>
 
   <script>
-    function toggle() {
-      document.getElementById("formLogin").classList.toggle("active");
-      document.getElementById("formRegister").classList.toggle("active");
-      document.getElementById("msg").textContent = "";
+    function showForm(type, btn) {
+      document.querySelectorAll('.form-section').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('form-' + type).classList.add('active');
+      btn.classList.add('active');
     }
 
-    async function login() {
-      const email = document.getElementById("loginEmail").value;
-      const password = document.getElementById("loginPass").value;
-      const res = await fetch("/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (data.ok) window.location.href = "/dashboard";
-      else document.getElementById("msg").textContent = data.msg;
+    async function doLogin() {
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      const err = document.getElementById('login-error');
+      const btn = document.getElementById('btn-login');
+      err.style.display = 'none';
+
+      if (!email || !password) {
+        err.textContent = 'Por favor completa todos los campos';
+        err.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Entrando...';
+
+      try {
+        const res = await fetch('/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          window.location.href = '/dashboard';
+        } else {
+          err.textContent = data.msg || 'Credenciales incorrectas';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Iniciar sesión';
+        }
+      } catch {
+        err.textContent = 'Error de conexión. Intenta de nuevo.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Iniciar sesión';
+      }
     }
 
-    async function register() {
-      const nombre = document.getElementById("regNombre").value;
-      const email = document.getElementById("regEmail").value;
-      const password = document.getElementById("regPass").value;
-      const res = await fetch("/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre, email, password })
-      });
-      const data = await res.json();
-      if (data.ok) { document.getElementById("msg").style.color = "#7AC142"; document.getElementById("msg").textContent = "Cuenta creada, inicia sesión"; toggle(); }
-      else document.getElementById("msg").textContent = data.msg;
+    async function doRegister() {
+      const nombre = document.getElementById('reg-nombre').value.trim();
+      const email = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-password').value;
+      const err = document.getElementById('reg-error');
+      const suc = document.getElementById('reg-success');
+      const btn = document.getElementById('btn-register');
+      err.style.display = 'none';
+      suc.style.display = 'none';
+
+      if (!nombre || !email || !password) {
+        err.textContent = 'Por favor completa todos los campos';
+        err.style.display = 'block';
+        return;
+      }
+      if (password.length < 6) {
+        err.textContent = 'La contraseña debe tener al menos 6 caracteres';
+        err.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Creando cuenta...';
+
+      try {
+        const res = await fetch('/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre, email, password })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          suc.textContent = '¡Cuenta creada! Inicia sesión para continuar.';
+          suc.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Crear cuenta';
+          setTimeout(() => showForm('login', document.getElementById('btn-tab-login')), 1800);
+        } else {
+          err.textContent = data.msg || 'Error al crear la cuenta';
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Crear cuenta';
+        }
+      } catch {
+        err.textContent = 'Error de conexión. Intenta de nuevo.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'Crear cuenta';
+      }
     }
+
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      if (document.getElementById('form-login').classList.contains('active')) doLogin();
+      else doRegister();
+    });
   </script>
 </body>
 </html>

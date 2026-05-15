@@ -30,6 +30,18 @@ const db = mysql.createPool({
 
 app.use(express.static(path.join(__dirname, "public")));
 
+// ── MIGRACIÓN DB ──
+async function initDB() {
+  try {
+    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS rol ENUM('admin','residente') NOT NULL DEFAULT 'residente'");
+    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS creado_por INT NULL");
+    console.log("✅ DB schema actualizado (rol, creado_por)");
+  } catch (e) {
+    console.log("ℹ️  DB migration:", e.message);
+  }
+}
+initDB();
+
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
@@ -58,7 +70,7 @@ app.post("/register", async (req, res) => {
   try {
     const { nombre, email, password } = req.body;
     const hashed = await bcrypt.hash(password, 10);
-    await db.query("INSERT INTO users (nombre, email, password_hash) VALUES (?, ?, ?)", [nombre, email, hashed]);
+    await db.query("INSERT INTO users (nombre, email, password_hash, rol) VALUES (?, ?, ?, 'residente')", [nombre, email, hashed]);
     res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
@@ -76,6 +88,7 @@ app.post("/login", async (req, res) => {
     req.session.userId = rows[0].id;
     req.session.userName = rows[0].nombre;
     req.session.userRfc = rows[0].rfc || "";
+    req.session.userRol = rows[0].rol || "residente";
     res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
@@ -83,7 +96,7 @@ app.post("/login", async (req, res) => {
 });
 
 app.get("/api/me", auth, (req, res) => {
-  res.json({ id: req.session.userId, nombre: req.session.userName, rfc: req.session.userRfc });
+  res.json({ id: req.session.userId, nombre: req.session.userName, rfc: req.session.userRfc, rol: req.session.userRol });
 });
 
 app.get("/logout", (req, res) => req.session.destroy(() => res.redirect("/")));
