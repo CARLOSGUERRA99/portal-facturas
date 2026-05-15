@@ -30,12 +30,22 @@
       </div>
     </a>
     <div class="nav-links">
-      <a href="/dashboard" class="nav-link" data-page="dashboard">Inicio</a>
-      <a href="/mis-tickets" class="nav-link active" data-page="mis-tickets">Mis Tickets</a>
-      <a href="/mis-facturas" class="nav-link" data-page="mis-facturas">Mis Facturas</a>
-      <a href="/perfil" class="nav-link" data-page="perfil">Mi Perfil</a>
+      <a href="/dashboard" class="nav-link">Inicio</a>
+      <a href="/mis-tickets" class="nav-link active">Mis Tickets</a>
+      <a href="/mis-facturas" class="nav-link">Mis Facturas</a>
+      <a href="/perfil" class="nav-link">Mi Perfil</a>
+      <a href="/admin-residentes" class="nav-link" id="nav-admin" style="display:none;">Admin</a>
     </div>
     <div class="nav-right">
+      <div class="residente-selector" id="residente-selector" style="display:none;">
+        <div class="residente-pill" onclick="toggleResidenteDropdown(event)">
+          <span id="residente-activo-nombre">Todos</span>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="residente-dropdown" id="residente-dropdown">
+          <div class="residente-dropdown-header">Ver residente</div>
+        </div>
+      </div>
       <div class="nav-avatar" id="nav-avatar">?</div>
       <span class="nav-name" id="nav-name">...</span>
       <a href="/logout" class="nav-logout">Salir</a>
@@ -70,6 +80,9 @@
   </div>
 
   <script>
+    let activeResidenteId = sessionStorage.getItem('activeResidenteId') || null;
+    let activeResidenteNombre = sessionStorage.getItem('activeResidenteNombre') || 'Todos';
+
     async function initNav() {
       try {
         const res = await fetch('/api/me');
@@ -77,11 +90,50 @@
         const initials = (me.nombre || '').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?';
         document.getElementById('nav-avatar').textContent = initials;
         document.getElementById('nav-name').textContent = me.nombre || '';
+        if (me.rol === 'admin') document.getElementById('nav-admin').style.display = 'inline-flex';
+        await initResidenteSelector();
       } catch {}
     }
 
+    async function initResidenteSelector() {
+      const res = await fetch('/api/residentes');
+      const data = await res.json();
+      if (!data.ok || data.residentes.length <= 1) return;
+      const selector = document.getElementById('residente-selector');
+      selector.style.display = 'block';
+      document.getElementById('residente-activo-nombre').textContent = activeResidenteNombre;
+      const dropdown = document.getElementById('residente-dropdown');
+      const opts = [
+        `<div class="residente-option ${!activeResidenteId ? 'active' : ''}" onclick="seleccionarResidente(null,'Todos')"><span class="r-dot"></span>Todos</div>`
+      ].concat(data.residentes.map(r =>
+        `<div class="residente-option ${activeResidenteId == r.id ? 'active' : ''}" onclick="seleccionarResidente(${r.id},'${r.nombre}')"><span class="r-dot"></span>${r.nombre}</div>`
+      ));
+      dropdown.innerHTML = '<div class="residente-dropdown-header">Ver residente</div>' + opts.join('');
+    }
+
+    function toggleResidenteDropdown(e) {
+      e.stopPropagation();
+      document.getElementById('residente-dropdown').classList.toggle('open');
+    }
+
+    function seleccionarResidente(id, nombre) {
+      activeResidenteId = id ? String(id) : null;
+      activeResidenteNombre = nombre;
+      id ? sessionStorage.setItem('activeResidenteId', id) : sessionStorage.removeItem('activeResidenteId');
+      sessionStorage.setItem('activeResidenteNombre', nombre);
+      document.getElementById('residente-activo-nombre').textContent = nombre;
+      document.getElementById('residente-dropdown').classList.remove('open');
+      cargarTickets();
+    }
+
+    document.addEventListener('click', e => {
+      const sel = document.getElementById('residente-selector');
+      if (sel && !sel.contains(e.target)) document.getElementById('residente-dropdown').classList.remove('open');
+    });
+
     async function cargarTickets() {
-      const res = await fetch('/api/tickets');
+      const url = '/api/tickets' + (activeResidenteId ? `?residente_id=${activeResidenteId}` : '');
+      const res = await fetch(url);
       const data = await res.json();
       const lista = document.getElementById('lista');
 
@@ -171,7 +223,7 @@
     }
 
     initNav();
-    cargarTickets();
+    cargarTickets();  // initNav already calls initResidenteSelector, cargarTickets runs independently
   </script>
 </body>
 </html>

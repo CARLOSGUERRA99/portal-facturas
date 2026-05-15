@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Administración — GPN Portal Facturas</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .admin-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start; }
+
+    /* Employee cards */
+    .empleado-card {
+      background: white;
+      border-radius: var(--card-radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+    .empleado-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 18px 20px;
+      border-bottom: 1px solid #f0f4ec;
+    }
+    .empleado-avatar {
+      width: 44px; height: 44px;
+      background: var(--green-light);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.9rem; color: var(--green);
+      flex-shrink: 0;
+    }
+    .empleado-info { flex: 1; min-width: 0; }
+    .empleado-name { font-weight: 700; font-size: 0.95rem; color: var(--text); }
+    .empleado-email { font-size: 0.78rem; color: var(--text-muted); }
+    .empleado-body { padding: 16px 20px; }
+    .empleado-residentes-title {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 10px;
+    }
+    .residentes-asignados { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; min-height: 28px; }
+    .residente-tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--green-light); color: var(--green);
+      padding: 5px 10px 5px 12px;
+      border-radius: 20px; font-size: 0.8rem; font-weight: 600;
+    }
+    .tag-remove {
+      width: 18px; height: 18px;
+      background: rgba(59,109,17,0.15); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 12px; line-height: 1;
+      transition: background 0.15s; border: none; color: var(--green);
+    }
+    .tag-remove:hover { background: rgba(59,109,17,0.3); }
+    .no-asignados { font-size: 0.82rem; color: var(--text-muted); font-style: italic; }
+
+    .assign-row { display: flex; gap: 8px; align-items: center; }
+    .assign-row select { flex: 1; }
+
+    /* Resident catalog */
+    .residente-catalog-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f0f4ec;
+    }
+    .residente-catalog-item:last-child { border-bottom: none; }
+    .rc-name { font-weight: 600; font-size: 0.875rem; }
+    .rc-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+
+    /* Create form */
+    .create-form { display: none; background: var(--bg); border-radius: 12px; padding: 16px; margin-top: 16px; }
+    .create-form.open { display: block; }
+
+    @media (max-width: 900px) {
+      .admin-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <a href="/dashboard" class="nav-brand">
+      <div class="nav-brand-icon">🎨</div>
+      <div>
+        <div class="nav-brand-name">GPN</div>
+        <div class="nav-brand-sub">Pinturas y Recubrimientos</div>
+      </div>
+    </a>
+    <div class="nav-links">
+      <a href="/dashboard" class="nav-link">Inicio</a>
+      <a href="/mis-tickets" class="nav-link">Mis Tickets</a>
+      <a href="/mis-facturas" class="nav-link">Mis Facturas</a>
+      <a href="/admin-residentes" class="nav-link active">Admin</a>
+    </div>
+    <div class="nav-right">
+      <div class="nav-avatar" id="nav-avatar">A</div>
+      <span class="nav-name" id="nav-name">Admin</span>
+      <a href="/logout" class="nav-logout">Salir</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <div class="page-title">Panel de Administración</div>
+      <div class="page-subtitle">Gestiona empleados y asignación de residentes</div>
+    </div>
+
+    <div id="main-alert" class="alert"></div>
+
+    <div class="admin-grid">
+
+      <!-- LEFT: Empleados -->
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <div class="card-title" style="font-size:0.85rem;font-weight:700;color:var(--text);">Empleados registrados</div>
+          <span id="empleados-count" style="font-size:0.8rem;color:var(--text-muted);font-weight:600;"></span>
+        </div>
+        <div id="empleados-lista">
+          <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-title">Cargando...</div></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Catálogo de residentes -->
+      <div>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Catálogo de residentes</div>
+            <button class="btn btn-primary btn-sm" onclick="toggleCreateForm()">+ Nuevo</button>
+          </div>
+
+          <div class="create-form" id="create-form">
+            <div class="form-group">
+              <label class="label">Nombre del residente</label>
+              <input type="text" id="nuevo-nombre" class="input" placeholder="Ej. Juan Pérez">
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:10px;">
+              <input type="checkbox" id="nuevo-disponible" checked style="width:auto;">
+              <label for="nuevo-disponible" class="label" style="margin:0;cursor:pointer;">Disponible para asignar</label>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="crearResidente()">Crear residente</button>
+          </div>
+
+          <div id="residentes-catalog" style="margin-top:4px;">
+            <div class="empty-state" style="padding:24px;">
+              <div class="empty-icon" style="font-size:28px;">⏳</div>
+              <div class="empty-title">Cargando...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let allResidentes = [];
+    let allEmpleados = [];
+
+    async function init() {
+      try {
+        const meRes = await fetch('/api/me');
+        const me = await meRes.json();
+        const initials = (me.nombre || '').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'A';
+        document.getElementById('nav-avatar').textContent = initials;
+        document.getElementById('nav-name').textContent = me.nombre || '';
+      } catch {}
+
+      await Promise.all([cargarEmpleados(), cargarResidentes()]);
+    }
+
+    async function cargarResidentes() {
+      const res = await fetch('/api/residentes');
+      const data = await res.json();
+      if (!data.ok) return;
+      allResidentes = data.residentes;
+      renderCatalog();
+    }
+
+    async function cargarEmpleados() {
+      const res = await fetch('/api/admin/usuarios');
+      const data = await res.json();
+      if (!data.ok) return;
+      allEmpleados = data.usuarios;
+      renderEmpleados();
+    }
+
+    function renderCatalog() {
+      const el = document.getElementById('residentes-catalog');
+      if (!allResidentes.length) {
+        el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-muted);font-size:0.875rem;">Sin residentes</div>';
+        return;
+      }
+      el.innerHTML = allResidentes.map(r => {
+        const disponibleBadge = r.disponible
+          ? '<span class="badge badge-success" style="font-size:0.7rem;">Disponible</span>'
+          : '<span class="badge badge-pending" style="font-size:0.7rem;">No disponible</span>';
+        const asignadoA = r.asignados_a
+          ? `<div class="rc-meta">Asignado a: ${r.asignados_a}</div>`
+          : '<div class="rc-meta" style="color:#bbb;">Sin asignar</div>';
+        return `
+          <div class="residente-catalog-item">
+            <div>
+              <div class="rc-name">${r.nombre}</div>
+              ${asignadoA}
+            </div>
+            ${disponibleBadge}
+          </div>`;
+      }).join('');
+    }
+
+    function renderEmpleados() {
+      const lista = document.getElementById('empleados-lista');
+      document.getElementById('empleados-count').textContent = `${allEmpleados.length} usuario${allEmpleados.length !== 1 ? 's' : ''}`;
+
+      if (!allEmpleados.length) {
+        lista.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin empleados registrados</div></div>`;
+        return;
+      }
+
+      lista.innerHTML = allEmpleados.map(u => {
+        const initials = u.nombre.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        const rolBadge = u.rol === 'admin'
+          ? '<span class="badge badge-success">Admin</span>'
+          : '<span class="badge badge-processing">Residente</span>';
+
+        const tagsHtml = u.residentes.length
+          ? u.residentes.map(r => `
+              <span class="residente-tag">
+                ${r.nombre}
+                <button class="tag-remove" onclick="quitarResidente(${r.id}, ${u.id}, this)" title="Quitar">×</button>
+              </span>`).join('')
+          : '<span class="no-asignados">Sin residentes asignados</span>';
+
+        // Available residents not yet assigned to this user
+        const asignadosIds = new Set(u.residentes.map(r => r.id));
+        const disponibles = allResidentes.filter(r => r.disponible && !asignadosIds.has(r.id));
+        const selectHtml = disponibles.length
+          ? `<select id="sel-${u.id}" class="input" style="font-size:0.82rem;padding:8px 12px;">
+              <option value="">Seleccionar residente...</option>
+              ${disponibles.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('')}
+             </select>
+             <button class="btn btn-primary btn-sm" onclick="asignarResidente(${u.id})">Asignar</button>`
+          : `<span style="font-size:0.8rem;color:var(--text-muted);">Sin residentes disponibles</span>`;
+
+        return `
+          <div class="empleado-card" id="card-usuario-${u.id}">
+            <div class="empleado-header">
+              <div class="empleado-avatar">${initials}</div>
+              <div class="empleado-info">
+                <div class="empleado-name">${u.nombre}</div>
+                <div class="empleado-email">${u.email}</div>
+              </div>
+              ${rolBadge}
+            </div>
+            <div class="empleado-body">
+              <div class="empleado-residentes-title">Residentes asignados</div>
+              <div class="residentes-asignados" id="tags-${u.id}">${tagsHtml}</div>
+              <div class="assign-row">${selectHtml}</div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function asignarResidente(userId) {
+      const sel = document.getElementById(`sel-${userId}`);
+      const residenteId = sel?.value;
+      if (!residenteId) return showAlert('Selecciona un residente', 'error');
+
+      const res = await fetch(`/api/residentes/${residenteId}/asignar/${userId}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        showAlert('Residente asignado correctamente', 'success');
+        await Promise.all([cargarEmpleados(), cargarResidentes()]);
+      } else {
+        showAlert(data.msg || 'Error al asignar', 'error');
+      }
+    }
+
+    async function quitarResidente(residenteId, userId, btn) {
+      btn.disabled = true;
+      const res = await fetch(`/api/residentes/${residenteId}/quitar/${userId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        showAlert('Residente quitado', 'success');
+        await Promise.all([cargarEmpleados(), cargarResidentes()]);
+      } else {
+        showAlert(data.msg || 'Error al quitar', 'error');
+        btn.disabled = false;
+      }
+    }
+
+    async function crearResidente() {
+      const nombre = document.getElementById('nuevo-nombre').value.trim();
+      const disponible = document.getElementById('nuevo-disponible').checked;
+      if (!nombre) return showAlert('Ingresa el nombre del residente', 'error');
+
+      const res = await fetch('/api/residentes/crear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, disponible })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        document.getElementById('nuevo-nombre').value = '';
+        showAlert(`Residente "${nombre}" creado`, 'success');
+        toggleCreateForm();
+        await Promise.all([cargarEmpleados(), cargarResidentes()]);
+      } else {
+        showAlert(data.msg || 'Error al crear', 'error');
+      }
+    }
+
+    function toggleCreateForm() {
+      document.getElementById('create-form').classList.toggle('open');
+    }
+
+    function showAlert(msg, type) {
+      const el = document.getElementById('main-alert');
+      el.className = `alert alert-${type}`;
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 3500);
+    }
+
+    init();
+  </script>
+</body>
+</html>

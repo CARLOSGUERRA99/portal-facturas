@@ -35,10 +35,11 @@
       </div>
     </a>
     <div class="nav-links">
-      <a href="/dashboard" class="nav-link" data-page="dashboard">Inicio</a>
-      <a href="/mis-tickets" class="nav-link" data-page="mis-tickets">Mis Tickets</a>
-      <a href="/mis-facturas" class="nav-link" data-page="mis-facturas">Mis Facturas</a>
-      <a href="/perfil" class="nav-link active" data-page="perfil">Mi Perfil</a>
+      <a href="/dashboard" class="nav-link">Inicio</a>
+      <a href="/mis-tickets" class="nav-link">Mis Tickets</a>
+      <a href="/mis-facturas" class="nav-link">Mis Facturas</a>
+      <a href="/perfil" class="nav-link active">Mi Perfil</a>
+      <a href="/admin-residentes" class="nav-link" id="nav-admin" style="display:none;">Admin</a>
     </div>
     <div class="nav-right">
       <div class="nav-avatar" id="nav-avatar">?</div>
@@ -188,6 +189,7 @@
         const initials = (me.nombre || '').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?';
         document.getElementById('nav-avatar').textContent = initials;
         document.getElementById('nav-name').textContent = me.nombre || '';
+        if (me.rol === 'admin') document.getElementById('nav-admin').style.display = 'inline-flex';
       } catch {}
     }
 
