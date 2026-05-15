@@ -317,11 +317,17 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log('✅ Estado seleccionado, esperando Régimen Fiscal...');
 
     // Keepalive mientras el portal carga las opciones de régimen
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(800);
     await page.mouse.move(400, 300);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(800);
+    await page.mouse.move(500, 300);
+    await page.waitForTimeout(800);
     await page.mouse.move(400, 400);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(800);
+    await page.mouse.move(500, 400);
+    await page.waitForTimeout(800);
+    await page.mouse.move(450, 350);
+    await page.waitForTimeout(800);
 
     // Régimen fiscal — esperar que se habilite y tenga opciones
     await page.waitForFunction(() => {
@@ -332,9 +338,13 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log('✅ Régimen fiscal, esperando Uso CFDI...');
 
     // Keepalive mientras el portal carga las opciones de uso CFDI
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(500);
     await page.mouse.move(400, 300);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(500);
+    await page.mouse.move(500, 300);
+    await page.waitForTimeout(500);
+    await page.mouse.move(400, 400);
+    await page.waitForTimeout(500);
 
     // Uso CFDI — esperar que se habilite y tenga opciones
     await page.waitForFunction(() => {
