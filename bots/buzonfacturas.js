@@ -27,6 +27,137 @@ function downloadFile(url, destPath) {
   });
 }
 
+// ── Helper: descarga iconos en tabla DescargarFactura ──
+async function runEstrategiaB({ page, rfc, ts, xmlDest, pdfDest, folioHint }) {
+  console.log("📥 Estrategia B — Recuperar factura desde DescargarFactura...");
+
+  // Extraer folio de la página actual si no viene del caller
+  let folio = folioHint || null;
+  if (!folio) {
+    folio = await page.evaluate(() => {
+      const el = document.querySelector(
+        'input#FolioFactura, input[name="FolioFactura"], input[id*="folio" i], input[name*="folio" i]'
+      );
+      if (el && el.value) return el.value.trim();
+      const match = document.body.innerText.match(/[A-Z]{2,6}-\d{6,10}/);
+      return match ? match[0] : null;
+    });
+  }
+  console.log("🔍 Folio para DescargarFactura:", folio);
+  if (!folio) throw new Error("No se pudo extraer el folio de factura de la página");
+
+  await page.goto("https://buzonfacturas.com/CFDI/DescargarFactura", {
+    waitUntil: "networkidle2",
+    timeout: 20000,
+  });
+  console.log("🌐 Navegado a DescargarFactura");
+  console.log(`   RFC: ${rfc} | Folio: ${folio} (la página los carga automáticamente)`);
+
+  // Esperar tabla con resultados
+  await page.waitForSelector("table tbody tr", { timeout: 10000 });
+  console.log("📋 Tabla de facturas visible");
+
+  const ssB = await page.screenshot({ encoding: "base64" });
+  console.log("📸 Screenshot B — tabla DescargarFactura");
+
+  // ── Click icono 1 (PDF) ──
+  console.log("📄 B: Interceptando click en icono PDF (1er icono)...");
+  const pdfResponsePromise = page.waitForResponse(
+    r => r.status() === 200 && (
+      r.headers()["content-type"]?.includes("pdf") ||
+      r.headers()["content-type"]?.includes("xml") ||
+      r.headers()["content-type"]?.includes("zip") ||
+      r.headers()["content-disposition"]?.includes("attachment")
+    ),
+    { timeout: 15000 }
+  ).catch(() => null);
+
+  await page.click(
+    "table tbody tr:first-child td:last-child img:first-child, " +
+    "table tbody tr:first-child td.opciones a:first-child, " +
+    "table tbody tr:first-child td:last-child a:first-child"
+  );
+  const pdfResponse = await pdfResponsePromise;
+
+  if (pdfResponse) {
+    const ct = pdfResponse.headers()["content-type"] || "";
+    const cd = pdfResponse.headers()["content-disposition"] || "";
+    const buf = await pdfResponse.buffer();
+    console.log(`📦 B: icono1 — content-type: ${ct} | disposition: ${cd} | ${buf.length} bytes`);
+
+    if (ct.includes("zip") || pdfResponse.url().includes(".zip")) {
+      const dir = await unzipper.Open.buffer(buf);
+      for (const entry of dir.files) {
+        const name = entry.path.toLowerCase();
+        if (name.endsWith(".xml") && !fs.existsSync(xmlDest)) {
+          fs.writeFileSync(xmlDest, await entry.buffer());
+          console.log("✅ B: XML extraído del ZIP (icono1)");
+        } else if (name.endsWith(".pdf") && !fs.existsSync(pdfDest)) {
+          fs.writeFileSync(pdfDest, await entry.buffer());
+          console.log("✅ B: PDF extraído del ZIP (icono1)");
+        }
+      }
+    } else if (ct.includes("pdf") || cd.toLowerCase().includes(".pdf")) {
+      if (!fs.existsSync(pdfDest)) fs.writeFileSync(pdfDest, buf);
+      console.log("✅ B: PDF guardado (icono1)");
+    } else if (ct.includes("xml") || cd.toLowerCase().includes(".xml")) {
+      if (!fs.existsSync(xmlDest)) fs.writeFileSync(xmlDest, buf);
+      console.log("✅ B: XML guardado (icono1)");
+    }
+  } else {
+    console.log("⚠️ B: no se interceptó respuesta del primer icono");
+  }
+
+  // ── Click icono 2 (XML) ──
+  console.log("📄 B: Interceptando click en icono XML (2do icono)...");
+  const xmlResponsePromise = page.waitForResponse(
+    r => r.status() === 200 && (
+      r.headers()["content-type"]?.includes("xml") ||
+      r.headers()["content-type"]?.includes("zip") ||
+      r.headers()["content-disposition"]?.includes("attachment")
+    ),
+    { timeout: 15000 }
+  ).catch(() => null);
+
+  await page.click(
+    "table tbody tr:first-child td:last-child img:nth-child(2), " +
+    "table tbody tr:first-child td.opciones a:nth-child(2), " +
+    "table tbody tr:first-child td:last-child a:nth-child(2)"
+  );
+  const xmlResponse = await xmlResponsePromise;
+
+  if (xmlResponse) {
+    const ct = xmlResponse.headers()["content-type"] || "";
+    const cd = xmlResponse.headers()["content-disposition"] || "";
+    const buf = await xmlResponse.buffer();
+    console.log(`📦 B: icono2 — content-type: ${ct} | disposition: ${cd} | ${buf.length} bytes`);
+
+    if (ct.includes("zip") || xmlResponse.url().includes(".zip")) {
+      const dir = await unzipper.Open.buffer(buf);
+      for (const entry of dir.files) {
+        const name = entry.path.toLowerCase();
+        if (name.endsWith(".xml") && !fs.existsSync(xmlDest)) {
+          fs.writeFileSync(xmlDest, await entry.buffer());
+          console.log("✅ B: XML extraído del ZIP (icono2)");
+        } else if (name.endsWith(".pdf") && !fs.existsSync(pdfDest)) {
+          fs.writeFileSync(pdfDest, await entry.buffer());
+          console.log("✅ B: PDF extraído del ZIP (icono2)");
+        }
+      }
+    } else if (ct.includes("xml") || cd.toLowerCase().includes(".xml")) {
+      if (!fs.existsSync(xmlDest)) fs.writeFileSync(xmlDest, buf);
+      console.log("✅ B: XML guardado (icono2)");
+    }
+  } else {
+    console.log("⚠️ B: no se interceptó respuesta del segundo icono");
+  }
+
+  if (!fs.existsSync(xmlDest) && !fs.existsSync(pdfDest)) {
+    throw new Error("Estrategia B: clicks en iconos realizados pero no se guardaron archivos");
+  }
+  console.log("✅ Estrategia B exitosa");
+}
+
 async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
   console.log("🤖 Iniciando bot BuzonFacturas...");
   console.log(`   RFC: ${rfc} | Código: ${codigoTicket} | Email: ${email}`);
@@ -41,18 +172,14 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   );
 
-  // Interceptar URLs de descarga que dispare el navegador
+  // Interceptar URLs de descarga pasivas
   let downloadedXmlUrl = null;
   let downloadedPdfUrl = null;
   page.on("response", async (response) => {
     const url = response.url();
     const ct = response.headers()["content-type"] || "";
-    if (ct.includes("application/xml") || url.toLowerCase().includes(".xml")) {
-      downloadedXmlUrl = url;
-    }
-    if (ct.includes("application/pdf") || url.toLowerCase().includes(".pdf")) {
-      downloadedPdfUrl = url;
-    }
+    if (ct.includes("application/xml") || url.toLowerCase().includes(".xml")) downloadedXmlUrl = url;
+    if (ct.includes("application/pdf") || url.toLowerCase().includes(".pdf")) downloadedPdfUrl = url;
   });
 
   try {
@@ -82,14 +209,10 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
       }
     }
     if (!rfcSel) {
-      // Fallback: primer input[type=text] visible
       const found = await page.evaluate(() => {
         const inputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
         const visible = inputs.find(el => el.offsetParent !== null);
-        if (visible) {
-          visible.setAttribute('data-rfc-fallback', '1');
-          return true;
-        }
+        if (visible) { visible.setAttribute('data-rfc-fallback', '1'); return true; }
         return false;
       });
       if (found) {
@@ -127,7 +250,6 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
       const btns = Array.from(document.querySelectorAll("button.btn-success, input.btn-success"));
       const btn = btns.find(b => /guardar.*continuar|guardar\s+y\s+continuar/i.test(b.textContent || b.value || ""));
       if (btn) { btn.click(); return true; }
-      // Fallback: primer btn-success disponible
       if (btns.length) { btns[0].click(); return true; }
       return false;
     });
@@ -156,15 +278,49 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
     });
     if (!verificado) throw new Error("No se encontró botón Verificar");
 
-    console.log("⏳ Esperando confirmación de verificación (Estación / Fecha / Número de venta)...");
+    // Esperar confirmación OR mensaje de ya-facturado
+    console.log("⏳ Esperando respuesta del portal tras Verificar...");
     await page.waitForFunction(
-      () => /estaci[oó]n|n[uú]mero de venta|fecha/i.test(document.body.innerText || ""),
+      () => /estaci[oó]n|n[uú]mero de venta|ya fue facturado|ya existe una factura|ticket ya procesado|ya facturado|factura.*generada/i
+            .test(document.body.innerText || ""),
       { timeout: 15000 }
     );
-    console.log("✅ Ticket verificado correctamente");
+
+    // Detectar si el ticket ya estaba facturado
+    const yaFacturado = await page.evaluate(() =>
+      /ya fue facturado|ya existe una factura|ticket ya procesado|ya facturado/i
+        .test(document.body.innerText || "")
+    );
 
     const ss2 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 2 — después de verificar código");
+    console.log("📸 Screenshot 2 — respuesta tras Verificar");
+
+    if (yaFacturado) {
+      console.log("⚠️ Ticket ya facturado, saltando a recuperador...");
+      // Intentar extraer folio visible en el mensaje
+      const folioHint = await page.evaluate(() => {
+        const match = document.body.innerText.match(/[A-Z]{2,6}-\d{6,10}/);
+        return match ? match[0] : null;
+      });
+      console.log("🔍 Folio encontrado en página:", folioHint);
+
+      const ts = Date.now();
+      const xmlDest = path.join(facturasDir, `${ts}.xml`);
+      const pdfDest = path.join(facturasDir, `${ts}.pdf`);
+
+      await runEstrategiaB({ page, rfc, ts, xmlDest, pdfDest, folioHint });
+
+      const xmlOk = fs.existsSync(xmlDest);
+      const pdfOk = fs.existsSync(pdfDest);
+      await browser.close();
+      return {
+        ok: true,
+        xml: xmlOk ? `/facturas/${ts}.xml` : null,
+        pdf: pdfOk ? `/facturas/${ts}.pdf` : null,
+      };
+    }
+
+    console.log("✅ Ticket verificado correctamente");
 
     // ── PASO 4: Forma de pago → Tarjeta de débito (valor 28) ──
     console.log("💳 PASO 4 — Seleccionando forma de pago (débito)...");
@@ -172,7 +328,6 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
       const selects = document.querySelectorAll("select");
       for (const sel of selects) {
         const name = (sel.name || sel.id || "").toLowerCase();
-        // Saltar selects de Uso CFDI
         if (name.includes("uso") || name.includes("cfdi")) continue;
         const opts = Array.from(sel.options);
         const debito = opts.find(o => o.value === "28") || opts.find(o => /d[eé]bito/i.test(o.text));
@@ -192,7 +347,6 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
       const all = Array.from(document.querySelectorAll("button, input[type='submit']"));
       const btn = all.find(b => /generar.*factura|generar\s+cfdi/i.test(b.textContent || b.value || ""));
       if (btn) { btn.click(); return (btn.textContent || btn.value || "").trim(); }
-      // Fallback: btn-success que no sea Verificar/Buscar
       const fallback = all.find(b =>
         b.classList.contains("btn-success") &&
         !/verificar|buscar/i.test(b.textContent || b.value || "")
@@ -285,18 +439,15 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
         console.log(`📦 Respuesta interceptada: ${ct} — ${buf.length} bytes`);
 
         if (ct.includes("zip") || dlResponse.url().includes(".zip")) {
-          // ZIP: extraer XML y PDF
           console.log("📦 Formato ZIP detectado — extrayendo archivos...");
           const dir = await unzipper.Open.buffer(buf);
           for (const entry of dir.files) {
             const name = entry.path.toLowerCase();
             if (name.endsWith(".xml")) {
-              const content = await entry.buffer();
-              fs.writeFileSync(xmlDest, content);
+              fs.writeFileSync(xmlDest, await entry.buffer());
               console.log(`✅ XML extraído del ZIP: ${entry.path}`);
             } else if (name.endsWith(".pdf")) {
-              const content = await entry.buffer();
-              fs.writeFileSync(pdfDest, content);
+              fs.writeFileSync(pdfDest, await entry.buffer());
               console.log(`✅ PDF extraído del ZIP: ${entry.path}`);
             }
           }
@@ -308,7 +459,7 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
           console.log("✅ PDF guardado directamente");
         }
 
-        // Si falta PDF, intentar también el botón Descargar PDF
+        // Si falta PDF, intentar botón Descargar PDF
         if (!fs.existsSync(pdfDest)) {
           const pdfPromise = page.waitForResponse(
             r => r.url().includes(".pdf") || (r.headers()["content-type"] || "").includes("pdf"),
@@ -323,16 +474,13 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
 
           const pdfResp = await pdfPromise;
           if (pdfResp) {
-            const pdfBuf = await pdfResp.buffer();
-            fs.writeFileSync(pdfDest, pdfBuf);
+            fs.writeFileSync(pdfDest, await pdfResp.buffer());
             console.log("✅ PDF descargado en segundo click");
           }
         }
 
         strategyAOk = fs.existsSync(xmlDest) || fs.existsSync(pdfDest);
-        if (strategyAOk) {
-          console.log("✅ Estrategia A exitosa");
-        }
+        if (strategyAOk) console.log("✅ Estrategia A exitosa");
       } else {
         console.log("⚠️ Estrategia A: no se interceptó respuesta de descarga");
       }
@@ -340,139 +488,16 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
       console.log("⚠️ Estrategia A falló:", eA.message);
     }
 
-    // ── ESTRATEGIA B: portal de recuperación DescargarFactura ──
+    // ── ESTRATEGIA B: iconos en tabla DescargarFactura ──
     if (!strategyAOk) {
-      console.log("📥 Estrategia B — Recuperar factura desde DescargarFactura...");
       try {
-        // Extraer folio de la página actual antes de navegar
-        const folio = await page.evaluate(() => {
-          const el = document.querySelector(
-            'input#FolioFactura, input[name="FolioFactura"], input[id*="folio" i], input[name*="folio" i]'
-          );
-          if (el && el.value) return el.value.trim();
-          const match = document.body.innerText.match(/[A-Z]{2,6}-\d{6,10}/);
-          return match ? match[0] : null;
-        });
-        console.log("🔍 Folio extraído:", folio);
-        if (!folio) throw new Error("No se pudo extraer el folio de factura de la página");
-
-        await page.goto("https://buzonfacturas.com/CFDI/DescargarFactura", {
-          waitUntil: "networkidle2",
-          timeout: 20000,
-        });
-        console.log("🌐 Navegado a DescargarFactura");
-        console.log(`✅ RFC ya presente: ${rfc} | Folio: ${folio} (la página los carga automáticamente)`);
-
-        // Esperar que aparezca la tabla con resultados
-        await page.waitForSelector("table tbody tr", { timeout: 10000 });
-        console.log("📋 Tabla de facturas visible");
-
-        const ssB = await page.screenshot({ encoding: "base64" });
-        console.log("📸 Screenshot B — tabla DescargarFactura");
-
-        // ── Descargar PDF (primer icono de la columna Opciones) ──
-        console.log("📄 B: Interceptando click en icono PDF...");
-        const pdfResponsePromise = page.waitForResponse(
-          r => r.status() === 200 && (
-            r.headers()["content-type"]?.includes("pdf") ||
-            r.headers()["content-type"]?.includes("xml") ||
-            r.headers()["content-type"]?.includes("zip") ||
-            r.headers()["content-disposition"]?.includes("attachment")
-          ),
-          { timeout: 15000 }
-        ).catch(() => null);
-
-        await page.click(
-          "table tbody tr:first-child td:last-child img:first-child, " +
-          "table tbody tr:first-child td.opciones a:first-child, " +
-          "table tbody tr:first-child td:last-child a:first-child"
-        );
-        const pdfResponse = await pdfResponsePromise;
-
-        if (pdfResponse) {
-          const ct = pdfResponse.headers()["content-type"] || "";
-          const cd = pdfResponse.headers()["content-disposition"] || "";
-          const buf = await pdfResponse.buffer();
-          console.log(`📦 B: PDF response — content-type: ${ct} | disposition: ${cd} | ${buf.length} bytes`);
-
-          if (ct.includes("zip") || pdfResponse.url().includes(".zip")) {
-            const dir = await unzipper.Open.buffer(buf);
-            for (const entry of dir.files) {
-              const name = entry.path.toLowerCase();
-              if (name.endsWith(".xml") && !fs.existsSync(xmlDest)) {
-                fs.writeFileSync(xmlDest, await entry.buffer());
-                console.log("✅ B: XML extraído del ZIP (click PDF)");
-              } else if (name.endsWith(".pdf") && !fs.existsSync(pdfDest)) {
-                fs.writeFileSync(pdfDest, await entry.buffer());
-                console.log("✅ B: PDF extraído del ZIP (click PDF)");
-              }
-            }
-          } else if (ct.includes("pdf") || cd.toLowerCase().includes(".pdf")) {
-            if (!fs.existsSync(pdfDest)) fs.writeFileSync(pdfDest, buf);
-            console.log("✅ B: PDF guardado");
-          } else if (ct.includes("xml") || cd.toLowerCase().includes(".xml")) {
-            if (!fs.existsSync(xmlDest)) fs.writeFileSync(xmlDest, buf);
-            console.log("✅ B: XML guardado (desde click PDF)");
-          }
-        } else {
-          console.log("⚠️ B: no se interceptó respuesta del primer icono");
-        }
-
-        // ── Descargar XML (segundo icono de la columna Opciones) ──
-        console.log("📄 B: Interceptando click en icono XML...");
-        const xmlResponsePromise = page.waitForResponse(
-          r => r.status() === 200 && (
-            r.headers()["content-type"]?.includes("xml") ||
-            r.headers()["content-type"]?.includes("zip") ||
-            r.headers()["content-disposition"]?.includes("attachment")
-          ),
-          { timeout: 15000 }
-        ).catch(() => null);
-
-        await page.click(
-          "table tbody tr:first-child td:last-child img:nth-child(2), " +
-          "table tbody tr:first-child td.opciones a:nth-child(2), " +
-          "table tbody tr:first-child td:last-child a:nth-child(2)"
-        );
-        const xmlResponse = await xmlResponsePromise;
-
-        if (xmlResponse) {
-          const ct = xmlResponse.headers()["content-type"] || "";
-          const cd = xmlResponse.headers()["content-disposition"] || "";
-          const buf = await xmlResponse.buffer();
-          console.log(`📦 B: XML response — content-type: ${ct} | disposition: ${cd} | ${buf.length} bytes`);
-
-          if (ct.includes("zip") || xmlResponse.url().includes(".zip")) {
-            const dir = await unzipper.Open.buffer(buf);
-            for (const entry of dir.files) {
-              const name = entry.path.toLowerCase();
-              if (name.endsWith(".xml") && !fs.existsSync(xmlDest)) {
-                fs.writeFileSync(xmlDest, await entry.buffer());
-                console.log("✅ B: XML extraído del ZIP (click XML)");
-              } else if (name.endsWith(".pdf") && !fs.existsSync(pdfDest)) {
-                fs.writeFileSync(pdfDest, await entry.buffer());
-                console.log("✅ B: PDF extraído del ZIP (click XML)");
-              }
-            }
-          } else if (ct.includes("xml") || cd.toLowerCase().includes(".xml")) {
-            if (!fs.existsSync(xmlDest)) fs.writeFileSync(xmlDest, buf);
-            console.log("✅ B: XML guardado");
-          }
-        } else {
-          console.log("⚠️ B: no se interceptó respuesta del segundo icono");
-        }
-
-        if (fs.existsSync(xmlDest) || fs.existsSync(pdfDest)) {
-          console.log("✅ Estrategia B exitosa");
-        } else {
-          throw new Error("Estrategia B: se hicieron clicks en iconos pero no se guardaron archivos");
-        }
+        await runEstrategiaB({ page, rfc, ts, xmlDest, pdfDest, folioHint: null });
       } catch (eB) {
         console.log("❌ Estrategia B falló:", eB.message);
         await browser.close();
         return {
           ok: false,
-          msg: `No se pudieron descargar los archivos de factura. Estrategia A y B fallaron. Último error: ${eB.message}`,
+          msg: `No se pudieron descargar los archivos. Estrategia A y B fallaron. Último error: ${eB.message}`,
           screenshot: ss3,
         };
       }
