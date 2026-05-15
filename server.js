@@ -88,11 +88,11 @@ app.get("/api/me", auth, (req, res) => {
 
 app.get("/logout", (req, res) => req.session.destroy(() => res.redirect("/")));
 
-// PERFIL FISCAL
+// PERFIL FISCAL - GET
 app.get("/api/perfil", auth, async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
+      "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
       [req.session.userId]
     );
     res.json({ ok: true, perfil: rows[0] });
@@ -101,12 +101,13 @@ app.get("/api/perfil", auth, async (req, res) => {
   }
 });
 
+// PERFIL FISCAL - SAVE
 app.post("/api/perfil", auth, async (req, res) => {
   try {
-    const { rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi } = req.body;
+    const { rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi } = req.body;
     await db.query(
-      "UPDATE users SET rfc=?, razon_social=?, codigo_postal=?, regimen_fiscal=?, uso_cfdi=? WHERE id=?",
-      [rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi, req.session.userId]
+      "UPDATE users SET rfc=?, razon_social=?, calle=?, num_ext=?, num_int=?, colonia=?, municipio=?, estado=?, codigo_postal=?, regimen_fiscal=?, uso_cfdi=? WHERE id=?",
+      [rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi, req.session.userId]
     );
     res.json({ ok: true });
   } catch (e) {
@@ -114,7 +115,7 @@ app.post("/api/perfil", auth, async (req, res) => {
   }
 });
 
-// SUBIR TICKET + OCR CON CLAUDE VISION (Haiku para economizar)
+// SUBIR TICKET + OCR CON CLAUDE VISION
 app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, msg: "No se recibió archivo" });
@@ -125,7 +126,6 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
 
     console.log("🔍 Analizando ticket con Claude Haiku...");
 
-    // Intento 1 — Haiku (económico)
     let datosOCR = {};
     let textoOCR = "";
 
@@ -136,13 +136,8 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         messages: [{
           role: "user",
           content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mimeType, data: base64Image },
-            },
-            {
-              type: "text",
-              text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
+            { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
+            { type: "text", text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
 {
   "comercio": "nombre del comercio (OXXO, 7-Eleven, Walmart, etc)",
   "fecha": "fecha en formato DD/MM/YYYY",
@@ -151,37 +146,28 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "total": número sin signos solo el número,
   "ok": true
 }
-Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.`
-            }
+Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.` }
           ],
         }],
       });
-
       textoOCR = response.content[0].text;
       datosOCR = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
-      console.log("✅ Haiku respondió:", textoOCR);
-
+      console.log("✅ Haiku respondió:", datosOCR);
     } catch (e) {
-      console.log("⚠️ Haiku falló, intentando con Sonnet...");
+      console.log("⚠️ Haiku falló, intentando Sonnet...");
     }
 
-    // Intento 2 — Sonnet como fallback si folio o idVenta son null
     if (!datosOCR.folio || !datosOCR.idVenta) {
-      console.log("🔄 Campos críticos vacíos, reintentando con Sonnet 4.5...");
+      console.log("🔄 Reintentando con Sonnet...");
       try {
         const response2 = await anthropic.messages.create({
-          model: "claude-sonnet-4-5",
+          model: "claude-sonnet-4-20250514",
           max_tokens: 1000,
           messages: [{
             role: "user",
             content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: mimeType, data: base64Image },
-              },
-              {
-                type: "text",
-                text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
+              { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
+              { type: "text", text: `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON:
 {
   "comercio": "nombre del comercio (OXXO, 7-Eleven, Walmart, etc)",
   "fecha": "fecha en formato DD/MM/YYYY",
@@ -190,16 +176,13 @@ Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicion
   "total": número sin signos solo el número,
   "ok": true
 }
-Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.`
-              }
+Si no puedes leer algún dato pon null. Responde SOLO el JSON, sin texto adicional.` }
             ],
           }],
         });
-
         textoOCR = response2.content[0].text;
         datosOCR = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
-        console.log("✅ Sonnet respondió:", textoOCR);
-        datosOCR._modelo = "sonnet";
+        console.log("✅ Sonnet respondió:", datosOCR);
       } catch (e2) {
         datosOCR = { ok: false, raw: textoOCR };
       }
@@ -231,7 +214,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     const datos = JSON.parse(ticket.ocr_json || "{}");
 
     const [users] = await db.query(
-      "SELECT rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
+      "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
       [req.session.userId]
     );
     if (users.length === 0) return res.json({ ok: false, msg: "Perfil fiscal no encontrado" });
@@ -249,6 +232,12 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
       total: datos.total,
       rfc: perfil.rfc,
       razonSocial: perfil.razon_social,
+      calle: perfil.calle,
+      ext: perfil.num_ext,
+      int: perfil.num_int,
+      colonia: perfil.colonia,
+      municipio: perfil.municipio,
+      estado: perfil.estado,
       codigoPostal: perfil.codigo_postal,
       regimenFiscal: perfil.regimen_fiscal,
       usoCfdi: perfil.uso_cfdi || "G03",
