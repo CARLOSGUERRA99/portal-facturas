@@ -168,6 +168,7 @@
           : '';
 
         const canFacturar = t.status === 'pendiente';
+        const canDelete = t.status === 'error' || t.status === 'pendiente';
         const btnLabel = t.status === 'procesado' ? 'Ya facturado' : t.status === 'error' ? 'Reintentar' : 'Facturar';
 
         return `
@@ -185,6 +186,7 @@
                 ${!canFacturar && t.status !== 'error' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}
                 onclick="facturar(${t.id})"
               >${btnLabel}</button>
+              ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
             </div>
           </div>`;
       }).join('');
@@ -222,8 +224,24 @@
       }
     }
 
+    async function eliminarTicket(id) {
+      if (!confirm('¿Eliminar este ticket? Esta acción no se puede deshacer.')) return;
+      const btn = document.getElementById('del-' + id);
+      btn.disabled = true;
+      btn.textContent = '...';
+      const res = await fetch(`/api/tickets/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.ok) {
+        document.getElementById('ticket-' + id)?.remove();
+      } else {
+        alert('Error: ' + data.msg);
+        btn.disabled = false;
+        btn.textContent = 'Eliminar';
+      }
+    }
+
     initNav();
-    cargarTickets();  // initNav already calls initResidenteSelector, cargarTickets runs independently
+    cargarTickets();
   </script>
 </body>
 </html>

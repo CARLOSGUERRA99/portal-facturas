@@ -488,6 +488,28 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
   }
 });
 
+// ── BORRAR TICKET ──
+app.delete("/api/tickets/:id", auth, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM tickets WHERE id = ? AND user_id = ?",
+      [req.params.id, req.session.userId]
+    );
+    if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
+    const ticket = rows[0];
+    if (!["error", "pendiente"].includes(ticket.status))
+      return res.json({ ok: false, msg: "Solo se pueden borrar tickets en estado error o pendiente" });
+
+    if (ticket.ruta_archivo && fs.existsSync(ticket.ruta_archivo)) {
+      fs.unlinkSync(ticket.ruta_archivo);
+    }
+    await db.query("DELETE FROM tickets WHERE id = ?", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 // ── LISTAR TICKETS ──
 app.get("/api/tickets", auth, async (req, res) => {
   try {
@@ -540,6 +562,26 @@ app.get("/debug-screenshot", auth, async (req, res) => {
     res.json(resultado);
   }
 });
+
+// ── LIMPIEZA AUTOMÁTICA ──
+async function cleanupTickets() {
+  try {
+    const [rows] = await db.query(
+      "SELECT id, ruta_archivo FROM tickets WHERE status = 'error' AND creado < NOW() - INTERVAL 30 DAY"
+    );
+    for (const t of rows) {
+      if (t.ruta_archivo && fs.existsSync(t.ruta_archivo)) {
+        fs.unlinkSync(t.ruta_archivo);
+      }
+      await db.query("DELETE FROM tickets WHERE id = ?", [t.id]);
+    }
+    if (rows.length) console.log(`🧹 Cleanup: ${rows.length} ticket(s) eliminados`);
+  } catch (e) {
+    console.error("❌ cleanupTickets:", e.message);
+  }
+}
+cleanupTickets();
+setInterval(cleanupTickets, 24 * 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
