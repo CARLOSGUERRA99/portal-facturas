@@ -1,5 +1,6 @@
 const { facturarOXXO } = require('./oxxo');
 const { facturarBuzonFacturas } = require('./buzonfacturas');
+const { facturarGasmaz } = require('./gasmaz');
 
 async function detectarYFacturar(datos) {
   const texto = (datos.ocr_text || '').toLowerCase();
@@ -21,6 +22,17 @@ async function detectarYFacturar(datos) {
     return await facturarOXXO(datos);
   }
 
+  if (
+    texto.includes('nexusfuel') ||
+    texto.includes('gasmaz') ||
+    portalUrl.includes('nexusfuel') ||
+    portalUrl.includes('gasmaz') ||
+    comercio.includes('gasmaz')
+  ) {
+    console.log('🎯 Portal detectado: Gasmaz/NexusFuel');
+    return await facturarGasmaz(datos);
+  }
+
   console.log('⚠️ Portal no reconocido:', datos.comercio);
   return {
     ok: false,
@@ -30,3 +42,4 @@ async function detectarYFacturar(datos) {
 }
 
 module.exports = { detectarYFacturar };
+

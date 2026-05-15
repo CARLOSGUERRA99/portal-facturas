@@ -507,6 +507,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
 DETECTA EL TIPO DE COMERCIO:
 - Si es OXXO: extrae folio (después de "Fol_Vta:") e idVenta (después de "ID="), pon portal = null
 - Si es gasolinera ARCO u otro comercio con portal buzonfacturas.com: extrae el código de ticket/folio visible, pon portal = "buzonfacturas", pon codigoTicket con ese código
+- Si es gasolinera GASMAZ o ves URL nexusfuel.mx en el ticket/QR: extrae referencia (primer número grande), folio (número de ticket), total (importe), pon portal = "nexusfuel", pon portalUrl con la URL completa del QR si aparece
 - Si no reconoces el portal de facturación: pon portal = "desconocido"
 
 REGLAS para tickets OXXO:
@@ -524,6 +525,8 @@ Responde SOLO este JSON sin texto adicional:
   "folio": "solo números del Fol_Vta o null",
   "idVenta": "código exacto del ID= o null",
   "codigoTicket": "código de ticket para otros portales o null",
+  "referencia": "número de referencia para GASMAZ/nexusfuel o null",
+  "portalUrl": "URL completa del QR de facturación si aparece, o null",
   "portal": null,
   "total": número sin signos,
   "ok": true
@@ -612,7 +615,7 @@ Verifica especialmente:
     datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
     datosOCR.idVenta = corregirIdVentaOxxo(datosOCR.idVenta);
 
-    const portalUrl = datosOCR.portal || null;
+    const portalUrl = datosOCR.portalUrl || datosOCR.portal || null;
 
     const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
