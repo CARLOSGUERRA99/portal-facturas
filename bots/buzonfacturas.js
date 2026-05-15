@@ -63,9 +63,46 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
     });
 
     console.log("🔑 Esperando input RFC...");
-    await page.waitForSelector('input[name="Rfc"]', { timeout: 10000 });
-    await page.click('input[name="Rfc"]', { clickCount: 3 });
-    await page.type('input[name="Rfc"]', rfc, { delay: 60 });
+    const rfcSelectors = [
+      'input[name="Rfc"]',
+      'input#Rfc',
+      'input[placeholder*="RFC"]',
+      'input[placeholder*="rfc"]',
+    ];
+    let rfcSel = null;
+    for (const sel of rfcSelectors) {
+      try {
+        await page.waitForSelector(sel, { timeout: 20000 });
+        rfcSel = sel;
+        console.log(`✅ Input RFC encontrado con selector: ${sel}`);
+        break;
+      } catch {
+        console.log(`⚠️ Selector no encontrado: ${sel}`);
+      }
+    }
+    if (!rfcSel) {
+      // Fallback: primer input[type=text] visible
+      const found = await page.evaluate(() => {
+        const inputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
+        const visible = inputs.find(el => el.offsetParent !== null);
+        if (visible) {
+          visible.setAttribute('data-rfc-fallback', '1');
+          return true;
+        }
+        return false;
+      });
+      if (found) {
+        rfcSel = 'input[data-rfc-fallback="1"]';
+        console.log("⚠️ Usando fallback: primer input visible de la página");
+      } else {
+        const html = await page.content();
+        console.log("PAGE HTML:", html.substring(0, 2000));
+        throw new Error("No se encontró ningún input para el RFC en la página");
+      }
+    }
+
+    await page.click(rfcSel, { clickCount: 3 });
+    await page.type(rfcSel, rfc, { delay: 60 });
     console.log(`✅ RFC llenado: ${rfc}`);
 
     console.log("🔍 Clic en Buscar...");
