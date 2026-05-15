@@ -7,11 +7,22 @@ const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
 const Anthropic = require("@anthropic-ai/sdk");
-const { facturarOXXO } = require("./bots/oxxo");
-const { facturarBuzonFacturas } = require("./bots/buzonfacturas");
+const nodemailer = require("nodemailer");
+const { detectarYFacturar } = require("./bots/index");
+const { borrarArchivoR2 } = require("./storage/r2");
 
 const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || "smtp.hostinger.com",
+  port: parseInt(process.env.SMTP_PORT) || 465,
+  secure: process.env.SMTP_SECURE === "true",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -470,66 +481,54 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
   try {
     const { ticketId } = req.params;
     const [tickets] = await db.query(
-      "SELECT t.*, u.email FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ? AND t.user_id = ?",
+      "SELECT t.*, u.email, u.nombre AS user_nombre FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ? AND t.user_id = ?",
       [ticketId, req.session.userId]
     );
     if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = tickets[0];
     const datos = JSON.parse(ticket.ocr_json || "{}");
 
-    const [users] = await db.query(
+    const [userRows] = await db.query(
       "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
       [req.session.userId]
     );
-    if (users.length === 0) return res.json({ ok: false, msg: "Perfil fiscal no encontrado" });
-    const perfil = users[0];
+    if (userRows.length === 0) return res.json({ ok: false, msg: "Perfil fiscal no encontrado" });
+    const perfil = userRows[0];
 
     if (!perfil.rfc) return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
 
     await db.query("UPDATE tickets SET status = 'procesando' WHERE id = ?", [ticketId]);
 
-    const portal = ticket.portal_url || datos.portal || null;
-    let resultado;
+    const resultado = await detectarYFacturar({
+      ...datos,
+      rfc: perfil.rfc,
+      razonSocial: perfil.razon_social,
+      calle: perfil.calle,
+      ext: perfil.num_ext,
+      int: perfil.num_int,
+      colonia: perfil.colonia,
+      municipio: perfil.municipio,
+      estado: perfil.estado,
+      codigoPostal: perfil.codigo_postal,
+      regimenFiscal: perfil.regimen_fiscal,
+      usoCfdi: perfil.uso_cfdi || "G03",
+      email: ticket.email,
+      ticketId,
+      ocr_text: ticket.ocr_text,
+      portalUrl: datos.portalUrl || ticket.portal_url || null,
+      comercio: ticket.comercio,
+    });
 
-    if (datos.folio && datos.idVenta) {
-      // OXXO
-      resultado = await facturarOXXO({
-        fecha: datos.fecha,
-        folio: datos.folio,
-        idVenta: datos.idVenta,
-        total: datos.total,
-        rfc: perfil.rfc,
-        razonSocial: perfil.razon_social,
-        calle: perfil.calle,
-        ext: perfil.num_ext,
-        int: perfil.num_int,
-        colonia: perfil.colonia,
-        municipio: perfil.municipio,
-        estado: perfil.estado,
-        codigoPostal: perfil.codigo_postal,
-        regimenFiscal: perfil.regimen_fiscal,
-        usoCfdi: perfil.uso_cfdi || "G03",
-      });
-    } else if (portal === "buzonfacturas" || datos.codigoTicket) {
-      // BuzonFacturas (ARCO y otras gasolineras)
-      resultado = await facturarBuzonFacturas({
-        rfc: perfil.rfc,
-        codigoTicket: datos.codigoTicket,
-        email: ticket.email,
-      });
-    } else {
-      // Portal desconocido — notificar residente y admin
+    if (resultado.sinPortal) {
       await db.query(
         "UPDATE tickets SET status = 'error', portal_url = 'desconocido' WHERE id = ?",
         [ticketId]
       );
-
       await crearNotificacion(
         req.session.userId,
         "portal_desconocido",
         `No pudimos facturar tu ticket de ${ticket.comercio || "comercio desconocido"} porque no reconocemos el portal de facturación. El administrador ha sido notificado.`
       );
-
       const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
       if (adminRows.length > 0) {
         await crearNotificacion(
@@ -538,17 +537,54 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
           `Nuevo portal detectado en ticket #${ticketId} de ${ticket.comercio || "comercio desconocido"}. Revisa la sección Portales Pendientes.`
         );
       }
-
-      return res.json({ ok: false, msg: "Portal de facturación no reconocido. El administrador ha sido notificado para registrarlo." });
+      return res.json({ ok: false, msg: "Portal de facturación no reconocido. El administrador ha sido notificado." });
     }
 
     if (resultado.ok) {
+      const pdfUrl = resultado.pdfUrl || resultado.pdf || null;
+      const xmlUrl = resultado.xmlUrl || resultado.xml || null;
+
       await db.query(
         "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
-        [req.session.userId, ticketId, ticket.comercio, resultado.pdf, resultado.xml, "completado"]
+        [req.session.userId, ticketId, ticket.comercio, pdfUrl, xmlUrl, "completado"]
       );
       await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticketId]);
-      res.json({ ok: true, pdf: resultado.pdf, xml: resultado.xml });
+
+      // Enviar correo al usuario
+      try {
+        if (ticket.email) {
+          await transporter.sendMail({
+            from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
+            to: ticket.email,
+            subject: "✅ Tu factura está lista — GPN Pinturas y Recubrimientos",
+            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;">
+                <h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2>
+                <p style="color:#C0DD97;margin:4px 0 0;">Portal de Facturación Automática</p>
+              </div>
+              <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
+                <p>Hola <strong>${ticket.user_nombre || ""}</strong>,</p>
+                <p>Tu factura fue generada exitosamente y está lista para descargar.</p>
+                <div style="margin:20px 0;">
+                  ${xmlUrl ? `<a href="${xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ""}
+                  ${pdfUrl ? `<a href="${pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ""}
+                </div>
+                <p style="color:#555;">También puedes verla en el portal:</p>
+                <a href="https://portal-facturas-production.up.railway.app/mis-facturas" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">Ver mis facturas →</a>
+                <p style="color:#999;font-size:12px;margin-top:20px;">
+                  Los archivos estarán disponibles 60 días.<br>
+                  GPN Facturas — Sistema automático de facturación.
+                </p>
+              </div>
+            </div>`,
+          });
+          console.log("📧 Correo enviado a:", ticket.email);
+        }
+      } catch (mailErr) {
+        console.log("⚠️ Error enviando correo (no crítico):", mailErr.message);
+      }
+
+      res.json({ ok: true, pdf: pdfUrl, xml: xmlUrl });
     } else {
       await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]);
       res.json({ ok: false, msg: resultado.msg });
@@ -687,13 +723,11 @@ app.post("/api/portales-pendientes", auth, requireAdmin, async (req, res) => {
       [nombre, url, notas || null, req.session.userId]
     );
 
-    // Reset affected tickets so residents can retry
     await db.query(
       "UPDATE tickets SET status = 'pendiente', portal_url = ? WHERE portal_url = 'desconocido' AND comercio = ?",
       [url, comercio]
     );
 
-    // Notify affected residents
     const [affectedUsers] = await db.query(`
       SELECT DISTINCT user_id FROM tickets
       WHERE portal_url = ? AND comercio = ?
@@ -715,11 +749,23 @@ app.post("/api/portales-pendientes", auth, requireAdmin, async (req, res) => {
 
 // ── DEBUG SCREENSHOT ──
 app.get("/debug-screenshot", auth, async (req, res) => {
-  const resultado = await facturarOXXO({
-    fecha: "10/05/2026", folio: "4682868", idVenta: "10OBR500NG1", total: "57.00",
-    rfc: "XAXX010101000", razonSocial: "PUBLICO EN GENERAL", calle: "AV TEST",
-    ext: "123", colonia: "CENTRO", municipio: "CD OBREGON",
-    codigoPostal: "85000", estado: "SONORA", regimenFiscal: "616", usoCfdi: "S01",
+  const resultado = await detectarYFacturar({
+    ocr_text: "oxxo fol_vta:4682868 id=10obr500ng1",
+    comercio: "OXXO",
+    fecha: "10/05/2026",
+    folio: "4682868",
+    idVenta: "10OBR500NG1",
+    total: "57.00",
+    rfc: "XAXX010101000",
+    razonSocial: "PUBLICO EN GENERAL",
+    calle: "AV TEST",
+    ext: "123",
+    colonia: "CENTRO",
+    municipio: "CD OBREGON",
+    codigoPostal: "85000",
+    estado: "SONORA",
+    regimenFiscal: "616",
+    usoCfdi: "S01",
   });
   if (resultado.screenshot) {
     res.send(`<img src="data:image/png;base64,${resultado.screenshot}" style="max-width:100%">`);
@@ -728,7 +774,7 @@ app.get("/debug-screenshot", auth, async (req, res) => {
   }
 });
 
-// ── LIMPIEZA AUTOMÁTICA ──
+// ── LIMPIEZA AUTOMÁTICA DE TICKETS ──
 async function cleanupTickets() {
   try {
     const [rows] = await db.query(
@@ -747,6 +793,33 @@ async function cleanupTickets() {
 }
 cleanupTickets();
 setInterval(cleanupTickets, 24 * 60 * 60 * 1000);
+
+// ── LIMPIEZA DE FACTURAS VENCIDAS EN R2 ──
+async function limpiarFacturasVencidas() {
+  try {
+    const limite = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const [rows] = await db.query(
+      "SELECT id, xml_url, pdf_url FROM facturas WHERE creado < ? AND xml_url IS NOT NULL",
+      [limite]
+    );
+    for (const f of rows) {
+      if (f.xml_url?.includes("r2.dev")) {
+        const key = f.xml_url.split(".dev/")[1];
+        await borrarArchivoR2(key);
+      }
+      if (f.pdf_url?.includes("r2.dev")) {
+        const key = f.pdf_url.split(".dev/")[1];
+        await borrarArchivoR2(key);
+      }
+      await db.query("UPDATE facturas SET xml_url = NULL, pdf_url = NULL WHERE id = ?", [f.id]);
+    }
+    if (rows.length > 0) console.log(`🗑️ ${rows.length} facturas vencidas limpiadas de R2`);
+  } catch (e) {
+    console.log("⚠️ Error en limpieza R2:", e.message);
+  }
+}
+limpiarFacturasVencidas();
+setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
