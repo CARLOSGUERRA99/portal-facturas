@@ -286,6 +286,31 @@ app.get("/api/facturas", auth, async (req, res) => {
     res.json({ ok: false, msg: e.message });
   }
 });
+// RUTA DEBUG - ver screenshot del bot
+app.get("/debug-screenshot", auth, async (req, res) => {
+  const { facturarOXXO } = require("./bots/oxxo");
+  const resultado = await facturarOXXO({
+    fecha: "10/05/2026",
+    folio: "4682868",
+    idVenta: "TEST",
+    total: "57.00",
+    rfc: "XAXX010101000",
+    razonSocial: "PUBLICO EN GENERAL",
+    calle: "AV TEST",
+    ext: "123",
+    colonia: "CENTRO",
+    municipio: "CD OBREGON",
+    codigoPostal: "85000",
+    estado: "SONORA",
+    regimenFiscal: "616",
+    usoCfdi: "S01",
+  });
+  if (resultado.screenshot) {
+    res.send(`<img src="data:image/png;base64,${resultado.screenshot}" style="max-width:100%">`);
+  } else {
+    res.json(resultado);
+  }
+});
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
