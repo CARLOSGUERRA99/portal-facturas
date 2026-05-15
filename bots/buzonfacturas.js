@@ -350,7 +350,6 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
             'input#FolioFactura, input[name="FolioFactura"], input[id*="folio" i], input[name*="folio" i]'
           );
           if (el && el.value) return el.value.trim();
-          // Buscar texto con patrón BVIII-XXXXXXX o similar en el body
           const match = document.body.innerText.match(/[A-Z]{2,6}-\d{6,10}/);
           return match ? match[0] : null;
         });
@@ -362,72 +361,111 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
           timeout: 20000,
         });
         console.log("🌐 Navegado a DescargarFactura");
+        console.log(`✅ RFC ya presente: ${rfc} | Folio: ${folio} (la página los carga automáticamente)`);
 
-        // Llenar RFC
-        const rfcInput = await page.$('input[name="Rfc"], input#Rfc');
-        if (rfcInput) {
-          await rfcInput.click({ clickCount: 3 });
-          await rfcInput.type(rfc, { delay: 50 });
-          console.log(`✅ RFC llenado: ${rfc}`);
-        }
+        // Esperar que aparezca la tabla con resultados
+        await page.waitForSelector("table tbody tr", { timeout: 10000 });
+        console.log("📋 Tabla de facturas visible");
 
-        // Llenar folio
-        const folioInput = await page.$('input[name="Folio"], input#Folio, input[name*="folio" i], input[id*="folio" i]');
-        if (folioInput) {
-          await folioInput.click({ clickCount: 3 });
-          await folioInput.type(folio, { delay: 50 });
-          console.log(`✅ Folio llenado: ${folio}`);
-        }
+        const ssB = await page.screenshot({ encoding: "base64" });
+        console.log("📸 Screenshot B — tabla DescargarFactura");
 
-        // Interceptar descarga y hacer click en buscar/descargar
-        const bPromise = page.waitForResponse(
-          r => {
-            const url = r.url();
-            const ct = r.headers()["content-type"] || "";
-            return url.includes(".zip") || ct.includes("zip") || url.includes(".xml") || url.includes(".pdf");
-          },
+        // ── Descargar PDF (primer icono de la columna Opciones) ──
+        console.log("📄 B: Interceptando click en icono PDF...");
+        const pdfResponsePromise = page.waitForResponse(
+          r => r.status() === 200 && (
+            r.headers()["content-type"]?.includes("pdf") ||
+            r.headers()["content-type"]?.includes("xml") ||
+            r.headers()["content-type"]?.includes("zip") ||
+            r.headers()["content-disposition"]?.includes("attachment")
+          ),
           { timeout: 15000 }
         ).catch(() => null);
 
-        await page.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll("button, input[type='submit']"));
-          const btn = btns.find(b => /buscar|descargar/i.test(b.textContent || b.value || ""));
-          if (btn) btn.click();
-        });
+        await page.click(
+          "table tbody tr:first-child td:last-child img:first-child, " +
+          "table tbody tr:first-child td.opciones a:first-child, " +
+          "table tbody tr:first-child td:last-child a:first-child"
+        );
+        const pdfResponse = await pdfResponsePromise;
 
-        const bResp = await bPromise;
-        if (bResp) {
-          const ct = bResp.headers()["content-type"] || "";
-          const buf = await bResp.buffer();
-          console.log(`📦 Estrategia B respuesta: ${ct} — ${buf.length} bytes`);
+        if (pdfResponse) {
+          const ct = pdfResponse.headers()["content-type"] || "";
+          const cd = pdfResponse.headers()["content-disposition"] || "";
+          const buf = await pdfResponse.buffer();
+          console.log(`📦 B: PDF response — content-type: ${ct} | disposition: ${cd} | ${buf.length} bytes`);
 
-          if (ct.includes("zip") || bResp.url().includes(".zip")) {
+          if (ct.includes("zip") || pdfResponse.url().includes(".zip")) {
             const dir = await unzipper.Open.buffer(buf);
             for (const entry of dir.files) {
               const name = entry.path.toLowerCase();
               if (name.endsWith(".xml") && !fs.existsSync(xmlDest)) {
                 fs.writeFileSync(xmlDest, await entry.buffer());
-                console.log("✅ B: XML extraído del ZIP");
+                console.log("✅ B: XML extraído del ZIP (click PDF)");
               } else if (name.endsWith(".pdf") && !fs.existsSync(pdfDest)) {
                 fs.writeFileSync(pdfDest, await entry.buffer());
-                console.log("✅ B: PDF extraído del ZIP");
+                console.log("✅ B: PDF extraído del ZIP (click PDF)");
               }
             }
-          } else if (ct.includes("xml") || bResp.url().includes(".xml")) {
-            if (!fs.existsSync(xmlDest)) fs.writeFileSync(xmlDest, buf);
-            console.log("✅ B: XML guardado");
-          } else if (ct.includes("pdf") || bResp.url().includes(".pdf")) {
+          } else if (ct.includes("pdf") || cd.toLowerCase().includes(".pdf")) {
             if (!fs.existsSync(pdfDest)) fs.writeFileSync(pdfDest, buf);
             console.log("✅ B: PDF guardado");
-          }
-
-          if (fs.existsSync(xmlDest) || fs.existsSync(pdfDest)) {
-            console.log("✅ Estrategia B exitosa");
-          } else {
-            throw new Error("Estrategia B: respuesta recibida pero no se guardaron archivos");
+          } else if (ct.includes("xml") || cd.toLowerCase().includes(".xml")) {
+            if (!fs.existsSync(xmlDest)) fs.writeFileSync(xmlDest, buf);
+            console.log("✅ B: XML guardado (desde click PDF)");
           }
         } else {
-          throw new Error("Estrategia B: no se interceptó respuesta de descarga");
+          console.log("⚠️ B: no se interceptó respuesta del primer icono");
+        }
+
+        // ── Descargar XML (segundo icono de la columna Opciones) ──
+        console.log("📄 B: Interceptando click en icono XML...");
+        const xmlResponsePromise = page.waitForResponse(
+          r => r.status() === 200 && (
+            r.headers()["content-type"]?.includes("xml") ||
+            r.headers()["content-type"]?.includes("zip") ||
+            r.headers()["content-disposition"]?.includes("attachment")
+          ),
+          { timeout: 15000 }
+        ).catch(() => null);
+
+        await page.click(
+          "table tbody tr:first-child td:last-child img:nth-child(2), " +
+          "table tbody tr:first-child td.opciones a:nth-child(2), " +
+          "table tbody tr:first-child td:last-child a:nth-child(2)"
+        );
+        const xmlResponse = await xmlResponsePromise;
+
+        if (xmlResponse) {
+          const ct = xmlResponse.headers()["content-type"] || "";
+          const cd = xmlResponse.headers()["content-disposition"] || "";
+          const buf = await xmlResponse.buffer();
+          console.log(`📦 B: XML response — content-type: ${ct} | disposition: ${cd} | ${buf.length} bytes`);
+
+          if (ct.includes("zip") || xmlResponse.url().includes(".zip")) {
+            const dir = await unzipper.Open.buffer(buf);
+            for (const entry of dir.files) {
+              const name = entry.path.toLowerCase();
+              if (name.endsWith(".xml") && !fs.existsSync(xmlDest)) {
+                fs.writeFileSync(xmlDest, await entry.buffer());
+                console.log("✅ B: XML extraído del ZIP (click XML)");
+              } else if (name.endsWith(".pdf") && !fs.existsSync(pdfDest)) {
+                fs.writeFileSync(pdfDest, await entry.buffer());
+                console.log("✅ B: PDF extraído del ZIP (click XML)");
+              }
+            }
+          } else if (ct.includes("xml") || cd.toLowerCase().includes(".xml")) {
+            if (!fs.existsSync(xmlDest)) fs.writeFileSync(xmlDest, buf);
+            console.log("✅ B: XML guardado");
+          }
+        } else {
+          console.log("⚠️ B: no se interceptó respuesta del segundo icono");
+        }
+
+        if (fs.existsSync(xmlDest) || fs.existsSync(pdfDest)) {
+          console.log("✅ Estrategia B exitosa");
+        } else {
+          throw new Error("Estrategia B: se hicieron clicks en iconos pero no se guardaron archivos");
         }
       } catch (eB) {
         console.log("❌ Estrategia B falló:", eB.message);
