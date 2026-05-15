@@ -28,6 +28,7 @@ function downloadFile(url, destPath) {
 
 async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
   console.log("🤖 Iniciando bot BuzonFacturas...");
+  console.log(`   RFC: ${rfc} | Código: ${codigoTicket} | Email: ${email}`);
 
   const browser = await puppeteer.connect({
     browserWSEndpoint: `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`,
@@ -35,162 +36,200 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
-  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  );
+
+  // Interceptar URLs de descarga que dispare el navegador
+  let downloadedXmlUrl = null;
+  let downloadedPdfUrl = null;
+  page.on("response", async (response) => {
+    const url = response.url();
+    const ct = response.headers()["content-type"] || "";
+    if (ct.includes("application/xml") || url.toLowerCase().includes(".xml")) {
+      downloadedXmlUrl = url;
+    }
+    if (ct.includes("application/pdf") || url.toLowerCase().includes(".pdf")) {
+      downloadedPdfUrl = url;
+    }
+  });
 
   try {
-    // ── PASO 1: Navegar al portal ──
-    console.log("🌐 Abriendo BuzonFacturas...");
+    // ── PASO 1: RFC ──
+    console.log("🌐 PASO 1 — Navegando a BuzonFacturas...");
     await page.goto("https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0", {
       waitUntil: "networkidle2",
       timeout: 30000,
     });
-    await page.waitForTimeout(2500);
 
-    // ── PASO 2: Llenar RFC → click Buscar ──
-    console.log("🔑 Llenando RFC:", rfc);
-    const rfcSel = 'input[name="RFC"], input[id*="rfc" i], input[id*="RFC"], input[placeholder*="RFC"]';
-    await page.waitForSelector(rfcSel, { timeout: 15000 });
-    await page.click(rfcSel, { clickCount: 3 });
-    await page.type(rfcSel, rfc, { delay: 80 });
-    await page.waitForTimeout(500);
+    console.log("🔑 Esperando input RFC...");
+    await page.waitForSelector('input[name="Rfc"]', { timeout: 10000 });
+    await page.click('input[name="Rfc"]', { clickCount: 3 });
+    await page.type('input[name="Rfc"]', rfc, { delay: 60 });
+    console.log(`✅ RFC llenado: ${rfc}`);
 
-    console.log("🔍 Clic Buscar...");
+    console.log("🔍 Clic en Buscar...");
     const buscado = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button, input[type='submit'], a, span"));
+      const btns = Array.from(document.querySelectorAll("button, input[type='submit']"));
       const btn = btns.find(b => /buscar/i.test(b.textContent || b.value || ""));
       if (btn) { btn.click(); return true; }
       return false;
     });
     if (!buscado) throw new Error("No se encontró el botón Buscar");
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(3000);
 
     const ss1 = await page.screenshot({ encoding: "base64" });
     console.log("📸 Screenshot 1 — después de buscar RFC");
 
-    // ── PASO 3: Guardar y continuar ──
-    console.log("💾 Clic Guardar y continuar...");
+    // ── PASO 2: Guardar y continuar ──
+    console.log("💾 PASO 2 — Esperando botón 'Guardar y continuar'...");
+    await page.waitForSelector("button.btn-success, input.btn-success", { timeout: 10000 });
+
     const guardado = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button, input[type='submit'], a, span"));
+      const btns = Array.from(document.querySelectorAll("button.btn-success, input.btn-success"));
       const btn = btns.find(b => /guardar.*continuar|guardar\s+y\s+continuar/i.test(b.textContent || b.value || ""));
       if (btn) { btn.click(); return true; }
-      // fallback: any "continuar" button
-      const cont = btns.find(b => /continuar/i.test(b.textContent || b.value || ""));
-      if (cont) { cont.click(); return true; }
+      // Fallback: primer btn-success disponible
+      if (btns.length) { btns[0].click(); return true; }
       return false;
     });
-    if (!guardado) throw new Error("No se encontró botón Guardar y continuar");
-    await page.waitForTimeout(3000);
+    if (!guardado) throw new Error("No se encontró botón 'Guardar y continuar'");
 
-    // ── PASO 4: Código de ticket → Verificar ──
-    console.log("🎫 Llenando código de ticket:", codigoTicket);
-    const codeCandidates = [
-      'input[name*="codigo" i]',
-      'input[name*="Codigo" ]',
-      'input[name*="ticket" i]',
-      'input[name*="folio" i]',
-      'input[id*="codigo" i]',
-      'input[id*="ticket" i]',
-      'input[placeholder*="código" i]',
-      'input[placeholder*="folio" i]',
-      'input[placeholder*="ticket" i]',
-      'input[type="text"]:not([id*="rfc" i]):not([name*="rfc" i])',
-    ];
-    let codeFilled = false;
-    for (const sel of codeCandidates) {
-      try {
-        const el = await page.$(sel);
-        if (el) {
-          await el.click({ clickCount: 3 });
-          await el.type(codigoTicket, { delay: 80 });
-          console.log(`✅ Código llenado — selector: ${sel}`);
-          codeFilled = true;
-          break;
-        }
-      } catch {}
-    }
-    if (!codeFilled) throw new Error("No se encontró campo para el código de ticket");
-    await page.waitForTimeout(500);
+    console.log("⏳ Esperando navegación a DatosTicket...");
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => {});
+    console.log(`✅ URL actual: ${page.url()}`);
 
-    console.log("✅ Clic Verificar...");
+    // ── PASO 3: Código de facturación ──
+    console.log("🎫 PASO 3 — Esperando campo CodigoFacturacion...");
+    await page.waitForSelector('input#CodigoFacturacion, input[name="CodigoFacturacion"]', { timeout: 10000 });
+
+    const codeEl = await page.$('input#CodigoFacturacion');
+    const codeSel = codeEl ? 'input#CodigoFacturacion' : 'input[name="CodigoFacturacion"]';
+    await page.click(codeSel, { clickCount: 3 });
+    await page.type(codeSel, codigoTicket, { delay: 60 });
+    console.log(`✅ Código de facturación llenado: ${codigoTicket}`);
+
+    console.log("✅ Clic en Verificar...");
     const verificado = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button, input[type='submit'], a, span"));
+      const btns = Array.from(document.querySelectorAll("button, input[type='submit']"));
       const btn = btns.find(b => /verificar/i.test(b.textContent || b.value || ""));
       if (btn) { btn.click(); return true; }
       return false;
     });
     if (!verificado) throw new Error("No se encontró botón Verificar");
-    await page.waitForTimeout(4000);
+
+    console.log("⏳ Esperando confirmación de verificación (Estación / Fecha / Número de venta)...");
+    await page.waitForFunction(
+      () => /estaci[oó]n|n[uú]mero de venta|fecha/i.test(document.body.innerText || ""),
+      { timeout: 15000 }
+    );
+    console.log("✅ Ticket verificado correctamente");
 
     const ss2 = await page.screenshot({ encoding: "base64" });
     console.log("📸 Screenshot 2 — después de verificar código");
 
-    // ── PASO 5: Forma de pago → Tarjeta de débito ──
-    console.log("💳 Seleccionando Tarjeta de débito...");
+    // ── PASO 4: Forma de pago → Tarjeta de débito (valor 28) ──
+    console.log("💳 PASO 4 — Seleccionando forma de pago (débito)...");
     await page.evaluate(() => {
       const selects = document.querySelectorAll("select");
       for (const sel of selects) {
+        const name = (sel.name || sel.id || "").toLowerCase();
+        // Saltar selects de Uso CFDI
+        if (name.includes("uso") || name.includes("cfdi")) continue;
         const opts = Array.from(sel.options);
-        const debito = opts.find(o => /d[eé]bito/i.test(o.text));
+        const debito = opts.find(o => o.value === "28") || opts.find(o => /d[eé]bito/i.test(o.text));
         if (debito) {
           sel.value = debito.value;
           sel.dispatchEvent(new Event("change", { bubbles: true }));
-          console.log("💳 Forma de pago seleccionada:", debito.text);
+          console.log("💳 Forma de pago seleccionada:", debito.text, "value:", debito.value);
           break;
         }
       }
     });
     await page.waitForTimeout(500);
 
-    // ── PASO 6: Email (opcional) ──
+    // ── PASO 5: Generar factura ──
+    console.log("🧾 PASO 5 — Clic en Generar factura...");
+    const generado = await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll("button, input[type='submit']"));
+      const btn = all.find(b => /generar.*factura|generar\s+cfdi/i.test(b.textContent || b.value || ""));
+      if (btn) { btn.click(); return (btn.textContent || btn.value || "").trim(); }
+      // Fallback: btn-success que no sea Verificar/Buscar
+      const fallback = all.find(b =>
+        b.classList.contains("btn-success") &&
+        !/verificar|buscar/i.test(b.textContent || b.value || "")
+      );
+      if (fallback) { fallback.click(); return (fallback.textContent || fallback.value || "").trim(); }
+      return null;
+    });
+    if (!generado) throw new Error("No se encontró botón Generar factura");
+    console.log(`🔘 Botón clickeado: "${generado}"`);
+
+    console.log("⏳ Esperando campo 'Folio factura' con valor...");
+    await page.waitForFunction(
+      () => /folio\s+factura|folio\s+fiscal/i.test(document.body.innerText || ""),
+      { timeout: 20000 }
+    );
+    console.log("✅ Factura generada exitosamente");
+
+    const ss3 = await page.screenshot({ encoding: "base64" });
+    console.log("📸 Screenshot 3 — factura generada");
+
+    // ── PASO 6: Correo electrónico y enviar XML/PDF ──
     if (email) {
-      console.log("📧 Llenando correo:", email);
+      console.log(`📧 PASO 6 — Llenando correo: ${email}`);
       await page.evaluate((mail) => {
         const el = document.querySelector(
           'input[type="email"], input[name*="email" i], input[id*="email" i], input[placeholder*="correo" i], input[placeholder*="email" i]'
         );
         if (el) {
           el.value = "";
+          el.dispatchEvent(new Event("input", { bubbles: true }));
           el.value = mail;
           el.dispatchEvent(new Event("input", { bubbles: true }));
           el.dispatchEvent(new Event("change", { bubbles: true }));
         }
       }, email);
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(400);
+
+      console.log("📤 Clic en Enviar XML/PDF...");
+      const enviado = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button, input[type='submit'], a"));
+        const btn = btns.find(b => /enviar\s*(xml|pdf|comprobante)?/i.test(b.textContent || b.value || ""));
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+      if (enviado) {
+        await page.waitForTimeout(2000);
+        console.log("✅ Correo enviado");
+      } else {
+        console.log("⚠️ No se encontró botón Enviar XML/PDF — continuando con descarga directa");
+      }
     }
 
-    // ── PASO 7: Generar factura ──
-    console.log("🧾 Clic Generar factura...");
-    const generado = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button, input[type='submit'], a, span"));
-      const btn = btns.find(b => /generar.*factura|generar\s+cfdi/i.test(b.textContent || b.value || ""));
-      if (btn) { btn.click(); return true; }
-      // fallback: any prominent submit
-      const sub = document.querySelector("button[type='submit'], input[type='submit']");
-      if (sub) { sub.click(); return true; }
-      return false;
-    });
-    if (!generado) throw new Error("No se encontró botón Generar factura");
-    await page.waitForTimeout(8000);
+    // ── PASO 7: Descargar archivos ──
+    console.log("📥 PASO 7 — Buscando links de descarga...");
+    await page.waitForTimeout(1500);
 
-    const ss3 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 3 — después de generar factura");
-
-    // ── PASO 8: Obtener links ──
-    console.log("📥 Buscando links de descarga...");
     const links = await page.evaluate(() => {
       const anchors = Array.from(document.querySelectorAll("a"));
-      const pdf = anchors.find(a => /\.pdf/i.test(a.href) || /\bpdf\b/i.test(a.textContent));
-      const xml = anchors.find(a => /\.xml/i.test(a.href) || /\bxml\b/i.test(a.textContent));
-      return { pdf: pdf?.href || null, xml: xml?.href || null };
+      const xml = anchors.find(a => /descargar\s*xml|\.xml/i.test(a.textContent + a.href));
+      const pdf = anchors.find(a => /descargar\s*pdf|\.pdf/i.test(a.textContent + a.href));
+      return { xml: xml?.href || null, pdf: pdf?.href || null };
     });
-    console.log("🔗 Links:", links);
+    console.log("🔗 Links encontrados en DOM:", links);
+
+    // Completar con URLs interceptadas si faltan
+    if (!links.xml && downloadedXmlUrl) links.xml = downloadedXmlUrl;
+    if (!links.pdf && downloadedPdfUrl) links.pdf = downloadedPdfUrl;
+    console.log("🔗 Links finales:", links);
 
     if (!links.pdf && !links.xml) {
       await browser.close();
       return { ok: false, msg: "No se encontraron archivos de factura en el portal.", screenshot: ss3 };
     }
 
-    // ── PASO 9: Descargar archivos a facturas/ ──
+    // ── Descargar a disco ──
     const ts = Date.now();
     const xmlDest = path.join(facturasDir, `${ts}.xml`);
     const pdfDest = path.join(facturasDir, `${ts}.pdf`);
@@ -198,7 +237,7 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, email }) {
     try {
       if (links.xml) await downloadFile(links.xml, xmlDest);
       if (links.pdf) await downloadFile(links.pdf, pdfDest);
-      console.log("✅ Archivos descargados:", ts);
+      console.log(`✅ Archivos guardados con timestamp: ${ts}`);
       await browser.close();
       return {
         ok: true,
