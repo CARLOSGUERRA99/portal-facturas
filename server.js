@@ -165,7 +165,7 @@ async function initDB() {
   } catch(e) { /* columna ya existe */ }
 
   try {
-    await db.query("ALTER TABLE tickets MODIFY COLUMN status ENUM('pendiente','procesando','procesando_correo','procesado','error') NOT NULL DEFAULT 'pendiente'");
+    await db.query("ALTER TABLE tickets MODIFY COLUMN status ENUM('pendiente','procesando','procesando_correo','procesado','error','pendiente_confirmacion') NOT NULL DEFAULT 'pendiente'");
   } catch(e) { /* enum ya actualizado */ }
 
   try {
@@ -560,7 +560,8 @@ Verifica especialmente:
 - Folio: SOLO números (ejemplo: 1238066)
 - ID de venta: 2números+3letras+2números+alfanumérico+1-2números
   Ejemplo: 10NLA50XFU1. Último carácter SIEMPRE es número.
-- Total: número con exactamente 2 decimales` }
+- Total: número con exactamente 2 decimales
+- ID de venta: longitud EXACTA entre 10 y 13 caracteres. NO agregues caracteres extra.` }
               ]
             }]
           });
@@ -605,14 +606,65 @@ Verifica especialmente:
 
     const portalUrl = datosOCR.portal || null;
 
-    await db.query(
+    const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente", residente_id, portalUrl]
+      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, portalUrl]
     );
 
-    res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR });
+    res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR, ticketId: insertResult.insertId });
   } catch (err) {
     console.error("❌ Error:", err.message);
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
+// ── CONFIRMAR / RECHAZAR DATOS OCR ──
+app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const { accion, datos } = req.body; // accion: 'confirmar' | 'rechazar'
+
+    const [tickets] = await db.query(
+      "SELECT * FROM tickets WHERE id = ? AND user_id = ?",
+      [ticketId, req.session.userId]
+    );
+    if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
+    const ticket = tickets[0];
+
+    if (ticket.status !== 'pendiente_confirmacion') {
+      return res.json({ ok: false, msg: "El ticket no está en estado de confirmación" });
+    }
+
+    if (accion === 'rechazar') {
+      if (ticket.ruta_archivo) {
+        try { fs.unlinkSync(ticket.ruta_archivo); } catch {}
+      }
+      await db.query("DELETE FROM tickets WHERE id = ? AND user_id = ?", [ticketId, req.session.userId]);
+      return res.json({ ok: true, msg: "Ticket eliminado" });
+    }
+
+    if (accion !== 'confirmar') {
+      return res.json({ ok: false, msg: "Acción inválida" });
+    }
+
+    // Actualizar datos OCR con los confirmados por el usuario
+    const datosActuales = JSON.parse(ticket.ocr_json || '{}');
+    const datosConfirmados = {
+      ...datosActuales,
+      ...(datos.fecha !== undefined && { fecha: datos.fecha }),
+      ...(datos.folio !== undefined && { folio: datos.folio }),
+      ...(datos.idVenta !== undefined && { idVenta: datos.idVenta }),
+      ...(datos.total !== undefined && { total: datos.total }),
+    };
+
+    await db.query(
+      "UPDATE tickets SET ocr_json = ?, status = 'pendiente' WHERE id = ?",
+      [JSON.stringify(datosConfirmados), ticketId]
+    );
+
+    res.json({ ok: true, msg: "Datos confirmados", ticketId });
+  } catch (err) {
+    console.error("❌ Error confirmar:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
   }
 });
@@ -744,6 +796,19 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
 });
 
 // ── BORRAR TICKET ──
+app.get("/api/tickets/:id", auth, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT * FROM tickets WHERE id = ? AND user_id = ?",
+      [req.params.id, req.session.userId]
+    );
+    if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
+    res.json({ ok: true, ticket: rows[0] });
+  } catch (err) {
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
 app.delete("/api/tickets/:id", auth, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -752,7 +817,7 @@ app.delete("/api/tickets/:id", auth, async (req, res) => {
     );
     if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = rows[0];
-    if (!["error", "pendiente"].includes(ticket.status))
+    if (!["error", "pendiente", "pendiente_confirmacion"].includes(ticket.status))
       return res.json({ ok: false, msg: "Solo se pueden borrar tickets en estado error o pendiente" });
 
     if (ticket.ruta_archivo && fs.existsSync(ticket.ruta_archivo)) {

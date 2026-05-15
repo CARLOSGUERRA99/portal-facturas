@@ -200,6 +200,7 @@
         try { datos = JSON.parse(t.ocr_json || '{}'); } catch {}
 
         const statusMap = {
+          pendiente_confirmacion: '<span class="badge" style="background:#FFF7ED;color:#F97316;">Confirmar datos</span>',
           pendiente: '<span class="badge badge-pending">Pendiente</span>',
           procesando: '<span class="badge badge-processing">Procesando</span>',
           procesando_correo: '<span class="badge" style="background:#fff8e6;color:#c97b00;">Procesando</span>',
@@ -212,8 +213,9 @@
           ? `${datos.fecha}${datos.total ? ' · $' + datos.total : ''}${datos.folio ? ' · Folio ' + datos.folio : ''}`
           : '';
 
+        const isPendingConfirm = t.status === 'pendiente_confirmacion';
         const canFacturar = t.status === 'pendiente';
-        const canDelete = t.status === 'error' || t.status === 'pendiente';
+        const canDelete = t.status === 'error' || t.status === 'pendiente' || isPendingConfirm;
         const btnLabel = t.status === 'procesado' ? 'Ya facturado' : t.status === 'error' ? 'Reintentar' : 'Facturar';
 
         return `
@@ -225,12 +227,15 @@
             </div>
             <div class="ticket-right">
               ${badge}
-              <button
-                class="btn btn-primary btn-sm"
-                id="btn-${t.id}"
-                ${!canFacturar && t.status !== 'error' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}
-                onclick="facturar(${t.id})"
-              >${btnLabel}</button>
+              ${isPendingConfirm
+                ? `<a href="/dashboard?confirmar=${t.id}" class="btn btn-primary btn-sm">Revisar datos</a>`
+                : `<button
+                    class="btn btn-primary btn-sm"
+                    id="btn-${t.id}"
+                    ${!canFacturar && t.status !== 'error' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}
+                    onclick="facturar(${t.id})"
+                  >${btnLabel}</button>`
+              }
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
             </div>
           </div>`;

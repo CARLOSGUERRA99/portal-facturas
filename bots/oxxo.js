@@ -209,11 +209,12 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.waitForTimeout(3000);
 
     // ── FOLIO ──
-    console.log("🔢 Llenando folio...");
+    console.log("🔢 Llenando folio...", folio);
     await page.click("#form\\:folio", { clickCount: 3 });
     await page.type("#form\\:folio", String(folio), { delay: 100 });
     await page.waitForTimeout(400);
-    console.log("🔢 Folio en campo:", await page.$eval("#form\\:folio", el => el.value));
+    const folioValor = await page.$eval("#form\\:folio", el => el.value);
+    console.log("🔢 Folio en campo:", folioValor);
 
     // ── ID VENTA ──
     console.log("🔑 Llenando ID venta...");
