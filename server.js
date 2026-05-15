@@ -534,7 +534,7 @@ Responde SOLO este JSON sin texto adicional:
 
     try {
       const response = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-6",
         max_tokens: 1000,
         messages: [{
           role: "user",
@@ -546,72 +546,13 @@ Responde SOLO este JSON sin texto adicional:
       });
       textoOCR = response.content[0].text;
       datosOCR = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
-      console.log("✅ Haiku respondió:", datosOCR);
+      console.log("✅ Sonnet respondió:", datosOCR);
     } catch (e) {
-      console.log("⚠️ Haiku falló, intentando Sonnet...");
+      console.log("⚠️ OCR falló:", e.message);
+      datosOCR = { ok: false, raw: textoOCR };
     }
 
-    // Validación específica para tickets OXXO — reintento dirigido con Sonnet
-    if ((datosOCR.comercio || '').toLowerCase().includes('oxxo') || datosOCR.idVenta) {
-      const erroresHaiku = validarDatosOxxo(datosOCR);
-      if (erroresHaiku.length > 0) {
-        console.log('⚠️ Haiku tuvo errores:', erroresHaiku, '— reintentando con Sonnet...');
-        try {
-          const respuestaSonnet = await anthropic.messages.create({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
-                { type: 'text', text: promptOCR + `
-ATENCIÓN ESPECIAL — Este es un ticket OXXO.
-Haiku leyó estos datos con errores: ${erroresHaiku.join(', ')}
-Verifica especialmente:
-- Folio: SOLO números (ejemplo: 1238066)
-- ID de venta: 2números+3letras+2números+alfanumérico+1-2números
-  Ejemplo: 10NLA50XFU1. Último carácter SIEMPRE es número.
-- Total: número con exactamente 2 decimales
-- ID de venta: longitud EXACTA entre 10 y 13 caracteres. NO agregues caracteres extra.` }
-              ]
-            }]
-          });
-          const datosSonnet = JSON.parse(
-            respuestaSonnet.content[0].text.replace(/```json|```/g, '').trim()
-          );
-          if (datosSonnet.folio) datosOCR.folio = datosSonnet.folio;
-          if (datosSonnet.idVenta) datosOCR.idVenta = datosSonnet.idVenta;
-          if (datosSonnet.total) datosOCR.total = datosSonnet.total;
-          console.log('✅ Sonnet corrigió datos:', datosOCR);
-        } catch (e) {
-          console.log('⚠️ Error parseando Sonnet:', e.message);
-        }
-      }
-    }
-
-    if (!datosOCR.folio && !datosOCR.codigoTicket) {
-      console.log("🔄 Reintentando con Sonnet...");
-      try {
-        const response2 = await anthropic.messages.create({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{
-            role: "user",
-            content: [
-              { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
-              { type: "text", text: promptOCR }
-            ],
-          }],
-        });
-        textoOCR = response2.content[0].text;
-        datosOCR = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
-        console.log("✅ Sonnet respondió:", datosOCR);
-      } catch (e2) {
-        datosOCR = { ok: false, raw: textoOCR };
-      }
-    }
-
-    // Aplicar correcciones automáticas siempre, después de Haiku/Sonnet
+    // Aplicar correcciones automáticas siempre
     datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
     datosOCR.idVenta = corregirIdVentaOxxo(datosOCR.idVenta);
 
