@@ -365,6 +365,65 @@ app.delete("/api/residentes/:id/quitar/:userId", auth, requireAdmin, async (req,
   }
 });
 
+// ── MIS RESIDENTES CON CONTEOS ──
+app.get('/api/residentes/mis-residentes', auth, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT r.id, r.nombre,
+        COUNT(DISTINCT t.id) AS ticket_count,
+        COUNT(DISTINCT f.id) AS factura_count
+      FROM residentes r
+      JOIN user_residentes ur ON r.id = ur.residente_id AND ur.user_id = ?
+      LEFT JOIN tickets t ON t.residente_id = r.id AND t.user_id = ?
+      LEFT JOIN facturas f ON f.ticket_id = t.id
+      GROUP BY r.id, r.nombre
+      ORDER BY r.nombre
+    `, [req.session.userId, req.session.userId]);
+    res.json({ ok: true, residentes: rows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── RESIDENTES DE UN USUARIO (admin) ──
+app.get('/api/admin/residentes/:userId', auth, requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT r.id, r.nombre
+      FROM residentes r
+      JOIN user_residentes ur ON r.id = ur.residente_id
+      WHERE ur.user_id = ?
+      ORDER BY r.nombre
+    `, [req.params.userId]);
+    res.json({ ok: true, residentes: rows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── TICKETS ADMIN (filtrable por user_id y residente_id) ──
+app.get('/api/admin/tickets', auth, requireAdmin, async (req, res) => {
+  try {
+    const { user_id, residente_id } = req.query;
+    let query = `
+      SELECT t.id, t.nombre_archivo, t.comercio, t.status, t.creado, t.ocr_json,
+             u.nombre AS user_nombre, r.nombre AS residente_nombre
+      FROM tickets t
+      JOIN users u ON t.user_id = u.id
+      LEFT JOIN residentes r ON t.residente_id = r.id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (user_id) { query += ' AND t.user_id = ?'; params.push(user_id); }
+    if (residente_id) { query += ' AND t.residente_id = ?'; params.push(residente_id); }
+    query += ' ORDER BY t.creado DESC LIMIT 100';
+    const [rows] = await db.query(query, params);
+    res.json({ ok: true, tickets: rows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 app.get("/api/admin/usuarios", auth, requireAdmin, async (req, res) => {
   try {
     const [usuarios] = await db.query(

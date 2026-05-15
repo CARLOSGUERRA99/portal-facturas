@@ -167,6 +167,39 @@
 
     </div>
 
+    <!-- Filtrar tickets por empleado -->
+    <div style="margin-top:32px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div class="card-title" style="font-size:1rem;font-weight:700;text-transform:none;letter-spacing:0;">Consultar tickets por empleado</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Filtra tickets por empleado y residente asignado</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="limpiarFiltros()">Limpiar filtros</button>
+      </div>
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <label class="label">Empleado</label>
+            <select id="filtro-empleado" class="input" onchange="onEmpleadoChange()">
+              <option value="">Seleccionar empleado...</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:200px;">
+            <label class="label">Residente</label>
+            <select id="filtro-residente" class="input" onchange="cargarAdminTickets()" disabled>
+              <option value="">Todos los residentes</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;" id="admin-tickets-card">
+        <div class="empty-state" style="padding:32px;">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-title">Selecciona un empleado para ver sus tickets</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Portales Pendientes -->
     <div style="margin-top:32px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
@@ -275,6 +308,86 @@
       }).join('');
     }
 
+    async function onEmpleadoChange() {
+      const userId = document.getElementById('filtro-empleado').value;
+      const resSel = document.getElementById('filtro-residente');
+      resSel.innerHTML = '<option value="">Todos los residentes</option>';
+      resSel.disabled = !userId;
+
+      if (userId) {
+        const r = await fetch(`/api/admin/residentes/${userId}`);
+        const d = await r.json();
+        if (d.ok && d.residentes.length) {
+          resSel.innerHTML += d.residentes.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
+        }
+      }
+      cargarAdminTickets();
+    }
+
+    async function cargarAdminTickets() {
+      const userId = document.getElementById('filtro-empleado').value;
+      const residenteId = document.getElementById('filtro-residente').value;
+
+      const card = document.getElementById('admin-tickets-card');
+
+      if (!userId) {
+        card.innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-icon">🔍</div><div class="empty-title">Selecciona un empleado para ver sus tickets</div></div>`;
+        return;
+      }
+
+      card.innerHTML = `<div class="empty-state" style="padding:24px;"><div class="empty-icon">⏳</div><div class="empty-title">Cargando...</div></div>`;
+
+      const params = new URLSearchParams({ user_id: userId });
+      if (residenteId) params.set('residente_id', residenteId);
+
+      const res = await fetch(`/api/admin/tickets?${params}`);
+      const data = await res.json();
+
+      if (!data.ok || !data.tickets.length) {
+        card.innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-icon">🎫</div><div class="empty-title">Sin tickets</div><div class="empty-desc">No hay tickets con los filtros seleccionados</div></div>`;
+        return;
+      }
+
+      const statusMap = {
+        pendiente: '<span class="badge badge-pending">Pendiente</span>',
+        procesando: '<span class="badge badge-processing">Procesando</span>',
+        procesado: '<span class="badge badge-success">Facturado</span>',
+        error: '<span class="badge badge-error">Error</span>',
+        procesando_correo: '<span class="badge badge-processing">En correo</span>',
+      };
+
+      card.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1.5px solid var(--border);background:var(--bg);">
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Empleado</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Comercio</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Residente</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Fecha</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.tickets.map(t => `
+              <tr style="border-bottom:1px solid #f0f4ec;">
+                <td style="padding:12px 20px;font-size:0.875rem;font-weight:600;">${t.user_nombre || '—'}</td>
+                <td style="padding:12px 20px;font-size:0.875rem;">${t.comercio || '—'}</td>
+                <td style="padding:12px 20px;font-size:0.875rem;">${t.residente_nombre || '—'}</td>
+                <td style="padding:12px 20px;font-size:0.8rem;color:var(--text-muted);">${new Date(t.creado).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
+                <td style="padding:12px 20px;">${statusMap[t.status] || `<span class="badge badge-pending">${t.status}</span>`}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    function limpiarFiltros() {
+      document.getElementById('filtro-empleado').value = '';
+      const resSel = document.getElementById('filtro-residente');
+      resSel.innerHTML = '<option value="">Todos los residentes</option>';
+      resSel.disabled = true;
+      document.getElementById('admin-tickets-card').innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-icon">🔍</div><div class="empty-title">Selecciona un empleado para ver sus tickets</div></div>`;
+    }
+
     function renderEmpleados() {
       const lista = document.getElementById('empleados-lista');
       document.getElementById('empleados-count').textContent = `${allEmpleados.length} usuario${allEmpleados.length !== 1 ? 's' : ''}`;
@@ -282,6 +395,12 @@
       if (!allEmpleados.length) {
         lista.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Sin empleados registrados</div></div>`;
         return;
+      }
+
+      const filtroSel = document.getElementById('filtro-empleado');
+      if (filtroSel) {
+        filtroSel.innerHTML = '<option value="">Seleccionar empleado...</option>' +
+          allEmpleados.map(u => `<option value="${u.id}">${u.nombre} (${u.email})</option>`).join('');
       }
 
       lista.innerHTML = allEmpleados.map(u => {

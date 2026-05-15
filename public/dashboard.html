@@ -135,6 +135,23 @@
       </div>
     </div>
 
+    <!-- Resumen por residente (solo si >1 residente) -->
+    <div id="residente-resumen" style="display:none;margin-bottom:24px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-size:1rem;font-weight:700;color:var(--text);letter-spacing:-0.01em;">Resumen por residente</div>
+        <span id="residente-resumen-mes" style="font-size:0.8rem;color:var(--text-muted);font-weight:600;"></span>
+      </div>
+      <div class="residente-mini-grid" id="residente-mini-cards"></div>
+      <div class="card" id="residente-chart-wrap" style="display:none;">
+        <div class="card-header">
+          <div class="card-title">Gasto por residente este mes</div>
+        </div>
+        <div style="position:relative;height:200px;">
+          <canvas id="residente-chart"></canvas>
+        </div>
+      </div>
+    </div>
+
     <!-- Upload + Chart -->
     <div class="two-col">
 
@@ -195,6 +212,7 @@
 
   <script>
     const MINUTOS_POR_FACTURA = 45;
+    let residenteChart = null;
 
     const MONTHS = { '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun',
                      '07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic' };
@@ -238,6 +256,85 @@
       document.getElementById('greeting-sub').textContent = `${facturasSuffix} · ${pendientes} ticket${pendientes !== 1 ? 's' : ''} pendiente${pendientes !== 1 ? 's' : ''}`;
 
       buildChart(tickets);
+      await cargarResumenResidentes(tickets);
+    }
+
+    async function cargarResumenResidentes(tickets) {
+      const res = await fetch('/api/residentes/mis-residentes');
+      const data = await res.json();
+      if (!data.ok || data.residentes.length <= 1) return;
+
+      document.getElementById('residente-resumen').style.display = 'block';
+
+      const now = new Date();
+      const mesActual = now.getMonth();
+      const anioActual = now.getFullYear();
+      const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+      document.getElementById('residente-resumen-mes').textContent = `${MESES[mesActual]} ${anioActual}`;
+
+      const gastoMes = {};
+      tickets.forEach(t => {
+        if (!t.residente_id) return;
+        try {
+          const d = JSON.parse(t.ocr_json || '{}');
+          if (!d.total || !d.fecha) return;
+          const parts = d.fecha.split('/');
+          if (parts.length !== 3) return;
+          const tDate = new Date(parts[2], parseInt(parts[1]) - 1, parseInt(parts[0]));
+          if (tDate.getMonth() === mesActual && tDate.getFullYear() === anioActual) {
+            const rid = String(t.residente_id);
+            gastoMes[rid] = (gastoMes[rid] || 0) + parseFloat(d.total);
+          }
+        } catch {}
+      });
+
+      const miniCards = document.getElementById('residente-mini-cards');
+      miniCards.innerHTML = data.residentes.map(r => {
+        const gasto = gastoMes[String(r.id)] || 0;
+        return `
+          <div class="residente-mini-card">
+            <div class="rmc-icon">🏠</div>
+            <div class="rmc-name">${r.nombre}</div>
+            <div class="rmc-tickets">${r.ticket_count}</div>
+            <div class="rmc-label">ticket${Number(r.ticket_count) !== 1 ? 's' : ''} subido${Number(r.ticket_count) !== 1 ? 's' : ''}</div>
+            <div class="rmc-gasto">$${gasto.toFixed(2)} este mes</div>
+            <div class="rmc-facturas">${r.factura_count} factura${Number(r.factura_count) !== 1 ? 's' : ''} generada${Number(r.factura_count) !== 1 ? 's' : ''}</div>
+          </div>`;
+      }).join('');
+
+      const chartValues = data.residentes.map(r => parseFloat((gastoMes[String(r.id)] || 0).toFixed(2)));
+      if (chartValues.some(v => v > 0)) {
+        document.getElementById('residente-chart-wrap').style.display = 'block';
+        const ctx = document.getElementById('residente-chart').getContext('2d');
+        if (residenteChart) residenteChart.destroy();
+        residenteChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: data.residentes.map(r => r.nombre),
+            datasets: [{
+              label: 'Gasto ($)',
+              data: chartValues,
+              backgroundColor: 'rgba(59,109,17,0.18)',
+              borderColor: '#3B6D11',
+              borderWidth: 2,
+              borderRadius: 8,
+              borderSkipped: false,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: ctx => ` $${ctx.parsed.y.toFixed(2)}` } }
+            },
+            scales: {
+              x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 12 }, color: '#6b7c5e' } },
+              y: { grid: { color: '#f0f4ec' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#6b7c5e', callback: v => `$${v}` } }
+            }
+          }
+        });
+      }
     }
 
     function buildChart(tickets) {

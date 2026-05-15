@@ -91,6 +91,8 @@
       </div>
     </div>
 
+    <div class="residente-tabs" id="residente-tabs" style="display:none;"></div>
+
     <div class="facturas-card">
       <div class="facturas-card-header">
         <div class="card-title">Facturas generadas</div>
@@ -149,6 +151,35 @@
       sessionStorage.setItem('activeResidenteNombre', nombre);
       document.getElementById('residente-activo-nombre').textContent = nombre;
       document.getElementById('residente-dropdown').classList.remove('open');
+      document.querySelectorAll('.residente-tab').forEach(t => {
+        t.classList.toggle('active', (t.dataset.rid || '') === (activeResidenteId || ''));
+      });
+      cargarFacturas();
+    }
+
+    async function cargarTabs() {
+      const res = await fetch('/api/residentes/mis-residentes');
+      const data = await res.json();
+      if (!data.ok || data.residentes.length <= 1) return;
+      const tabsEl = document.getElementById('residente-tabs');
+      tabsEl.style.display = 'flex';
+      const total = data.residentes.reduce((a, r) => a + Number(r.factura_count), 0);
+      const allTab = `<button class="residente-tab ${!activeResidenteId ? 'active' : ''}" data-rid="" onclick="selectTab(null,'Todos',this)">Todos <span class="tab-badge">${total}</span></button>`;
+      const rTabs = data.residentes.map(r =>
+        `<button class="residente-tab ${activeResidenteId == r.id ? 'active' : ''}" data-rid="${r.id}" onclick="selectTab(${r.id},'${r.nombre.replace(/'/g,"\\'")}',this)">${r.nombre} <span class="tab-badge">${r.factura_count}</span></button>`
+      );
+      tabsEl.innerHTML = [allTab, ...rTabs].join('');
+    }
+
+    function selectTab(id, nombre, btn) {
+      activeResidenteId = id ? String(id) : null;
+      activeResidenteNombre = nombre;
+      id ? sessionStorage.setItem('activeResidenteId', id) : sessionStorage.removeItem('activeResidenteId');
+      sessionStorage.setItem('activeResidenteNombre', nombre);
+      document.querySelectorAll('.residente-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      const pill = document.getElementById('residente-activo-nombre');
+      if (pill) pill.textContent = nombre;
       cargarFacturas();
     }
 
@@ -210,6 +241,7 @@
 
     initNav();
     cargarFacturas();
+    cargarTabs();
     initNotificaciones();
   </script>
 </body>

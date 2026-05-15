@@ -604,6 +604,62 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
   color: var(--text-muted);
 }
 
+/* ── RESIDENTE TABS ── */
+.residente-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.residente-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s;
+  border: 1.5px solid var(--border);
+  background: white;
+  color: var(--text-muted);
+  font-family: inherit;
+}
+.residente-tab:hover { border-color: var(--green); color: var(--green); background: var(--green-light); }
+.residente-tab.active { background: var(--green); color: white; border-color: var(--green); }
+
+.tab-badge {
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--bg);
+  color: var(--text-muted);
+}
+.residente-tab.active .tab-badge { background: rgba(255,255,255,0.25); color: white; }
+
+/* ── RESIDENTE MINI-CARDS ── */
+.residente-mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.residente-mini-card {
+  background: white;
+  border-radius: var(--card-radius);
+  padding: 18px 20px;
+  box-shadow: var(--shadow);
+}
+.rmc-icon { font-size: 28px; margin-bottom: 10px; }
+.rmc-name { font-size: 0.88rem; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.rmc-tickets { font-size: 1.5rem; font-weight: 800; color: var(--text); letter-spacing: -0.03em; line-height: 1; margin-bottom: 4px; }
+.rmc-label { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; margin-bottom: 8px; }
+.rmc-gasto { font-size: 0.85rem; font-weight: 700; color: var(--green); }
+.rmc-facturas { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
 /* ── MODAL ── */
 .modal-overlay {
   display: none;
