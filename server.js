@@ -71,16 +71,23 @@ async function assignAdminResidentes(adminId) {
 // ── MIGRACIÓN DB ──
 async function initDB() {
   try {
-    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS rol ENUM('admin','residente') NOT NULL DEFAULT 'residente'");
-    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS creado_por INT NULL");
+    await db.query("ALTER TABLE users ADD COLUMN rol ENUM('admin','residente') NOT NULL DEFAULT 'residente'");
+  } catch(e) { /* columna ya existe */ }
 
+  try {
+    await db.query("ALTER TABLE users ADD COLUMN creado_por INT NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
     await db.query(`CREATE TABLE IF NOT EXISTS residentes (
       id INT AUTO_INCREMENT PRIMARY KEY,
       nombre VARCHAR(100) NOT NULL,
       disponible TINYINT(1) DEFAULT 1,
       creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`);
+  } catch(e) { /* tabla ya existe */ }
 
+  try {
     await db.query(`CREATE TABLE IF NOT EXISTS user_residentes (
       id INT AUTO_INCREMENT PRIMARY KEY,
       user_id INT NOT NULL,
@@ -90,9 +97,13 @@ async function initDB() {
       FOREIGN KEY (user_id) REFERENCES users(id),
       FOREIGN KEY (residente_id) REFERENCES residentes(id)
     )`);
+  } catch(e) { /* tabla ya existe */ }
 
-    await db.query("ALTER TABLE tickets ADD COLUMN IF NOT EXISTS residente_id INT NULL");
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN residente_id INT NULL");
+  } catch(e) { /* columna ya existe */ }
 
+  try {
     const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM residentes");
     if (n === 0) {
       for (const r of DEFAULT_RESIDENTES) {
@@ -106,11 +117,11 @@ async function initDB() {
       await db.query("UPDATE users SET rol = 'admin' WHERE email = ?", [ADMIN_EMAIL]);
       await assignAdminResidentes(adminUsers[0].id);
     }
-
-    console.log("✅ DB schema actualizado");
   } catch (e) {
-    console.log("ℹ️  DB migration:", e.message);
+    console.log("ℹ️  DB seed/admin:", e.message);
   }
+
+  console.log("✅ DB schema actualizado");
 }
 initDB();
 
