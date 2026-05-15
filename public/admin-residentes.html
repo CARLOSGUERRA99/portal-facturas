@@ -6,6 +6,7 @@
   <title>Administración — GPN Portal Facturas</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <script src="/notificaciones.js"></script>
   <style>
     .admin-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start; }
 
@@ -96,6 +97,18 @@
       <a href="/admin-residentes" class="nav-link active">Admin</a>
     </div>
     <div class="nav-right">
+      <div class="notif-wrapper" id="notif-wrapper">
+        <button class="notif-bell" onclick="toggleNotifDropdown(event)" title="Notificaciones">🔔
+          <span class="notif-badge" id="notif-badge" style="display:none;"></span>
+        </button>
+        <div class="notif-dropdown" id="notif-dropdown">
+          <div class="notif-header">
+            <span class="notif-header-title">Notificaciones</span>
+            <button class="notif-leer-todas" onclick="leerTodas()">Marcar todas</button>
+          </div>
+          <div class="notif-lista" id="notif-lista"></div>
+        </div>
+      </div>
       <div class="nav-avatar" id="nav-avatar">A</div>
       <span class="nav-name" id="nav-name">Admin</span>
       <a href="/logout" class="nav-logout">Salir</a>
@@ -152,6 +165,57 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- Portales Pendientes -->
+    <div style="margin-top:32px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div class="card-title" style="font-size:1rem;font-weight:700;">Portales Pendientes</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Comercios cuyo portal de facturación no fue reconocido</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="cargarPortales()">↺ Actualizar</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;" id="portales-card">
+        <div class="empty-state" style="padding:32px;">
+          <div class="empty-icon">⏳</div>
+          <div class="empty-title">Cargando...</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Modal Registrar Portal -->
+  <div class="modal-overlay" id="modal-portal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">Registrar portal de facturación</div>
+        <button class="modal-close" onclick="cerrarModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="modal-comercio">
+        <div style="background:var(--bg);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:0.82rem;color:var(--text-muted);">
+          Comercio: <strong id="modal-comercio-label" style="color:var(--text);"></strong>
+        </div>
+        <div class="form-group">
+          <label class="label">Nombre del portal <span style="color:var(--error)">*</span></label>
+          <input type="text" id="modal-nombre" class="input" placeholder="Ej. BuzonFacturas">
+        </div>
+        <div class="form-group">
+          <label class="label">URL del portal <span style="color:var(--error)">*</span></label>
+          <input type="url" id="modal-url" class="input" placeholder="https://...">
+        </div>
+        <div class="form-group">
+          <label class="label">Notas</label>
+          <textarea id="modal-notas" class="input" rows="3" placeholder="Instrucciones o comentarios opcionales..." style="resize:vertical;"></textarea>
+        </div>
+        <div id="modal-alert" class="alert" style="margin-top:0;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>
+        <button class="btn btn-primary" id="modal-btn" onclick="registrarPortal()">Registrar portal</button>
+      </div>
     </div>
   </div>
 
@@ -325,7 +389,107 @@
       setTimeout(() => { el.style.display = 'none'; }, 3500);
     }
 
+    async function cargarPortales() {
+      const card = document.getElementById('portales-card');
+      const res = await fetch('/api/portales-pendientes');
+      const data = await res.json();
+      if (!data.ok) return;
+
+      if (!data.grupos.length) {
+        card.innerHTML = `
+          <div class="empty-state" style="padding:32px;">
+            <div class="empty-icon">✅</div>
+            <div class="empty-title">Sin portales pendientes</div>
+            <div class="empty-desc">Todos los tickets han sido procesados correctamente</div>
+          </div>`;
+        return;
+      }
+
+      card.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1.5px solid var(--border);background:var(--bg);">
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Comercio</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Tickets</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Último</th>
+              <th style="padding:12px 20px;text-align:right;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.grupos.map(g => `
+              <tr style="border-bottom:1px solid #f0f4ec;">
+                <td style="padding:14px 20px;font-weight:600;font-size:0.875rem;">${g.comercio || 'Desconocido'}</td>
+                <td style="padding:14px 20px;"><span class="badge badge-error">${g.total_tickets}</span></td>
+                <td style="padding:14px 20px;font-size:0.8rem;color:var(--text-muted);">${new Date(g.ultimo_ticket).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
+                <td style="padding:14px 20px;text-align:right;">
+                  <button class="btn btn-primary btn-sm" onclick="abrirModalPortal('${(g.comercio || '').replace(/'/g, "\\'")}')">Registrar portal</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    function abrirModalPortal(comercio) {
+      document.getElementById('modal-comercio').value = comercio;
+      document.getElementById('modal-comercio-label').textContent = comercio;
+      document.getElementById('modal-nombre').value = '';
+      document.getElementById('modal-url').value = '';
+      document.getElementById('modal-notas').value = '';
+      document.getElementById('modal-alert').style.display = 'none';
+      document.getElementById('modal-portal').classList.add('open');
+    }
+
+    function cerrarModal() {
+      document.getElementById('modal-portal').classList.remove('open');
+    }
+
+    async function registrarPortal() {
+      const nombre = document.getElementById('modal-nombre').value.trim();
+      const url = document.getElementById('modal-url').value.trim();
+      const notas = document.getElementById('modal-notas').value.trim();
+      const comercio = document.getElementById('modal-comercio').value;
+      const alertEl = document.getElementById('modal-alert');
+      const btn = document.getElementById('modal-btn');
+
+      alertEl.style.display = 'none';
+      if (!nombre || !url) {
+        alertEl.className = 'alert alert-error';
+        alertEl.textContent = 'Nombre y URL son obligatorios';
+        alertEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Guardando...';
+
+      const res = await fetch('/api/portales-pendientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, url, notas, comercio })
+      });
+      const data = await res.json();
+
+      btn.disabled = false;
+      btn.textContent = 'Registrar portal';
+
+      if (data.ok) {
+        cerrarModal();
+        showAlert('Portal registrado. Los tickets fueron liberados para reintento.', 'success');
+        cargarPortales();
+      } else {
+        alertEl.className = 'alert alert-error';
+        alertEl.textContent = data.msg || 'Error al registrar';
+        alertEl.style.display = 'block';
+      }
+    }
+
+    document.getElementById('modal-portal').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-portal')) cerrarModal();
+    });
+
     init();
+    cargarPortales();
+    initNotificaciones();
   </script>
 </body>
 </html>

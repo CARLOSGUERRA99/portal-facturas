@@ -8,6 +8,7 @@ const multer = require("multer");
 const fs = require("fs");
 const Anthropic = require("@anthropic-ai/sdk");
 const { facturarOXXO } = require("./bots/oxxo");
+const { facturarBuzonFacturas } = require("./bots/buzonfacturas");
 
 const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -29,6 +30,10 @@ const db = mysql.createPool({
 });
 
 app.use(express.static(path.join(__dirname, "public")));
+
+const facturasDir = path.join(__dirname, "facturas");
+if (!fs.existsSync(facturasDir)) fs.mkdirSync(facturasDir, { recursive: true });
+app.use("/facturas", express.static(facturasDir));
 
 // ── CONSTANTES ──
 const ADMIN_EMAIL = "carlosguerra@grupogpn.com";
@@ -68,6 +73,17 @@ async function assignAdminResidentes(adminId) {
   }
 }
 
+async function crearNotificacion(userId, tipo, mensaje) {
+  try {
+    await db.query(
+      "INSERT INTO notificaciones (user_id, tipo, mensaje) VALUES (?, ?, ?)",
+      [userId, tipo, mensaje]
+    );
+  } catch (e) {
+    console.error("⚠️ crearNotificacion:", e.message);
+  }
+}
+
 // ── MIGRACIÓN DB ──
 async function initDB() {
   try {
@@ -102,6 +118,34 @@ async function initDB() {
   try {
     await db.query("ALTER TABLE tickets ADD COLUMN residente_id INT NULL");
   } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN portal_url VARCHAR(255) NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query(`CREATE TABLE IF NOT EXISTS notificaciones (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      tipo VARCHAR(50) NOT NULL,
+      mensaje TEXT NOT NULL,
+      leida TINYINT(1) DEFAULT 0,
+      creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )`);
+  } catch(e) { /* tabla ya existe */ }
+
+  try {
+    await db.query(`CREATE TABLE IF NOT EXISTS portales_pendientes (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      nombre VARCHAR(100) NOT NULL,
+      url VARCHAR(500) NOT NULL,
+      notas TEXT,
+      registrado_por INT NOT NULL,
+      creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (registrado_por) REFERENCES users(id)
+    )`);
+  } catch(e) { /* tabla ya existe */ }
 
   try {
     const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM residentes");
@@ -341,36 +385,27 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
     let datosOCR = {};
     let textoOCR = "";
 
-    const promptOCR = `Analiza este ticket de compra de OXXO y extrae EXACTAMENTE estos datos en formato JSON.
+    const promptOCR = `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON.
 
-REGLAS CRÍTICAS para tickets OXXO:
+DETECTA EL TIPO DE COMERCIO:
+- Si es OXXO: extrae folio (después de "Fol_Vta:") e idVenta (después de "ID="), pon portal = null
+- Si es gasolinera ARCO u otro comercio con portal buzonfacturas.com: extrae el código de ticket/folio visible, pon portal = "buzonfacturas", pon codigoTicket con ese código
+- Si no reconoces el portal de facturación: pon portal = "desconocido"
 
-1. "folio" — es SOLO números, aparece después de "Fol_Vta:" en el ticket.
+REGLAS para tickets OXXO:
+1. "folio" — SOLO números, después de "Fol_Vta:"
    Ejemplo: Fol_Vta:4682868 → folio = "4682868"
-
-2. "idVenta" — aparece después de "ID=" en el ticket. Tiene este formato exacto:
-   - Posición 1-2: SOLO NÚMEROS (ejemplo: 10)
-   - Posición 3-5: SOLO LETRAS MAYÚSCULAS (ejemplo: OBR)
-   - Posición 6-8: SOLO NÚMEROS (ejemplo: 500)
-   - Posición 9-10: LETRAS Y NÚMEROS mezclados (ejemplo: NG)
-   - Posición 11: SOLO UN NÚMERO (ejemplo: 1)
-   - Resultado final ejemplo: 10OBR500NG1
-   - MUY IMPORTANTE: NO confundas el número CERO (0) con la letra O mayúscula.
-     Donde el formato dice NÚMEROS escribe dígitos 0-9, NUNCA letras.
-     Donde el formato dice LETRAS escribe letras A-Z, NUNCA números.
-
-3. "fecha" — fecha de la compra en formato DD/MM/YYYY
-
-4. "total" — monto total en número sin signos ni texto
-
-5. "folio" e "idVenta" son campos COMPLETAMENTE DIFERENTES, no los confundas.
+2. "idVenta" — después de "ID=". Formato: 2 números + 3 letras mayúsculas + 3 números + letras/números + 1 número
+   Ejemplo: 10OBR500NG1. NO confundas cero (0) con letra O.
 
 Responde SOLO este JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
   "fecha": "DD/MM/YYYY",
-  "folio": "solo números del Fol_Vta",
-  "idVenta": "código exacto del ID=",
+  "folio": "solo números del Fol_Vta o null",
+  "idVenta": "código exacto del ID= o null",
+  "codigoTicket": "código de ticket para otros portales o null",
+  "portal": null,
   "total": número sin signos,
   "ok": true
 }`;
@@ -394,7 +429,7 @@ Responde SOLO este JSON sin texto adicional:
       console.log("⚠️ Haiku falló, intentando Sonnet...");
     }
 
-    if (!datosOCR.folio || !datosOCR.idVenta) {
+    if (!datosOCR.folio && !datosOCR.codigoTicket) {
       console.log("🔄 Reintentando con Sonnet...");
       try {
         const response2 = await anthropic.messages.create({
@@ -416,9 +451,11 @@ Responde SOLO este JSON sin texto adicional:
       }
     }
 
+    const portalUrl = datosOCR.portal || null;
+
     await db.query(
-      "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente", residente_id]
+      "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente", residente_id, portalUrl]
     );
 
     res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR });
@@ -433,7 +470,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
   try {
     const { ticketId } = req.params;
     const [tickets] = await db.query(
-      "SELECT * FROM tickets WHERE id = ? AND user_id = ?",
+      "SELECT t.*, u.email FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ? AND t.user_id = ?",
       [ticketId, req.session.userId]
     );
     if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
@@ -447,29 +484,63 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     if (users.length === 0) return res.json({ ok: false, msg: "Perfil fiscal no encontrado" });
     const perfil = users[0];
 
-    if (!perfil.rfc)    return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
-    if (!datos.folio)   return res.json({ ok: false, msg: "El ticket no tiene folio detectado" });
-    if (!datos.idVenta) return res.json({ ok: false, msg: "El ticket no tiene ID de venta detectado" });
+    if (!perfil.rfc) return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
 
     await db.query("UPDATE tickets SET status = 'procesando' WHERE id = ?", [ticketId]);
 
-    const resultado = await facturarOXXO({
-      fecha: datos.fecha,
-      folio: datos.folio,
-      idVenta: datos.idVenta,
-      total: datos.total,
-      rfc: perfil.rfc,
-      razonSocial: perfil.razon_social,
-      calle: perfil.calle,
-      ext: perfil.num_ext,
-      int: perfil.num_int,
-      colonia: perfil.colonia,
-      municipio: perfil.municipio,
-      estado: perfil.estado,
-      codigoPostal: perfil.codigo_postal,
-      regimenFiscal: perfil.regimen_fiscal,
-      usoCfdi: perfil.uso_cfdi || "G03",
-    });
+    const portal = ticket.portal_url || datos.portal || null;
+    let resultado;
+
+    if (datos.folio && datos.idVenta) {
+      // OXXO
+      resultado = await facturarOXXO({
+        fecha: datos.fecha,
+        folio: datos.folio,
+        idVenta: datos.idVenta,
+        total: datos.total,
+        rfc: perfil.rfc,
+        razonSocial: perfil.razon_social,
+        calle: perfil.calle,
+        ext: perfil.num_ext,
+        int: perfil.num_int,
+        colonia: perfil.colonia,
+        municipio: perfil.municipio,
+        estado: perfil.estado,
+        codigoPostal: perfil.codigo_postal,
+        regimenFiscal: perfil.regimen_fiscal,
+        usoCfdi: perfil.uso_cfdi || "G03",
+      });
+    } else if (portal === "buzonfacturas" || datos.codigoTicket) {
+      // BuzonFacturas (ARCO y otras gasolineras)
+      resultado = await facturarBuzonFacturas({
+        rfc: perfil.rfc,
+        codigoTicket: datos.codigoTicket,
+        email: ticket.email,
+      });
+    } else {
+      // Portal desconocido — notificar residente y admin
+      await db.query(
+        "UPDATE tickets SET status = 'error', portal_url = 'desconocido' WHERE id = ?",
+        [ticketId]
+      );
+
+      await crearNotificacion(
+        req.session.userId,
+        "portal_desconocido",
+        `No pudimos facturar tu ticket de ${ticket.comercio || "comercio desconocido"} porque no reconocemos el portal de facturación. El administrador ha sido notificado.`
+      );
+
+      const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
+      if (adminRows.length > 0) {
+        await crearNotificacion(
+          adminRows[0].id,
+          "portal_pendiente",
+          `Nuevo portal detectado en ticket #${ticketId} de ${ticket.comercio || "comercio desconocido"}. Revisa la sección Portales Pendientes.`
+        );
+      }
+
+      return res.json({ ok: false, msg: "Portal de facturación no reconocido. El administrador ha sido notificado para registrarlo." });
+    }
 
     if (resultado.ok) {
       await db.query(
@@ -543,6 +614,100 @@ app.get("/api/facturas", auth, async (req, res) => {
     query += " ORDER BY f.creado DESC";
     const [rows] = await db.query(query, params);
     res.json({ ok: true, facturas: rows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── NOTIFICACIONES ──
+app.get("/api/notificaciones", auth, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT id, tipo, mensaje, leida, creado FROM notificaciones WHERE user_id = ? ORDER BY creado DESC LIMIT 50",
+      [req.session.userId]
+    );
+    const noLeidas = rows.filter(n => !n.leida).length;
+    res.json({ ok: true, notificaciones: rows, noLeidas });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+app.post("/api/notificaciones/:id/leer", auth, async (req, res) => {
+  try {
+    await db.query(
+      "UPDATE notificaciones SET leida = 1 WHERE id = ? AND user_id = ?",
+      [req.params.id, req.session.userId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+app.post("/api/notificaciones/leer-todas", auth, async (req, res) => {
+  try {
+    await db.query(
+      "UPDATE notificaciones SET leida = 1 WHERE user_id = ?",
+      [req.session.userId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── PORTALES PENDIENTES (admin) ──
+app.get("/api/portales-pendientes", auth, requireAdmin, async (req, res) => {
+  try {
+    const [grupos] = await db.query(`
+      SELECT
+        comercio,
+        COUNT(*) AS total_tickets,
+        MAX(creado) AS ultimo_ticket
+      FROM tickets
+      WHERE portal_url = 'desconocido'
+        AND status = 'error'
+      GROUP BY comercio
+      ORDER BY ultimo_ticket DESC
+    `);
+    res.json({ ok: true, grupos });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+app.post("/api/portales-pendientes", auth, requireAdmin, async (req, res) => {
+  try {
+    const { nombre, url, notas, comercio } = req.body;
+    if (!nombre || !url || !comercio) return res.json({ ok: false, msg: "Faltan campos requeridos" });
+
+    await db.query(
+      "INSERT INTO portales_pendientes (nombre, url, notas, registrado_por) VALUES (?, ?, ?, ?)",
+      [nombre, url, notas || null, req.session.userId]
+    );
+
+    // Reset affected tickets so residents can retry
+    await db.query(
+      "UPDATE tickets SET status = 'pendiente', portal_url = ? WHERE portal_url = 'desconocido' AND comercio = ?",
+      [url, comercio]
+    );
+
+    // Notify affected residents
+    const [affectedUsers] = await db.query(`
+      SELECT DISTINCT user_id FROM tickets
+      WHERE portal_url = ? AND comercio = ?
+    `, [url, comercio]);
+
+    for (const u of affectedUsers) {
+      await crearNotificacion(
+        u.user_id,
+        "portal_registrado",
+        `El portal de facturación de ${comercio} ya fue registrado. Puedes volver a intentar facturar tus tickets pendientes.`
+      );
+    }
+
+    res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }

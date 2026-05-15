@@ -6,6 +6,7 @@
   <title>Dashboard — GPN Portal Facturas</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
+  <script src="/notificaciones.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     .greeting-card {
@@ -78,6 +79,18 @@
         </div>
         <div class="residente-dropdown" id="residente-dropdown">
           <div class="residente-dropdown-header">Ver residente</div>
+        </div>
+      </div>
+      <div class="notif-wrapper" id="notif-wrapper">
+        <button class="notif-bell" onclick="toggleNotifDropdown(event)" title="Notificaciones">🔔
+          <span class="notif-badge" id="notif-badge" style="display:none;"></span>
+        </button>
+        <div class="notif-dropdown" id="notif-dropdown">
+          <div class="notif-header">
+            <span class="notif-header-title">Notificaciones</span>
+            <button class="notif-leer-todas" onclick="leerTodas()">Marcar todas</button>
+          </div>
+          <div class="notif-lista" id="notif-lista"></div>
         </div>
       </div>
       <div class="nav-avatar" id="nav-avatar">?</div>
@@ -422,6 +435,7 @@
     });
 
     cargarDatos();
+    initNotificaciones();
   </script>
 </body>
 </html>
