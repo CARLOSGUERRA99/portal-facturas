@@ -10,6 +10,9 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
 
+  // Simular navegador real
+  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+
   try {
     console.log("🌐 Abriendo portal OXXO...");
     await page.goto("https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/inicio.do", {
@@ -17,132 +20,161 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       timeout: 30000
     });
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
-    // ── FECHA (campo readonly, se llena via datepicker) ──
-    console.log("📅 Llenando fecha...");
+    // Screenshot para debug
+    const ss1 = await page.screenshot({ encoding: "base64" });
+    console.log("📸 Screenshot 1 tomado, página cargada");
+
+    // ── FECHA via JavaScript directo ──
+    console.log("📅 Llenando fecha via JS...");
     await page.waitForSelector("#form\\:fecha_input", { timeout: 15000 });
-    await page.evaluate((fecha) => {
-      const input = document.querySelector("#form\\:fecha_input");
-      input.removeAttribute("readonly");
-      input.value = fecha;
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.dispatchEvent(new Event("blur", { bubbles: true }));
-    }, fecha);
 
-    await page.waitForTimeout(500);
+    // Convertir fecha DD/MM/YYYY a MM/DD/YYYY para el datepicker
+    let fechaFormateada = fecha;
+    if (fecha && fecha.includes("/")) {
+      const partes = fecha.split("/");
+      if (partes.length === 3) {
+        fechaFormateada = `${partes[1]}/${partes[0]}/${partes[2]}`;
+      }
+    }
+
+    await page.evaluate((f) => {
+      const input = document.querySelector("#form\\:fecha_input");
+      if (input) {
+        input.removeAttribute("readonly");
+        input.value = f;
+        // Disparar todos los eventos necesarios
+        ["focus", "input", "change", "blur", "keyup"].forEach(ev => {
+          input.dispatchEvent(new Event(ev, { bubbles: true }));
+        });
+        // También intentar con jQuery si está disponible
+        if (typeof jQuery !== "undefined") {
+          jQuery(input).val(f).trigger("change");
+        }
+      }
+    }, fechaFormateada);
+
+    await page.waitForTimeout(1000);
 
     // ── FOLIO ──
     console.log("🔢 Llenando folio...");
     await page.waitForSelector("#form\\:folio", { timeout: 10000 });
-    await page.click("#form\\:folio");
-    await page.type("#form\\:folio", String(folio), { delay: 50 });
-
-    await page.waitForTimeout(300);
+    await page.click("#form\\:folio", { clickCount: 3 });
+    await page.type("#form\\:folio", String(folio), { delay: 100 });
+    await page.waitForTimeout(500);
 
     // ── ID VENTA ──
     console.log("🔑 Llenando ID venta...");
-    await page.waitForSelector("#form\\:venta", { timeout: 10000 });
-    await page.click("#form\\:venta");
-    await page.type("#form\\:venta", String(idVenta), { delay: 50 });
-
-    await page.waitForTimeout(300);
+    await page.click("#form\\:venta", { clickCount: 3 });
+    await page.type("#form\\:venta", String(idVenta), { delay: 100 });
+    await page.waitForTimeout(500);
 
     // ── TOTAL ──
     console.log("💰 Llenando total...");
-    await page.waitForSelector("#form\\:total", { timeout: 10000 });
-    await page.click("#form\\:total");
-    await page.type("#form\\:total", String(total), { delay: 50 });
-
+    await page.click("#form\\:total", { clickCount: 3 });
+    // Total con 2 decimales
+    const totalStr = parseFloat(total).toFixed(2);
+    await page.type("#form\\:total", totalStr, { delay: 100 });
     await page.waitForTimeout(500);
 
-    // ── VALIDAR TICKET ──
+    // Screenshot antes de validar
+    const ss2 = await page.screenshot({ encoding: "base64" });
+    console.log("📸 Screenshot 2 - antes de validar");
+
+    // ── VALIDAR TICKET via click en span ──
     console.log("✅ Validando ticket...");
     await page.evaluate(() => {
       const spans = Array.from(document.querySelectorAll("span"));
       const validar = spans.find(s => s.textContent.trim() === "Validar Ticket");
-      if (validar) validar.click();
+      if (validar) {
+        validar.click();
+      } else {
+        // Intentar con el botón directo
+        const btn = document.querySelector("input[value='Validar Ticket'], button[value='Validar Ticket']");
+        if (btn) btn.click();
+      }
     });
 
-    // Esperar a que se habilite el botón Continuar
-    console.log("⏳ Esperando validación...");
-    await page.waitForFunction(() => {
+    await page.waitForTimeout(5000);
+
+    // Screenshot después de validar
+    const ss3 = await page.screenshot({ encoding: "base64" });
+    console.log("📸 Screenshot 3 - después de validar");
+
+    // Verificar si el botón continuar se habilitó
+    const continuarHabilitado = await page.evaluate(() => {
       const btn = document.querySelector("#form\\:continuar");
       return btn && !btn.disabled;
-    }, { timeout: 15000 });
+    });
 
-    await page.waitForTimeout(1000);
+    console.log("▶️ Continuar habilitado:", continuarHabilitado);
+
+    if (!continuarHabilitado) {
+      // Ver mensaje de error del portal
+      const mensajeError = await page.evaluate(() => {
+        const msgs = document.querySelectorAll(".ui-messages-error, .ui-message-error-detail, [class*='error'], [class*='mensaje']");
+        return Array.from(msgs).map(m => m.textContent.trim()).join(" | ");
+      });
+      console.log("⚠️ Mensaje del portal:", mensajeError);
+      await browser.close();
+      return { ok: false, msg: `Portal no validó el ticket. ${mensajeError || "Verifica fecha, folio, ID y total"}`, screenshot: ss3 };
+    }
 
     // ── CONTINUAR ──
-    console.log("▶️ Clic en Continuar...");
     await page.click("#form\\:continuar");
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
-    // ── RFC ──
-    console.log("📋 Llenando RFC...");
+    // ── DATOS FISCALES ──
+    console.log("📋 Llenando datos fiscales...");
     await page.waitForFunction(() => {
       const el = document.querySelector("#form\\:rfc");
       return el && !el.disabled;
     }, { timeout: 15000 });
-    await page.click("#form\\:rfc");
-    await page.type("#form\\:rfc", rfc, { delay: 50 });
 
+    await page.click("#form\\:rfc", { clickCount: 3 });
+    await page.type("#form\\:rfc", rfc, { delay: 80 });
     await page.waitForTimeout(300);
 
-    // ── RAZÓN SOCIAL ──
-    await page.click("#form\\:razon");
-    await page.type("#form\\:razon", razonSocial, { delay: 30 });
+    await page.click("#form\\:razon", { clickCount: 3 });
+    await page.type("#form\\:razon", razonSocial, { delay: 50 });
+    await page.waitForTimeout(300);
 
-    // ── CALLE ──
-    await page.click("#form\\:calle");
-    await page.type("#form\\:calle", calle || "", { delay: 30 });
+    await page.click("#form\\:calle", { clickCount: 3 });
+    await page.type("#form\\:calle", calle || "", { delay: 50 });
 
-    // ── NUM EXT ──
-    await page.click("#form\\:ext");
-    await page.type("#form\\:ext", ext || "S/N", { delay: 30 });
+    await page.click("#form\\:ext", { clickCount: 3 });
+    await page.type("#form\\:ext", ext || "S/N", { delay: 50 });
 
-    // ── NUM INT (opcional) ──
     if (int) {
-      await page.click("#form\\:int");
-      await page.type("#form\\:int", int, { delay: 30 });
+      await page.click("#form\\:int", { clickCount: 3 });
+      await page.type("#form\\:int", int, { delay: 50 });
     }
 
-    // ── COLONIA ──
-    await page.click("#form\\:colonia");
-    await page.type("#form\\:colonia", colonia || "", { delay: 30 });
+    await page.click("#form\\:colonia", { clickCount: 3 });
+    await page.type("#form\\:colonia", colonia || "", { delay: 50 });
 
-    // ── MUNICIPIO ──
-    await page.click("#form\\:dele");
-    await page.type("#form\\:dele", municipio || "", { delay: 30 });
+    await page.click("#form\\:dele", { clickCount: 3 });
+    await page.type("#form\\:dele", municipio || "", { delay: 50 });
 
-    // ── CÓDIGO POSTAL ──
-    await page.click("#form\\:codigo");
-    await page.type("#form\\:codigo", String(codigoPostal), { delay: 30 });
+    await page.click("#form\\:codigo", { clickCount: 3 });
+    await page.type("#form\\:codigo", String(codigoPostal), { delay: 50 });
 
-    // ── ESTADO ──
-    await page.waitForSelector("#form\\:estado_input", { timeout: 10000 });
     await page.select("#form\\:estado_input", estado || "SONORA");
-
     await page.waitForTimeout(300);
 
-    // ── RÉGIMEN FISCAL ──
-    await page.waitForSelector("#form\\:selectOneMenuRegFis_input", { timeout: 10000 });
     await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "612"));
-
     await page.waitForTimeout(300);
 
-    // ── USO CFDI ──
-    await page.waitForSelector("#form\\:selectOneMenuCFDI_input", { timeout: 10000 });
     await page.select("#form\\:selectOneMenuCFDI_input", usoCfdi || "G03");
-
     await page.waitForTimeout(500);
 
     // ── GENERAR FACTURA ──
     console.log("🧾 Generando factura...");
     await page.click("#form\\:generarFactura");
-    await page.waitForTimeout(6000);
+    await page.waitForTimeout(8000);
 
-    // ── BUSCAR LINKS DE DESCARGA ──
+    // ── BUSCAR LINKS ──
     console.log("📥 Buscando links de descarga...");
     const links = await page.evaluate(() => {
       const anchors = Array.from(document.querySelectorAll("a"));
