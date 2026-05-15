@@ -303,51 +303,82 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.click("#form\\:generarFactura");
     await page.waitForTimeout(8000);
 
-    // ── BUSCAR LINKS ──
-    console.log("📥 Buscando links...");
-    const links = await page.evaluate(() => {
-      const anchors = Array.from(document.querySelectorAll("a"));
-      const pdf = anchors.find(a => a.href.includes(".pdf") || a.textContent.includes("PDF"));
-      const xml = anchors.find(a => a.href.includes(".xml") || a.textContent.includes("XML"));
-      return { pdf: pdf ? pdf.href : null, xml: xml ? xml.href : null };
-    });
-    console.log("✅ Links obtenidos:", links);
-
-    // ── SUBIR A R2 ──
+    // ── BUSCAR Y DESCARGAR XML/PDF ──
+    console.log("📥 Buscando links XML/PDF...");
+    let xmlUrl = null;
+    let pdfUrl = null;
     const ts = Date.now();
-    let xmlUrl = links.xml;
-    let pdfUrl = links.pdf;
 
-    if (links.xml) {
-      try {
-        const https = require("https");
-        const http = require("http");
-        const buf = await new Promise((res, rej) => {
-          const proto = links.xml.startsWith("https") ? https : http;
-          const chunks = [];
-          proto.get(links.xml, { headers: { "User-Agent": "Mozilla/5.0" } }, (r) => {
-            r.on("data", c => chunks.push(c));
-            r.on("end", () => res(Buffer.concat(chunks)));
-          }).on("error", rej);
-        });
-        xmlUrl = await subirArchivoR2(buf, `facturas/oxxo_${ts}.xml`, "application/xml") || links.xml;
-      } catch (e) { console.log("⚠️ R2 XML upload falló:", e.message); }
+    // ── XML ──
+    const newPageXmlPromise = new Promise(resolve =>
+      browser.once('targetcreated', t => resolve(t.page()))
+    );
+    const xmlClicked = await page.evaluate(() => {
+      const anchors = Array.from(document.querySelectorAll('a, button'));
+      const xml = anchors.find(a =>
+        a.href?.includes('.xml') ||
+        a.textContent?.includes('XML') ||
+        a.textContent?.includes('xml')
+      );
+      if (xml) { xml.click(); return true; }
+      return false;
+    });
+    if (xmlClicked) {
+      const newPage = await Promise.race([
+        newPageXmlPromise,
+        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+      ]).catch(() => null);
+      if (newPage) {
+        await newPage.waitForTimeout(2000);
+        const response = await newPage.waitForResponse(
+          r => r.status() === 200, { timeout: 10000 }
+        ).catch(() => null);
+        if (response) {
+          const buf = await response.buffer().catch(() => null);
+          if (buf) {
+            xmlUrl = await subirArchivoR2(buf, `facturas/oxxo_${ts}.xml`, 'application/xml') || null;
+          }
+        }
+        await newPage.close().catch(() => {});
+      }
     }
-    if (links.pdf) {
-      try {
-        const https = require("https");
-        const http = require("http");
-        const buf = await new Promise((res, rej) => {
-          const proto = links.pdf.startsWith("https") ? https : http;
-          const chunks = [];
-          proto.get(links.pdf, { headers: { "User-Agent": "Mozilla/5.0" } }, (r) => {
-            r.on("data", c => chunks.push(c));
-            r.on("end", () => res(Buffer.concat(chunks)));
-          }).on("error", rej);
-        });
-        pdfUrl = await subirArchivoR2(buf, `facturas/oxxo_${ts}.pdf`, "application/pdf") || links.pdf;
-      } catch (e) { console.log("⚠️ R2 PDF upload falló:", e.message); }
+
+    // ── PDF ──
+    const newPagePdfPromise = new Promise(resolve =>
+      browser.once('targetcreated', t => resolve(t.page()))
+    );
+    const pdfClicked = await page.evaluate(() => {
+      const anchors = Array.from(document.querySelectorAll('a, button'));
+      const pdf = anchors.find(a =>
+        a.href?.includes('.pdf') ||
+        a.textContent?.includes('PDF') ||
+        a.textContent?.includes('pdf')
+      );
+      if (pdf) { pdf.click(); return true; }
+      return false;
+    });
+    if (pdfClicked) {
+      const newPage = await Promise.race([
+        newPagePdfPromise,
+        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 8000))
+      ]).catch(() => null);
+      if (newPage) {
+        await newPage.waitForTimeout(2000);
+        const response = await newPage.waitForResponse(
+          r => r.status() === 200, { timeout: 10000 }
+        ).catch(() => null);
+        if (response) {
+          const buf = await response.buffer().catch(() => null);
+          if (buf) {
+            pdfUrl = await subirArchivoR2(buf, `facturas/oxxo_${ts}.pdf`, 'application/pdf') || null;
+          }
+        }
+        await newPage.close().catch(() => {});
+      }
     }
+
+    console.log('✅ XML URL:', xmlUrl);
+    console.log('✅ PDF URL:', pdfUrl);
 
     await browser.close();
     return { ok: true, xmlUrl, pdfUrl };

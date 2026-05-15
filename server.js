@@ -16,13 +16,21 @@ const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || "smtp.hostinger.com",
+  host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT) || 465,
-  secure: process.env.SMTP_SECURE === "true",
+  secure: process.env.SMTP_SECURE === 'true',
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
+});
+
+transporter.verify((error) => {
+  if (error) console.log('⚠️ SMTP no disponible:', error.message);
+  else console.log('✅ SMTP conectado correctamente');
 });
 
 app.use(express.json());
