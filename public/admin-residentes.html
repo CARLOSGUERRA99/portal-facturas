@@ -269,7 +269,7 @@
     }
 
     async function cargarResidentes() {
-      const res = await fetch('/api/residentes');
+      const res = await fetch('/api/admin/todos-residentes');
       const data = await res.json();
       if (!data.ok) return;
       allResidentes = data.residentes;

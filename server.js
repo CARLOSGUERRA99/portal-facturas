@@ -96,6 +96,16 @@ async function crearNotificacion(userId, tipo, mensaje) {
   }
 }
 
+function corregirIdVentaOxxo(id) {
+  if (!id) return id;
+  const map = { T:'1', t:'1', I:'1', i:'1', O:'0', o:'0', S:'5', s:'5' };
+  const result = id.split('');
+  [0, 1, 5, 6].forEach(i => {
+    if (result[i]) result[i] = result[i].replace(/[TtIiOoSs]/g, c => map[c] || c);
+  });
+  return result.join('').toUpperCase();
+}
+
 // ── MIGRACIÓN DB ──
 async function initDB() {
   try {
@@ -294,27 +304,32 @@ app.post("/api/perfil", auth, async (req, res) => {
 // ── RESIDENTES ──
 app.get("/api/residentes", auth, async (req, res) => {
   try {
-    if (req.session.userRol === "admin") {
-      const [rows] = await db.query(`
-        SELECT r.*,
-          GROUP_CONCAT(u.nombre ORDER BY u.nombre SEPARATOR ', ') AS asignados_a
-        FROM residentes r
-        LEFT JOIN user_residentes ur ON r.id = ur.residente_id
-        LEFT JOIN users u ON ur.user_id = u.id
-        GROUP BY r.id
-        ORDER BY r.nombre
-      `);
-      res.json({ ok: true, residentes: rows });
-    } else {
-      const [rows] = await db.query(`
-        SELECT r.*
-        FROM residentes r
-        JOIN user_residentes ur ON r.id = ur.residente_id
-        WHERE ur.user_id = ?
-        ORDER BY r.nombre
-      `, [req.session.userId]);
-      res.json({ ok: true, residentes: rows });
-    }
+    const [rows] = await db.query(`
+      SELECT r.*
+      FROM residentes r
+      JOIN user_residentes ur ON r.id = ur.residente_id
+      WHERE ur.user_id = ?
+      ORDER BY r.nombre
+    `, [req.session.userId]);
+    res.json({ ok: true, residentes: rows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── CATÁLOGO COMPLETO DE RESIDENTES (admin) ──
+app.get("/api/admin/todos-residentes", auth, requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT r.*,
+        GROUP_CONCAT(u.nombre ORDER BY u.nombre SEPARATOR ', ') AS asignados_a
+      FROM residentes r
+      LEFT JOIN user_residentes ur ON r.id = ur.residente_id
+      LEFT JOIN users u ON ur.user_id = u.id
+      GROUP BY r.id
+      ORDER BY r.nombre
+    `);
+    res.json({ ok: true, residentes: rows });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }
@@ -473,6 +488,8 @@ REGLAS para tickets OXXO:
 2. "idVenta" — después de "ID=". Formato: 2 números + 3 letras mayúsculas + 3 números + letras/números + 1 número
    Ejemplo: 10OBR500NG1. NO confundas cero (0) con letra O.
 
+IMPORTANTE para tickets OXXO: El ID de venta siempre tiene formato 2 números + 3 letras + 2 números + alfanumérico + 1-2 números. Ejemplo: 10MON50MCZ2. Los primeros 2 caracteres SIEMPRE son dígitos numéricos. Si ves T al inicio es 1, O es 0, S es 5, I es 1. El folio es solo números.
+
 Responde SOLO este JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
@@ -551,6 +568,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = tickets[0];
     const datos = JSON.parse(ticket.ocr_json || "{}");
+    datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
 
     const [userRows] = await db.query(
       "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
