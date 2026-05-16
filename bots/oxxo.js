@@ -94,7 +94,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error('BROWSERLESS_TOKEN no definido');
   const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}`
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&timeout=120000`
   });
   console.log('✅ Conectado a Browserless');
 

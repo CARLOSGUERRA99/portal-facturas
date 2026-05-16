@@ -8,10 +8,11 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
   console.log('🤖 Iniciando bot BuzonFacturas...');
   console.log(`   RFC: ${rfc} | Código: ${codigoTicket} | Email: ${email}`);
 
-  const _bfEndpoint = process.env.BROWSERLESS_URL;
-  if (!_bfEndpoint) throw new Error('BROWSERLESS_URL no configurado en Railway');
-  console.log('🔌 Conectando a Browserless:', _bfEndpoint.substring(0, 60) + '...');
-  const browser = await puppeteer.connect({ browserWSEndpoint: _bfEndpoint });
+  const _bfToken = process.env.BROWSERLESS_TOKEN;
+  if (!_bfToken) throw new Error('BROWSERLESS_TOKEN no definido');
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${_bfToken}&timeout=120000`
+  });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });

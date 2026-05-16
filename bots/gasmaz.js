@@ -7,10 +7,11 @@ async function facturarGasmaz({ referencia, folio, total, rfc, email, ticketId, 
   const url = (portalUrl && portalUrl.includes('nexusfuel')) ? portalUrl : 'https://gasmazfactura.nexusfuel.mx/';
   console.log("🌐 URL portal:", url);
 
-  const _gmEndpoint = process.env.BROWSERLESS_URL;
-  if (!_gmEndpoint) throw new Error('BROWSERLESS_URL no configurado en Railway');
-  console.log('🔌 Conectando a Browserless:', _gmEndpoint.substring(0, 60) + '...');
-  const browser = await puppeteer.connect({ browserWSEndpoint: _gmEndpoint });
+  const _gmToken = process.env.BROWSERLESS_TOKEN;
+  if (!_gmToken) throw new Error('BROWSERLESS_TOKEN no definido');
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${_gmToken}&timeout=120000`
+  });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
