@@ -627,12 +627,20 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
 
     const portalUrl = datosOCR.portalUrl || (portalDetectado === "arco" ? "buzonfacturas" : null) || null;
 
+    const camposPorPortal = {
+      oxxo:         ['fecha', 'folio', 'idVenta', 'total'],
+      arco:         ['codigoTicket', 'total'],
+      gasmaz:       ['portalUrl', 'referencia', 'folio', 'total'],
+      desconocido:  ['fecha', 'total'],
+    };
+    const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
+
     const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, portalUrl]
     );
 
-    res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR, ticketId: insertResult.insertId });
+    res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR, ticketId: insertResult.insertId, campos });
   } catch (err) {
     console.error("❌ Error:", err.message);
     res.status(500).json({ ok: false, msg: err.message });

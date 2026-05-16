@@ -216,24 +216,7 @@
       <div style="font-size:1.15rem;font-weight:700;color:#3B6D11;margin-bottom:6px;">Confirma los datos del ticket</div>
       <div style="font-size:0.82rem;color:#666;margin-bottom:20px;">Revisa que los datos extraídos sean correctos antes de facturar. Puedes editarlos si hay algún error.</div>
       <div id="modal-ocr-warning" style="display:none;background:#FFF7ED;border:1px solid #F97316;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#c2410c;margin-bottom:16px;"></div>
-      <div style="display:grid;gap:12px;">
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;color:#555;display:block;margin-bottom:4px;">Fecha</label>
-          <input id="modal-fecha" type="text" placeholder="DD/MM/AAAA" style="width:100%;border:1.5px solid #e0e7d9;border-radius:10px;padding:9px 12px;font-size:0.88rem;box-sizing:border-box;outline:none;">
-        </div>
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;color:#555;display:block;margin-bottom:4px;">Folio</label>
-          <input id="modal-folio" type="text" placeholder="Número de folio" style="width:100%;border:1.5px solid #e0e7d9;border-radius:10px;padding:9px 12px;font-size:0.88rem;box-sizing:border-box;outline:none;">
-        </div>
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;color:#555;display:block;margin-bottom:4px;">ID de venta</label>
-          <input id="modal-idventa" type="text" placeholder="Ej: 10NLA50XFU1" style="width:100%;border:1.5px solid #e0e7d9;border-radius:10px;padding:9px 12px;font-size:0.88rem;box-sizing:border-box;outline:none;font-family:monospace;">
-        </div>
-        <div>
-          <label style="font-size:0.78rem;font-weight:600;color:#555;display:block;margin-bottom:4px;">Total</label>
-          <input id="modal-total" type="text" placeholder="Ej: 150.00" style="width:100%;border:1.5px solid #e0e7d9;border-radius:10px;padding:9px 12px;font-size:0.88rem;box-sizing:border-box;outline:none;">
-        </div>
-      </div>
+      <div id="modal-campos-container" style="display:grid;gap:12px;"></div>
       <div id="modal-result-msg" style="display:none;margin-top:14px;font-size:0.85rem;padding:10px 14px;border-radius:10px;"></div>
       <div style="display:flex;gap:12px;margin-top:24px;">
         <button id="modal-btn-rechazar" onclick="rechazarTicket()" style="flex:1;padding:12px;border-radius:10px;background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;font-weight:600;font-size:0.88rem;cursor:pointer;">Eliminar ticket</button>
@@ -499,7 +482,7 @@
         const data = await res.json();
 
         if (data.ok) {
-          abrirModalConfirmacion(data.ticketId, data.datos);
+          abrirModalConfirmacion(data.ticketId, data.datos, data.campos);
           cargarDatos();
         } else {
           alert.className = 'alert alert-error';
@@ -555,24 +538,47 @@
     });
 
     // ── MODAL CONFIRMACIÓN ──
+    const CAMPOS_POR_PORTAL = {
+      oxxo:        ['fecha', 'folio', 'idVenta', 'total'],
+      arco:        ['codigoTicket', 'total'],
+      gasmaz:      ['portalUrl', 'referencia', 'folio', 'total'],
+      desconocido: ['fecha', 'total'],
+    };
+    const LABELES = {
+      fecha:        'Fecha (DD/MM/YYYY)',
+      folio:        'Folio',
+      idVenta:      'ID de venta (ej: 10NLA50XFU1)',
+      total:        'Total',
+      codigoTicket: 'Código de facturación',
+      portalUrl:    'URL del portal (del QR)',
+      referencia:   'Referencia',
+    };
+    const INPUT_EXTRA = {
+      idVenta:   'font-family:monospace;',
+      portalUrl: 'font-size:0.78rem;',
+    };
+
     let modalTicketId = null;
+    let modalCampos = [];
 
-    function abrirModalConfirmacion(ticketId, datos) {
+    function abrirModalConfirmacion(ticketId, datos, campos) {
       modalTicketId = ticketId;
-      document.getElementById('modal-fecha').value = datos.fecha || '';
-      document.getElementById('modal-folio').value = datos.folio || '';
-      document.getElementById('modal-idventa').value = datos.idVenta || '';
-      document.getElementById('modal-total').value = datos.total || '';
+      modalCampos = campos || CAMPOS_POR_PORTAL[datos.portal] || CAMPOS_POR_PORTAL.desconocido;
 
-      const faltantes = [];
-      if (!datos.fecha) faltantes.push('fecha');
-      if (!datos.folio) faltantes.push('folio');
-      if (!datos.idVenta) faltantes.push('ID de venta');
-      if (!datos.total) faltantes.push('total');
+      const container = document.getElementById('modal-campos-container');
+      container.innerHTML = modalCampos.map(campo => `
+        <div>
+          <label style="font-size:0.78rem;font-weight:600;color:#555;display:block;margin-bottom:4px;">${LABELES[campo] || campo}</label>
+          <input id="modal-campo-${campo}" type="text"
+                 placeholder="${LABELES[campo] || campo}"
+                 value="${(datos[campo] != null ? datos[campo] : '') + ''}"
+                 style="width:100%;border:1.5px solid #e0e7d9;border-radius:10px;padding:9px 12px;font-size:0.88rem;box-sizing:border-box;outline:none;${INPUT_EXTRA[campo] || ''}">
+        </div>`).join('');
 
+      const faltantes = modalCampos.filter(c => !datos[c]);
       const warn = document.getElementById('modal-ocr-warning');
       if (faltantes.length > 0) {
-        warn.textContent = `⚠️ No se detectaron: ${faltantes.join(', ')}. Por favor completa los datos manualmente.`;
+        warn.textContent = `⚠️ No se detectaron: ${faltantes.map(c => LABELES[c] || c).join(', ')}. Por favor complétalos.`;
         warn.style.display = 'block';
       } else {
         warn.style.display = 'none';
@@ -583,8 +589,7 @@
       document.getElementById('modal-btn-confirmar').disabled = false;
       document.getElementById('modal-btn-confirmar').textContent = 'Confirmar y facturar';
 
-      const modal = document.getElementById('modal-confirmacion');
-      modal.style.display = 'flex';
+      document.getElementById('modal-confirmacion').style.display = 'flex';
     }
 
     function cerrarModal() {
@@ -629,12 +634,11 @@
       document.getElementById('modal-btn-rechazar').disabled = true;
       msgEl.style.display = 'none';
 
-      const datos = {
-        fecha: document.getElementById('modal-fecha').value.trim(),
-        folio: document.getElementById('modal-folio').value.trim(),
-        idVenta: document.getElementById('modal-idventa').value.trim(),
-        total: document.getElementById('modal-total').value.trim(),
-      };
+      const datos = {};
+      modalCampos.forEach(campo => {
+        const el = document.getElementById('modal-campo-' + campo);
+        if (el) datos[campo] = el.value.trim();
+      });
 
       try {
         const res = await fetch(`/api/tickets/${modalTicketId}/confirmar`, {
@@ -694,7 +698,8 @@
             if (data.ok && data.ticket && data.ticket.status === 'pendiente_confirmacion') {
               let datos = {};
               try { datos = JSON.parse(data.ticket.ocr_json || '{}'); } catch {}
-              abrirModalConfirmacion(confirmarId, datos);
+              const campos = CAMPOS_POR_PORTAL[datos.portal] || CAMPOS_POR_PORTAL.desconocido;
+              abrirModalConfirmacion(confirmarId, datos, campos);
             }
           })
           .catch(() => {});
