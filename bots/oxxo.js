@@ -91,39 +91,11 @@ async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
 async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, calle, ext, int, colonia, municipio, codigoPostal, estado, regimenFiscal, usoCfdi }) {
   console.log("🤖 Iniciando bot OXXO...");
 
-  const token = process.env.BROWSERLESS_TOKEN || '';
-  const tokenPreview = token.substring(0, 10);
-  const urlExplicita = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || '';
-
-  // Usar URL exactamente como está en Railway, solo agregar timeout si falta
-  function normalizarBrowserlessUrl(base) {
-    const [path, qs] = base.split('?');
-    const params = new URLSearchParams(qs || '');
-    if (!params.has('timeout')) params.set('timeout', '120000');
-    if (!params.has('token') && token) params.set('token', token);
-    return `${path}?${params.toString()}`;
-  }
-
-  const candidatas = urlExplicita
-    ? [normalizarBrowserlessUrl(urlExplicita)]
-    : [
-        `wss://production-sfo.browserless.io?token=${token}&timeout=120000`,
-        `wss://chrome.browserless.io?token=${token}&timeout=120000`,
-      ];
-
-  let browser;
-  for (const wsEndpoint of candidatas) {
-    const urlLog = token ? wsEndpoint.replace(token, `${tokenPreview}[…]`) : wsEndpoint.substring(0, 80);
-    console.log(`🔌 Intentando: ${urlLog}`);
-    try {
-      browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-      console.log(`✅ Conectado a Browserless: ${urlLog}`);
-      break;
-    } catch (connErr) {
-      console.error(`❌ Falló ${urlLog}: ${connErr.message}`);
-    }
-  }
-  if (!browser) throw new Error('No se pudo conectar a Browserless con ninguna URL');
+  const token = process.env.BROWSERLESS_TOKEN;
+  const browserWSEndpoint = `wss://production-sfo.browserless.io?token=${token}&timeout=120000`;
+  console.log('🔌 Conectando a:', browserWSEndpoint.replace(token, token.substring(0, 10) + '...'));
+  const browser = await puppeteer.connect({ browserWSEndpoint });
+  console.log('✅ Conectado a Browserless');
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
