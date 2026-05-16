@@ -385,69 +385,47 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     }
     console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
 
-    // DIAGNÓSTICO — remover después de confirmar selectores
-    console.log('🔍 Diagnosticando dropdown CFDI...');
-    const cfdiDiag = await page.evaluate(() => {
-      const todos = document.querySelectorAll('[id*="CFDI"], [id*="cfdi"], [class*="cfdi"]');
-      const resultado = [];
-      todos.forEach(el => {
-        resultado.push({
-          id: el.id,
-          tag: el.tagName,
-          clase: el.className,
-          disabled: el.disabled,
-          texto: el.textContent?.substring(0, 50),
-          visible: el.offsetParent !== null
-        });
-      });
-      return resultado;
-    });
-    console.log('🔍 Elementos CFDI encontrados:', JSON.stringify(cfdiDiag, null, 2));
-    const cfdiScreenshot = await page.screenshot({ encoding: 'base64' });
-    console.log('📸 Screenshot CFDI (base64):', cfdiScreenshot.substring(0, 100) + '...[ver Railway logs completos]');
-
-    // Uso CFDI — polling activo, PrimeFaces dropdown
+    // Uso CFDI — esperar que quite ui-state-disabled
+    console.log('⏳ Esperando que CFDI se habilite...');
     let cfdiListo = false;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 60; i++) {
       cfdiListo = await page.evaluate(() => {
-        const nativo = document.querySelector("#form\\:selectOneMenuCFDI_input");
-        if (nativo && !nativo.disabled && nativo.options.length > 1) return true;
-        const trigger = document.querySelector(
-          "#form\\:selectOneMenuCFDI_label, #form\\:selectOneMenuCFDI"
-        );
-        return trigger && !trigger.classList.contains('ui-state-disabled');
+        const div = document.querySelector("#form\\:selectOneMenuCFDI");
+        return div && !div.classList.contains('ui-state-disabled');
       });
       if (cfdiListo) break;
       await page.mouse.move(350 + (i % 5) * 20, 300 + (i % 3) * 15);
       await page.waitForTimeout(500);
     }
-    if (!cfdiListo) throw new Error('Dropdown CFDI no se habilitó');
+    if (!cfdiListo) throw new Error('CFDI nunca se habilitó tras 30s');
+    console.log('✅ CFDI habilitado, abriendo dropdown...');
 
-    const cfdiNativo = await page.evaluate(() => {
-      const el = document.querySelector("#form\\:selectOneMenuCFDI_input");
-      return el && el.tagName === 'SELECT' && el.options.length > 1;
-    });
-    if (cfdiNativo) {
-      await page.select("#form\\:selectOneMenuCFDI_input", usoCfdi || "G03");
-    } else {
-      await page.click("#form\\:selectOneMenuCFDI_label, #form\\:selectOneMenuCFDI").catch(() => {});
-      await page.waitForTimeout(800);
-      const cfdiSeleccionado = await page.evaluate((valorBuscado) => {
-        const items = document.querySelectorAll(
-          "#form\\:selectOneMenuCFDI_panel li, #form\\:selectOneMenuCFDI_items li, .ui-selectonemenu-item"
-        );
-        for (const item of items) {
-          if (item.textContent.includes('Gastos en general') ||
-              item.getAttribute('data-label')?.includes('Gastos') ||
-              item.textContent.includes(valorBuscado)) {
-            item.click(); return true;
-          }
+    // Clic en el label para abrir el panel
+    await page.click("#form\\:selectOneMenuCFDI_label");
+    await page.waitForTimeout(1000);
+
+    // Esperar que el panel sea visible
+    await page.waitForFunction(() => {
+      const panel = document.querySelector("#form\\:selectOneMenuCFDI_panel");
+      return panel && !panel.classList.contains('ui-helper-hidden');
+    }, { timeout: 5000 });
+
+    // Seleccionar "Gastos en general"
+    const seleccionado = await page.evaluate(() => {
+      const items = document.querySelectorAll(
+        "#form\\:selectOneMenuCFDI_panel li.ui-selectonemenu-item"
+      );
+      for (const item of items) {
+        if (item.textContent.trim().includes('Gastos en general')) {
+          item.click();
+          return item.textContent.trim();
         }
-        return false;
-      }, usoCfdi || 'G03');
-      if (!cfdiSeleccionado) throw new Error('No se encontró opción Gastos en general');
-    }
-    console.log('✅ Uso CFDI seleccionado: Gastos en general');
+      }
+      return null;
+    });
+
+    if (!seleccionado) throw new Error('No se encontró opción Gastos en general en el panel');
+    console.log('✅ Uso CFDI seleccionado:', seleccionado);
     await page.waitForTimeout(500);
 
     // ── GENERAR FACTURA ──
