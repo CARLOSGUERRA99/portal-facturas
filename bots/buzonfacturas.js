@@ -127,19 +127,34 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     await page.waitForSelector('input#RFC', { timeout: 10000 });
     await page.click('input#RFC', { clickCount: 3 });
     await page.type('input#RFC', rfc, { delay: 80 });
-    await page.evaluate(() => {
-      const btn = document.querySelector('button[type="submit"].btn-info');
-      if (btn) btn.click();
-    });
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }),
+      page.evaluate(() => {
+        const btn = document.querySelector('button[type="submit"].btn-info');
+        if (btn) btn.click();
+      }),
+    ]);
     console.log('✅ RFC enviado, URL:', page.url());
 
-    // PASO 2 — Guardar y continuar
+    // PASO 2 — Guardar y continuar → navega a /DatosTicket
     console.log('💾 PASO 2 — Guardando y continuando...');
-    await page.waitForSelector('button[name="btn"][value="GenerarFactura"]', { timeout: 10000 });
-    await page.click('button[name="btn"][value="GenerarFactura"]');
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+    await page.waitForSelector(
+      'button[name="btn"][value="GenerarFactura"], button.btn-success',
+      { timeout: 10000 }
+    );
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }),
+      page.evaluate(() => {
+        const btn = document.querySelector('button[name="btn"][value="GenerarFactura"]')
+          || Array.from(document.querySelectorAll('button.btn-success'))
+              .find(b => /guardar|continuar/i.test(b.textContent));
+        if (btn) btn.click();
+      }),
+    ]);
     console.log('✅ Guardado, URL:', page.url());
+    if (!page.url().includes('DatosTicket')) {
+      throw new Error(`URL inesperada tras Guardar: ${page.url()}`);
+    }
 
     // PASO 3 — Código de facturación y Verificar
     console.log('🎫 PASO 3 — Llenando código de facturación...');
@@ -148,9 +163,11 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     await page.type('input#CodigoFacturacion, input[name="CodigoFacturacion"]', codigoTicket);
     console.log(`✅ Código llenado: ${codigoTicket}`);
 
-    await page.click('button#btnVerificar');
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
-    console.log('✅ Click en Verificar...');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {}),
+      page.click('button#btnVerificar'),
+    ]);
+    console.log('✅ Click en Verificar, URL:', page.url());
 
     const yaFacturadoCheck = await page.evaluate(() => {
       const body = document.body.innerText;
@@ -185,14 +202,16 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
 
     // PASO 5 — Generar factura
     console.log('🧾 PASO 5 — Generando factura...');
-    await page.evaluate(() => {
-      const btn = document.querySelector('button[name="btn"][value="GenerarFactura"]');
-      if (btn) {
-        btn.removeAttribute('disabled');
-        btn.click();
-      }
-    });
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {});
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {}),
+      page.evaluate(() => {
+        const btn = document.querySelector('button[name="btn"][value="GenerarFactura"]');
+        if (btn) {
+          btn.removeAttribute('disabled');
+          btn.click();
+        }
+      }),
+    ]);
 
     const paso5YaFacturado = await page.evaluate(() =>
       document.body.innerText.match(/ya fue facturado|ya existe|ya procesado|previously|ya tiene factura/i) !== null
