@@ -92,7 +92,8 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
   console.log("🤖 Iniciando bot OXXO...");
 
   const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`,
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}&timeout=120000`,
+    timeout: 120000,
   });
 
   const page = await browser.newPage();
@@ -389,12 +390,14 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log('⏳ Esperando que CFDI se habilite...');
     let cfdiListo = false;
     for (let i = 0; i < 60; i++) {
+      // Acción real en DOM — mantiene WebSocket vivo
       cfdiListo = await page.evaluate(() => {
+        window.scrollBy(0, 1);
+        window.scrollBy(0, -1);
         const div = document.querySelector("#form\\:selectOneMenuCFDI");
         return div && !div.classList.contains('ui-state-disabled');
       });
       if (cfdiListo) break;
-      await page.mouse.move(350 + (i % 5) * 20, 300 + (i % 3) * 15);
       await page.waitForTimeout(500);
     }
     if (!cfdiListo) throw new Error('CFDI nunca se habilitó tras 30s');
