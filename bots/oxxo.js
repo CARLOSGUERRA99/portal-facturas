@@ -258,9 +258,20 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       return el && !el.disabled;
     }, { timeout: 15000 });
     await page.click("#form\\:rfc", { clickCount: 3 });
-    await page.type("#form\\:rfc", rfc, { delay: 60 });
-    console.log('✅ RFC llenado');
-    await page.waitForTimeout(1000);
+    await page.keyboard.type(rfc, { delay: 100 });
+    await page.evaluate(() => {
+      const el = document.querySelector("#form\\:rfc");
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+    });
+    await page.waitForTimeout(2000);
+    console.log('✅ RFC llenado y blur disparado');
+
+    const regimenOpciones = await page.evaluate(() => {
+      const ul = document.querySelector("#form\\:selectOneMenuRegFis_panel ul");
+      return ul ? ul.querySelectorAll('li').length : 0;
+    });
+    console.log('📋 Opciones de Régimen Fiscal tras RFC blur:', regimenOpciones);
 
     // ── RAZÓN SOCIAL — polling activo con DOM keepalive ──
     let razonHabilitada = false;
@@ -300,7 +311,14 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     // ── CÓDIGO POSTAL ──
     console.log('📮 Llenando código postal...');
     await page.click("#form\\:codigo", { clickCount: 3 });
-    await page.type("#form\\:codigo", String(codigoPostal), { delay: 60 });
+    await page.keyboard.type(String(codigoPostal), { delay: 100 });
+    await page.evaluate(() => {
+      const el = document.querySelector("#form\\:codigo");
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+    });
+    await page.waitForTimeout(1500);
+    console.log('✅ CP llenado y blur disparado');
 
     // ── ESTADO — interacción visual PrimeFaces ──
     let estadoListo = false;
