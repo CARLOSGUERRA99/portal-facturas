@@ -716,6 +716,10 @@ app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
     const datosActuales = JSON.parse(ticket.ocr_json || '{}');
     const datosConfirmados = { ...datosActuales, ...datos };
 
+    console.log(`📋 CONFIRMAR #${ticketId} — datos recibidos:`, JSON.stringify(datos));
+    console.log(`📋 CONFIRMAR #${ticketId} — datosActuales:`, JSON.stringify(datosActuales));
+    console.log(`📋 CONFIRMAR #${ticketId} — datosConfirmados (a guardar):`, JSON.stringify(datosConfirmados));
+
     await db.query(
       "UPDATE tickets SET ocr_json = ?, status = 'pendiente' WHERE id = ?",
       [JSON.stringify(datosConfirmados), ticketId]
@@ -739,6 +743,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = tickets[0];
     const datos = JSON.parse(ticket.ocr_json || "{}");
+    console.log(`🎯 FACTURAR #${ticketId} — ocr_json leído de DB:`, JSON.stringify(datos));
     if (datos.portal === "oxxo" || (ticket.comercio || "").toLowerCase().includes("oxxo")) {
       datos.folio = corregirFolioOxxo(datos.folio);
       datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
