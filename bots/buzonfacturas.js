@@ -169,14 +169,22 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     ]);
     console.log('✅ Click en Verificar, URL:', page.url());
 
-    const yaFacturadoCheck = await page.evaluate(() => {
+    const verificarCheck = await page.evaluate(() => {
       const body = document.body.innerText;
-      if (!body.match(/ya fue facturado|ya existe|ya procesado|previously invoiced/i)) return null;
-      return body.match(/[A-Z]{2,6}-\d{6,10}/)?.[0] || 'desconocido';
+      if (body.match(/excede los 2 d[ií]as|más de 2 días|plazo.*vencido|fuera de plazo|tiempo.*expirado/i))
+        return { tipo: 'vencido' };
+      if (body.match(/ya fue facturado|ya existe|ya procesado|previously invoiced/i))
+        return { tipo: 'yaFacturado', folio: body.match(/[A-Z]{2,6}-\d{6,10}/)?.[0] || null };
+      return null;
     });
-    if (yaFacturadoCheck !== null) {
+    if (verificarCheck?.tipo === 'vencido') {
+      console.log('❌ Ticket fuera del plazo de 2 días permitidos');
+      await browser.close();
+      return { ok: false, msg: 'El ticket excede los 2 días permitidos para facturar en BuzonFacturas.' };
+    }
+    if (verificarCheck?.tipo === 'yaFacturado') {
       console.log('⚠️ Ticket ya facturado, saltando a recuperador...');
-      const r = await runEstrategiaB(yaFacturadoCheck === 'desconocido' ? null : yaFacturadoCheck);
+      const r = await runEstrategiaB(verificarCheck.folio);
       await browser.close();
       return r;
     }
@@ -225,10 +233,20 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     ]);
     console.log('✅ PASO 5 completado, URL:', page.url());
 
-    const paso5YaFacturado = await page.evaluate(() =>
-      document.body.innerText.match(/ya fue facturado|ya existe|ya procesado|previously|ya tiene factura/i) !== null
-    );
-    if (paso5YaFacturado) {
+    const paso5Error = await page.evaluate(() => {
+      const body = document.body.innerText;
+      if (body.match(/excede los 2 d[ií]as|más de 2 días|plazo.*vencido|fuera de plazo|tiempo.*expirado/i))
+        return 'vencido';
+      if (body.match(/ya fue facturado|ya existe|ya procesado|previously|ya tiene factura/i))
+        return 'yaFacturado';
+      return null;
+    });
+    if (paso5Error === 'vencido') {
+      console.log('❌ PASO 5: ticket fuera del plazo de 2 días');
+      await browser.close();
+      return { ok: false, msg: 'El ticket excede los 2 días permitidos para facturar en BuzonFacturas.' };
+    }
+    if (paso5Error === 'yaFacturado') {
       console.log('⚠️ PASO 5: ticket ya facturado — retornando procesandoCorreo...');
       await browser.close();
       return { ok: true, procesandoCorreo: true };
