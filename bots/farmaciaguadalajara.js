@@ -44,9 +44,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     }
 
     const urls = [
-      "https://www.farmaciasguadalajara.com/ayuda/facturaci%C3%B3n-electr%C3%B3nica",
-      "https://efactura.farmaciasguadalajara.com/",
-      "https://www.farmaciasguadalajara.com/facturacion-electronica",
+      "https://www.movil.farmaciasguadalajara.com/facturacion/",
     ];
 
     let activePage = page;
