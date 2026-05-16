@@ -1,13 +1,29 @@
 const { facturarOXXO } = require('./oxxo');
 const { facturarBuzonFacturas } = require('./buzonfacturas');
 const { facturarGasmaz } = require('./gasmaz');
+const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
 
 async function detectarYFacturar(datos) {
   const texto = (datos.ocr_text || '').toLowerCase();
   const comercio = (datos.comercio || '').toLowerCase();
   const portalUrl = (datos.portalUrl || '').toLowerCase();
+  const portal = (datos.portal || '').toLowerCase();
 
   if (
+    portal === 'farmaciaguadalajara' ||
+    texto.includes('farmacia guadalajara') ||
+    texto.includes('farmaciasguadalajara') ||
+    texto.includes('fragua') ||
+    comercio.includes('farmacia guadalajara') ||
+    comercio.includes('fragua') ||
+    portalUrl.includes('farmaciasguadalajara.com')
+  ) {
+    console.log('🎯 Portal detectado: Farmacias Guadalajara');
+    return await facturarFarmaciasGuadalajara(datos);
+  }
+
+  if (
+    portal === 'arco' ||
     texto.includes('buzonfacturas') ||
     portalUrl.includes('buzonfacturas') ||
     texto.includes('arco') ||
@@ -17,12 +33,13 @@ async function detectarYFacturar(datos) {
     return await facturarBuzonFacturas(datos);
   }
 
-  if (texto.includes('oxxo') || comercio.includes('oxxo')) {
+  if (portal === 'oxxo' || texto.includes('oxxo') || comercio.includes('oxxo')) {
     console.log('🎯 Portal detectado: OXXO');
     return await facturarOXXO(datos);
   }
 
   if (
+    portal === 'gasmaz' ||
     texto.includes('nexusfuel') ||
     texto.includes('gasmaz') ||
     portalUrl.includes('nexusfuel') ||

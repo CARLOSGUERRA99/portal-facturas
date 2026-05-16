@@ -1,0 +1,10 @@
+{
+  "id": "farmaciaguadalajara",
+  "nombre": "Farmacias Guadalajara",
+  "bot": "farmaciaguadalajara",
+  "campos": ["folioFactura", "caja", "fechaCompra", "noTicket"],
+  "keywords": ["farmacia guadalajara", "farmaciasguadalajara", "fragua", "superfarmacia", "corporativo fragua"],
+  "urlPatterns": ["farmaciasguadalajara.com", "facturacion.farmaciasguadalajara"],
+  "qrPatterns": ["farmaciasguadalajara.com"],
+  "razonesSociales": ["CORPORATIVO FRAGUA", "FARMACIAS GUADALAJARA", "FARMACIA GUADALAJARA"]
+}

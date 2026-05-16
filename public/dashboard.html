@@ -481,7 +481,13 @@
         const res = await fetch('/upload-ticket', { method: 'POST', body: formData });
         const data = await res.json();
 
-        if (data.ok) {
+        if (data.ok && data.sinPortal) {
+          alert.className = 'alert alert-warning';
+          const urlMsg = data.urlQR ? ` Puedes intentar manualmente en: ${data.urlQR}` : '';
+          alert.innerHTML = `⚠️ "${data.comercio}" no está configurado aún. El administrador fue notificado y lo configuraremos pronto.${urlMsg}`;
+          alert.style.display = 'block';
+          cargarDatos();
+        } else if (data.ok) {
           abrirModalConfirmacion(data.ticketId, data.datos, data.campos);
           cargarDatos();
         } else {
@@ -539,10 +545,11 @@
 
     // ── MODAL CONFIRMACIÓN ──
     const CAMPOS_POR_PORTAL = {
-      oxxo:        ['fecha', 'folio', 'idVenta', 'total'],
-      arco:        ['codigoTicket', 'total'],
-      gasmaz:      ['portalUrl', 'referencia', 'folio', 'total'],
-      desconocido: ['fecha', 'total'],
+      oxxo:                ['fecha', 'folio', 'idVenta', 'total'],
+      arco:                ['codigoTicket', 'total'],
+      gasmaz:              ['portalUrl', 'referencia', 'folio', 'total'],
+      farmaciaguadalajara: ['folioFactura', 'caja', 'fechaCompra', 'noTicket'],
+      desconocido:         ['fecha', 'total'],
     };
     const LABELES = {
       fecha:        'Fecha (DD/MM/YYYY)',
@@ -552,6 +559,10 @@
       codigoTicket: 'Código de facturación',
       portalUrl:    'URL del portal (del QR)',
       referencia:   'Referencia',
+      folioFactura: 'Folio (XXXXXX-XXXXXX-X)',
+      caja:         'Número de caja',
+      fechaCompra:  'Fecha de compra (YYYY-MM-DD)',
+      noTicket:     'Número de ticket',
     };
     const INPUT_EXTRA = {
       idVenta:   'font-family:monospace;',

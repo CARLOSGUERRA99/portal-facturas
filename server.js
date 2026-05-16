@@ -514,7 +514,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
             { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
             { type: "text", text: `Identifica el tipo de ticket de compra. Responde SOLO este JSON:
 {
-  "portal": "oxxo" | "arco" | "gasmaz" | "desconocido",
+  "portal": "oxxo" | "arco" | "gasmaz" | "farmaciaguadalajara" | "desconocido",
   "confianza": número del 0 al 100,
   "urlQR": "URL completa si hay un QR de facturación, o null",
   "comercio": "nombre del comercio"
@@ -522,6 +522,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
 - "oxxo": si ves logo/nombre OXXO, o texto "Fol_Vta:" e "ID="
 - "arco": si ves ARCO o referencia a buzonfacturas.com
 - "gasmaz": si ves GASMAZ, NexusFuel, o URL nexusfuel.mx
+- "farmaciaguadalajara": si ves Farmacias Guadalajara, Fragua, Corporativo Fragua, o URL farmaciasguadalajara.com
 - "desconocido": cualquier otro caso` }
           ],
         }],
@@ -539,6 +540,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         if (urlLow.includes("nexusfuel") || urlLow.includes("gasmaz")) portalDetectado = "gasmaz";
         else if (urlLow.includes("buzonfacturas") || urlLow.includes("arco")) portalDetectado = "arco";
         else if (urlLow.includes("oxxo")) portalDetectado = "oxxo";
+        else if (urlLow.includes("farmaciasguadalajara")) portalDetectado = "farmaciaguadalajara";
         if (portalDetectado !== "desconocido")
           console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
         datosOCR.portalUrl = urlQR;
@@ -577,6 +579,18 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "total": número sin signos,
   "portalUrl": "URL COMPLETA del QR de facturación (debe incluir nexusfuel.mx), o null",
   "portal": "gasmaz",
+  "ok": true
+}`,
+      farmaciaguadalajara: `Extrae estos datos del ticket de Farmacias Guadalajara. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "Farmacias Guadalajara",
+  "fecha": "YYYY-MM-DD",
+  "folioFactura": "número de folio formato XXXXXX-XXXXXX-X (con guiones)",
+  "caja": "número de caja",
+  "fechaCompra": "fecha de compra en formato YYYY-MM-DD",
+  "noTicket": "número de ticket",
+  "total": número sin signos,
+  "portal": "farmaciaguadalajara",
   "ok": true
 }`,
       desconocido: `Extrae los datos que puedas de este ticket. Responde SOLO JSON sin texto adicional:
@@ -628,19 +642,41 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
     const portalUrl = datosOCR.portalUrl || (portalDetectado === "arco" ? "buzonfacturas" : null) || null;
 
     const camposPorPortal = {
-      oxxo:         ['fecha', 'folio', 'idVenta', 'total'],
-      arco:         ['codigoTicket', 'total'],
-      gasmaz:       ['portalUrl', 'referencia', 'folio', 'total'],
-      desconocido:  ['fecha', 'total'],
+      oxxo:                ['fecha', 'folio', 'idVenta', 'total'],
+      arco:                ['codigoTicket', 'total'],
+      gasmaz:              ['portalUrl', 'referencia', 'folio', 'total'],
+      farmaciaguadalajara: ['folioFactura', 'caja', 'fechaCompra', 'noTicket'],
+      desconocido:         ['fecha', 'total'],
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
 
+    const ticketStatus = portalDetectado === "desconocido" ? "error" : "pendiente_confirmacion";
+    const ticketPortalUrl = portalDetectado === "desconocido" ? "desconocido" : portalUrl;
+
     const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, portalUrl]
+      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", ticketStatus, residente_id, ticketPortalUrl]
     );
+    const ticketId = insertResult.insertId;
 
-    res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR, ticketId: insertResult.insertId, campos });
+    if (portalDetectado === "desconocido") {
+      await crearNotificacion(
+        req.session.userId,
+        "portal_desconocido",
+        `No reconocemos el portal de facturación de "${datosOCR.comercio || 'este comercio'}". El administrador fue notificado y lo configuraremos pronto.`
+      );
+      const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
+      if (adminRows.length > 0) {
+        await crearNotificacion(
+          adminRows[0].id,
+          "portal_pendiente",
+          `Nuevo portal detectado en ticket #${ticketId} de "${datosOCR.comercio || 'comercio desconocido'}". Revisa la sección Portales Pendientes.`
+        );
+      }
+      return res.json({ ok: true, sinPortal: true, comercio: datosOCR.comercio || "desconocido", urlQR: datosOCR.portalUrl || null, datos: datosOCR, ticketId, campos });
+    }
+
+    res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR, ticketId, campos });
   } catch (err) {
     console.error("❌ Error:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
