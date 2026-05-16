@@ -23,16 +23,16 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     } catch {}
   }
 
-  // Llena un input Angular usando typing + eventos para que reactive forms detecte el cambio
+  // Llena un input — selecciona todo y escribe encima (simula lo que hace el usuario)
   async function llenar(selector, valor) {
     await page.click(selector, { clickCount: 3 });
-    await page.keyboard.press("Delete");
-    await page.type(selector, String(valor), { delay: 60 });
-    await page.$eval(selector, el => {
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      el.dispatchEvent(new Event("blur", { bubbles: true }));
-    });
+    await page.waitForTimeout(100);
+    // Ctrl+A para asegurar selección completa, luego escribe encima
+    await page.keyboard.down("Control");
+    await page.keyboard.press("a");
+    await page.keyboard.up("Control");
+    await page.type(selector, String(valor), { delay: 80 });
+    await page.waitForTimeout(150);
   }
 
   try {
@@ -48,10 +48,9 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     // PASO 2 — Llenar datos del ticket
     console.log("📋 PASO 2 — Llenando datos del ticket...");
 
-    // folioFactura tiene mask="AAAAAA-AAAAAA-A*" — Angular ng-mask auto-inserta guiones,
-    // así que escribimos sin guiones para que el mask los posicione correctamente
-    const folioSinGuiones = String(folioFactura).replace(/-/g, "");
-    await llenar("input#folioFactura", folioSinGuiones);
+    // folioFactura: escribir CON guiones exactamente como el usuario lo hace
+    // (el mask acepta guiones en las posiciones correctas sin duplicarlos)
+    await llenar("input#folioFactura", String(folioFactura));
     await page.waitForTimeout(300);
 
     await llenar("input#caja", String(caja));
