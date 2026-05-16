@@ -11,7 +11,7 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
   const _bfToken = process.env.BROWSERLESS_TOKEN;
   if (!_bfToken) throw new Error('BROWSERLESS_TOKEN no definido');
   const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${_bfToken}&timeout=120000`
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${_bfToken}`
   });
 
   const page = await browser.newPage();

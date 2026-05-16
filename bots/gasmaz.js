@@ -10,7 +10,7 @@ async function facturarGasmaz({ referencia, folio, total, rfc, email, ticketId, 
   const _gmToken = process.env.BROWSERLESS_TOKEN;
   if (!_gmToken) throw new Error('BROWSERLESS_TOKEN no definido');
   const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${_gmToken}&timeout=120000`
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${_gmToken}`
   });
 
   const page = await browser.newPage();
