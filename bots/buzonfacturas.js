@@ -123,193 +123,140 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
       : 'https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0';
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
-    console.log('🔑 Esperando input RFC...');
-    let rfcInput = null;
-    for (const sel of ['input[name="Rfc"]', 'input#Rfc', 'input[placeholder*="RFC"]', 'input[placeholder*="rfc"]']) {
-      try {
-        await page.waitForSelector(sel, { timeout: 5000 });
-        rfcInput = await page.$(sel);
-        console.log(`✅ Input RFC encontrado: ${sel}`);
-        break;
-      } catch { console.log(`⚠️ No encontrado: ${sel}`); }
-    }
-
-    if (!rfcInput) throw new Error('No se encontró input de RFC');
-    await rfcInput.click({ clickCount: 3 });
-    await rfcInput.type(rfc);
-
+    console.log('🔑 Llenando RFC...');
+    await page.waitForSelector('input#RFC', { timeout: 10000 });
+    await page.click('input#RFC', { clickCount: 3 });
+    await page.type('input#RFC', rfc, { delay: 80 });
     await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button, input[type="submit"]'))
-        .find(el => el.textContent?.includes('Buscar') || el.value?.includes('Buscar'));
+      const btn = document.querySelector('button[type="submit"].btn-info');
       if (btn) btn.click();
     });
-    console.log('🔍 Click en Buscar...');
-    const ss1 = await page.screenshot({ encoding: 'base64' });
-    console.log('📸 Screenshot 1 — después de buscar RFC');
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+    console.log('✅ RFC enviado, URL:', page.url());
 
     // PASO 2 — Guardar y continuar
-    console.log('💾 PASO 2 — Esperando botón Guardar y continuar...');
-    await page.waitForSelector('button.btn-success, input.btn-success, a.btn-success', { timeout: 10000 });
-    await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button, a, input'))
-        .find(el => el.textContent?.includes('Guardar') || el.value?.includes('Guardar'));
-      if (btn) btn.click();
-    });
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-    console.log('✅ URL actual:', page.url());
+    console.log('💾 PASO 2 — Guardando y continuando...');
+    await page.waitForSelector('button[name="btn"][value="GenerarFactura"]', { timeout: 10000 });
+    await page.click('button[name="btn"][value="GenerarFactura"]');
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+    console.log('✅ Guardado, URL:', page.url());
 
-    // PASO 3 — Código de facturación
-    console.log('🎫 PASO 3 — Esperando campo CodigoFacturacion...');
+    // PASO 3 — Código de facturación y Verificar
+    console.log('🎫 PASO 3 — Llenando código de facturación...');
     await page.waitForSelector('input#CodigoFacturacion, input[name="CodigoFacturacion"]', { timeout: 10000 });
     await page.click('input#CodigoFacturacion, input[name="CodigoFacturacion"]', { clickCount: 3 });
     await page.type('input#CodigoFacturacion, input[name="CodigoFacturacion"]', codigoTicket);
     console.log(`✅ Código llenado: ${codigoTicket}`);
 
-    await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button, input[type="submit"]'))
-        .find(el => el.textContent?.includes('Verificar') || el.value?.includes('Verificar'));
-      if (btn) btn.click();
-    });
+    await page.click('button#btnVerificar');
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
     console.log('✅ Click en Verificar...');
 
-    const resultado = await page.waitForFunction(() => {
+    const yaFacturadoCheck = await page.evaluate(() => {
       const body = document.body.innerText;
-      const yaFacturado = body.match(/ya fue facturado|ya existe|ya procesado|previously invoiced/i);
-      const verificado = body.match(/Estaci[oó]n|N[uú]mero de venta|Fecha de compra/i);
-      if (yaFacturado) return { tipo: 'yaFacturado', folio: body.match(/[A-Z]{2,6}-\d{6,10}/)?.[0] || null };
-      if (verificado) return { tipo: 'verificado' };
-      return false;
-    }, { timeout: 15000 }).catch(() => null);
-
-    const ss2 = await page.screenshot({ encoding: 'base64' });
-    console.log('📸 Screenshot 2 — respuesta tras Verificar');
-
-    if (resultado) {
-      const val = await resultado.jsonValue();
-      if (val?.tipo === 'yaFacturado') {
-        console.log('⚠️ Ticket ya facturado, saltando a recuperador...');
-        const r = await runEstrategiaB(val.folio);
-        await browser.close();
-        return r;
-      }
+      if (!body.match(/ya fue facturado|ya existe|ya procesado|previously invoiced/i)) return null;
+      return body.match(/[A-Z]{2,6}-\d{6,10}/)?.[0] || 'desconocido';
+    });
+    if (yaFacturadoCheck !== null) {
+      console.log('⚠️ Ticket ya facturado, saltando a recuperador...');
+      const r = await runEstrategiaB(yaFacturadoCheck === 'desconocido' ? null : yaFacturadoCheck);
+      await browser.close();
+      return r;
     }
     console.log('✅ Ticket verificado correctamente');
 
-    // PASO 4 — Forma de pago
-    console.log('💳 PASO 4 — Seleccionando forma de pago...');
-    await page.evaluate(() => {
-      const selects = Array.from(document.querySelectorAll('select'));
-      const pagoSelect = selects.find(s =>
-        !s.name?.toLowerCase().includes('cfdi') &&
-        !s.id?.toLowerCase().includes('cfdi') &&
-        Array.from(s.options).some(o => o.text.toLowerCase().includes('débito') || o.text.toLowerCase().includes('debito'))
-      );
-      if (pagoSelect) {
-        const debitoOption = Array.from(pagoSelect.options)
-          .find(o => o.text.toLowerCase().includes('débito') || o.text.toLowerCase().includes('debito') || o.value === '28');
-        if (debitoOption) pagoSelect.value = debitoOption.value;
-      }
-    });
+    // PASO 4 — Forma de pago y Uso CFDI
+    console.log('💳 PASO 4 — Seleccionando forma de pago y uso CFDI...');
+    await page.waitForFunction(() => {
+      const fp = document.querySelector('select#FormaDePago');
+      return fp && !fp.disabled;
+    }, { timeout: 10000 }).catch(() =>
+      page.evaluate(() => {
+        const fp = document.querySelector('select#FormaDePago');
+        const uc = document.querySelector('select#UsoCFDI');
+        if (fp) fp.removeAttribute('disabled');
+        if (uc) uc.removeAttribute('disabled');
+      })
+    );
+    await page.select('select#FormaDePago', '28');
+    console.log('✅ Forma de pago: Tarjeta de débito (28)');
+    await page.select('select#UsoCFDI', 'G03');
+    console.log('✅ Uso CFDI: Gastos en general (G03)');
 
     // PASO 5 — Generar factura
     console.log('🧾 PASO 5 — Generando factura...');
     await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button, input[type="submit"]'))
-        .find(el => el.textContent?.includes('Generar') || el.value?.includes('Generar'));
-      if (btn) { console.log('🔘 Botón:', btn.textContent || btn.value); btn.click(); }
+      const btn = document.querySelector('button[name="btn"][value="GenerarFactura"]');
+      if (btn) {
+        btn.removeAttribute('disabled');
+        btn.click();
+      }
     });
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {});
 
-    const paso5 = await page.waitForFunction(() => {
-      const body = document.body.innerText;
-      // Condición 1: factura generada exitosamente
-      const folioInput = Array.from(document.querySelectorAll('input'))
-        .find(i => i.id?.includes('Folio') && i.value?.match(/[A-Z]{2,6}-\d+/));
-      if (folioInput) return { tipo: 'generado', folio: folioInput.value };
-
-      // Condición 2: ya estaba facturado
-      const yaFacturado = body.match(
-        /ya fue facturado|ya existe|ya procesado|previously|ya tiene factura/i
-      );
-      if (yaFacturado) return { tipo: 'yaFacturado' };
-
-      return false;
-    }, { timeout: 15000 }).catch(() => null);
-
-    const paso5Val = paso5 ? await paso5.jsonValue().catch(() => null) : null;
-    console.log('📋 PASO 5 resultado:', paso5Val);
-
-    if (paso5Val?.tipo === 'yaFacturado') {
+    const paso5YaFacturado = await page.evaluate(() =>
+      document.body.innerText.match(/ya fue facturado|ya existe|ya procesado|previously|ya tiene factura/i) !== null
+    );
+    if (paso5YaFacturado) {
       console.log('⚠️ PASO 5: ticket ya facturado — saltando a runEstrategiaB...');
       const r = await runEstrategiaB(null);
       await browser.close();
       return r;
     }
 
-    const folioGenerado = paso5Val?.folio || null;
-    console.log('✅ Factura generada. Folio:', folioGenerado);
-    const ss3 = await page.screenshot({ encoding: 'base64' });
-    console.log('📸 Screenshot 3 — factura generada');
+    const folioGenerado = await page.$eval('input#folioFactura', el => el.value).catch(() => null);
+    console.log('✅ Folio generado:', folioGenerado);
 
     // PASO 6 — Enviar al correo de captura
     console.log('📧 PASO 6 — Enviando a correo de captura...');
-    try {
-      await page.type(
-        'input[type="email"], input[name*="orreo"], input[placeholder*="orreo"]',
-        'buzonfacturas@serviciosga.site',
-        { delay: 50 }
-      );
-      await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll('button, input[type="submit"]'))
-          .find(el => el.textContent?.includes('Enviar') || el.value?.includes('Enviar'));
-        if (btn) btn.click();
-      });
-      console.log('📤 Correo enviado a buzonfacturas@serviciosga.site');
-      await page.waitForTimeout(2000);
-    } catch (e) {
-      console.log('⚠️ No se pudo enviar correo de captura:', e.message);
-    }
+    await page.evaluate(() => {
+      const input = document.querySelector('input#correo');
+      if (input) {
+        input.removeAttribute('readonly');
+        input.value = '';
+      }
+    });
+    await page.type('input#correo', 'buzonfacturas@serviciosga.site', { delay: 50 });
+    await page.evaluate(() => {
+      const btn = document.querySelector('button[name="btn"][value="btnCorreo"]');
+      if (btn) {
+        btn.removeAttribute('disabled');
+        btn.click();
+      }
+    });
+    await page.waitForTimeout(3000);
+    console.log('📧 Correo enviado a buzonfacturas@serviciosga.site');
 
-    // PASO 7 — Estrategia A: interceptar descarga
-    console.log('📥 PASO 7 — Estrategia A: interceptar descarga...');
+    // PASO 7 — Descargar XML y PDF
+    console.log('📥 PASO 7 — Descargando archivos...');
     let xmlBuffer = null, pdfBuffer = null;
+
+    await page.evaluate(() => {
+      document.querySelectorAll('input[type="submit"]').forEach(b => b.removeAttribute('disabled'));
+    });
 
     const xmlBuf = await interceptarDescarga(() =>
       page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a, button'));
-        const xml = links.find(el => el.textContent?.includes('XML') || el.href?.includes('xml'));
-        if (xml) xml.click();
+        const btn = document.querySelector('input[type="submit"][value="Descargar XML"]');
+        if (btn) btn.click();
       })
     ).catch(() => null);
 
-    if (xmlBuf) {
-      if (xmlBuf.length > 4 && xmlBuf.slice(0, 4).toString() === 'PK\x03\x04') {
-        const zip = await unzipper.Open.buffer(xmlBuf);
-        for (const file of zip.files) {
-          if (file.path.endsWith('.xml')) xmlBuffer = await file.buffer();
-          if (file.path.endsWith('.pdf')) pdfBuffer = await file.buffer();
-        }
-      } else {
-        xmlBuffer = xmlBuf;
-      }
-    }
+    const pdfBuf = await interceptarDescarga(() =>
+      page.evaluate(() => {
+        const btn = document.querySelector('input[type="submit"][value="Descargar PDF"]');
+        if (btn) btn.click();
+      })
+    ).catch(() => null);
 
-    if (!pdfBuffer) {
-      const pdfBuf = await interceptarDescarga(() =>
-        page.evaluate(() => {
-          const links = Array.from(document.querySelectorAll('a, button'));
-          const pdf = links.find(el => el.textContent?.includes('PDF') || el.href?.includes('pdf'));
-          if (pdf) pdf.click();
-        })
-      ).catch(() => null);
-      if (pdfBuf) pdfBuffer = pdfBuf;
-    }
-
-    // Si Estrategia A no funcionó → marcar para job IMAP asíncrono
-    if (!xmlBuffer && !pdfBuffer) {
-      console.log('⚠️ Estrategia A falló — marcando ticket para procesamiento IMAP asíncrono...');
+    if (!xmlBuf && !pdfBuf) {
+      console.log('⚠️ Descarga directa falló, usando recuperador...');
       await browser.close();
-      return { ok: true, procesandoCorreo: true, folioGenerado };
+      return await runEstrategiaB(folioGenerado);
     }
+
+    if (xmlBuf) xmlBuffer = xmlBuf;
+    if (pdfBuf) pdfBuffer = pdfBuf;
 
     const xmlUrl = await guardarEnR2(xmlBuffer, 'xml');
     const pdfUrl = await guardarEnR2(pdfBuffer, 'pdf');
