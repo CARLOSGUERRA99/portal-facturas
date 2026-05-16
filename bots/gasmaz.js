@@ -7,9 +7,11 @@ async function facturarGasmaz({ referencia, folio, total, rfc, email, ticketId, 
   const url = (portalUrl && portalUrl.includes('nexusfuel')) ? portalUrl : 'https://gasmazfactura.nexusfuel.mx/';
   console.log("🌐 URL portal:", url);
 
-  const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`,
-  });
+  const _gmToken = process.env.BROWSERLESS_TOKEN || '';
+  const _gmBase = (process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_gmToken}`).split('?')[0].replace(/\/$/, '');
+  const _gmQs = (process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_gmToken}`).split('?')[1] || `token=${_gmToken}`;
+  const _gmEndpoint = `${_gmBase}/chromium?${_gmQs}&timeout=120000`;
+  const browser = await puppeteer.connect({ browserWSEndpoint: _gmEndpoint });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });

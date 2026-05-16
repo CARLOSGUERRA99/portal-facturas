@@ -8,9 +8,11 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
   console.log('🤖 Iniciando bot BuzonFacturas...');
   console.log(`   RFC: ${rfc} | Código: ${codigoTicket} | Email: ${email}`);
 
-  const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}`,
-  });
+  const _bfToken = process.env.BROWSERLESS_TOKEN || '';
+  const _bfBase = (process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_bfToken}`).split('?')[0].replace(/\/$/, '');
+  const _bfQs = (process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_bfToken}`).split('?')[1] || `token=${_bfToken}`;
+  const _bfEndpoint = `${_bfBase}/chromium?${_bfQs}&timeout=120000`;
+  const browser = await puppeteer.connect({ browserWSEndpoint: _bfEndpoint });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });

@@ -95,26 +95,31 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
   const tokenPreview = token.substring(0, 10);
   const urlExplicita = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || '';
 
-  // Diagnóstico de variables de entorno
-  console.log(`🔑 BROWSERLESS_TOKEN presente: ${token ? 'sí, primeros 10: ' + tokenPreview : 'NO'}`);
-  console.log(`🌐 BROWSERLESS_URL: ${urlExplicita ? urlExplicita.substring(0, 60) + '...' : 'no definida'}`);
+  // Construir URL base limpia (sin query string) para insertar /chromium antes del ?
+  function buildUrl(base, extraParams = 'timeout=120000') {
+    const [path, qs] = base.split('?');
+    const pathConChromium = path.endsWith('/chromium') ? path : `${path.replace(/\/$/, '')}/chromium`;
+    const params = qs ? `${qs}&${extraParams}` : extraParams;
+    return `${pathConChromium}?${params}`;
+  }
 
-  // Si BROWSERLESS_URL ya incluye el token, no añadir ?token= de nuevo
   const candidatas = urlExplicita
-    ? [urlExplicita.includes('timeout') ? urlExplicita : `${urlExplicita}${urlExplicita.includes('?') ? '&' : '?'}timeout=120000`]
+    ? [
+        buildUrl(urlExplicita),          // con /chromium (v2)
+        urlExplicita.includes('timeout') // sin modificar, tal cual está en Railway
+          ? urlExplicita
+          : `${urlExplicita}${urlExplicita.includes('?') ? '&' : '?'}timeout=120000`,
+      ]
     : [
+        `wss://production-sfo.browserless.io/chromium?token=${token}&timeout=120000`,
         `wss://production-sfo.browserless.io?token=${token}&timeout=120000`,
         `wss://chrome.browserless.io?token=${token}&timeout=120000`,
-        `wss://browserless.io?token=${token}&timeout=120000`,
       ];
 
   let browser;
   for (const wsEndpoint of candidatas) {
-    // Ocultar token si aparece como parámetro explícito; si está embebido en BROWSERLESS_URL mostrar primeros 60 chars
-    const urlLog = token
-      ? wsEndpoint.replace(token, `${tokenPreview}[…]`)
-      : wsEndpoint.substring(0, 80) + '...';
-    console.log(`🔌 Intentando puppeteer.connect con: ${urlLog}`);
+    const urlLog = token ? wsEndpoint.replace(token, `${tokenPreview}[…]`) : wsEndpoint.substring(0, 80);
+    console.log(`🔌 Intentando: ${urlLog}`);
     try {
       browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
       console.log(`✅ Conectado a Browserless: ${urlLog}`);
