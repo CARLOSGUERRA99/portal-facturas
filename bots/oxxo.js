@@ -91,17 +91,32 @@ async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
 async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, calle, ext, int, colonia, municipio, codigoPostal, estado, regimenFiscal, usoCfdi }) {
   console.log("🤖 Iniciando bot OXXO...");
 
-  const wsEndpoint = `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}&timeout=120000`;
-  const tokenPreview = (process.env.BROWSERLESS_TOKEN || '').substring(0, 10);
-  console.log(`🔌 Conectando a Browserless: wss://production-sfo.browserless.io?token=${tokenPreview}...&timeout=120000`);
+  const token = process.env.BROWSERLESS_TOKEN || '';
+  const tokenPreview = token.substring(0, 10);
+
+  // Si hay una URL explícita configurada en Railway, usarla directamente
+  const urlExplicita = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || '';
+  const candidatas = urlExplicita
+    ? [`${urlExplicita}${urlExplicita.includes('?') ? '&' : '?'}timeout=120000`]
+    : [
+        `wss://production-sfo.browserless.io?token=${token}&timeout=120000`,
+        `wss://chrome.browserless.io?token=${token}&timeout=120000`,
+        `wss://browserless.io?token=${token}&timeout=120000`,
+      ];
 
   let browser;
-  try {
-    browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
-  } catch (connErr) {
-    console.error(`❌ Fallo conexión Browserless (token[:10]=${tokenPreview}): ${connErr.message}`);
-    throw connErr;
+  for (const wsEndpoint of candidatas) {
+    const urlLog = wsEndpoint.replace(token, `${tokenPreview}...`);
+    console.log(`🔌 Intentando Browserless: ${urlLog}`);
+    try {
+      browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+      console.log(`✅ Conectado a Browserless: ${urlLog}`);
+      break;
+    } catch (connErr) {
+      console.error(`❌ Falló ${urlLog}: ${connErr.message}`);
+    }
   }
+  if (!browser) throw new Error('No se pudo conectar a Browserless con ninguna URL');
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
