@@ -302,61 +302,87 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.click("#form\\:codigo", { clickCount: 3 });
     await page.type("#form\\:codigo", String(codigoPostal), { delay: 60 });
 
-    // ── ESTADO — polling activo con DOM keepalive ──
-    let estadoHabilitado = false;
+    // ── ESTADO — interacción visual PrimeFaces ──
+    let estadoListo = false;
     for (let i = 0; i < 40; i++) {
-      estadoHabilitado = await page.evaluate(() => {
+      estadoListo = await page.evaluate(() => {
         window.scrollBy(0, 1);
         window.scrollBy(0, -1);
-        const el = document.querySelector("#form\\:estado_input");
-        return el && !el.disabled;
+        const div = document.querySelector("#form\\:estado");
+        if (div && !div.classList.contains('ui-state-disabled')) return true;
+        const sel = document.querySelector("#form\\:estado_input");
+        return sel && !sel.disabled;
       });
-      if (estadoHabilitado) break;
+      if (estadoListo) break;
       await page.waitForTimeout(300);
     }
-    if (!estadoHabilitado) throw new Error('Estado no se habilitó a tiempo');
-    await page.select("#form\\:estado_input", estado || "SONORA");
-    console.log('✅ Estado seleccionado');
+    if (!estadoListo) throw new Error('Estado no se habilitó a tiempo');
 
-    // ── RÉGIMEN FISCAL — polling activo con DOM keepalive ──
+    const estadoEsPrimeFaces = await page.evaluate(() => !!document.querySelector("#form\\:estado_label"));
+    if (estadoEsPrimeFaces) {
+      await page.click("#form\\:estado_label");
+      await page.waitForTimeout(500);
+      await page.waitForFunction(() => {
+        const panel = document.querySelector("#form\\:estado_panel");
+        return panel && !panel.classList.contains('ui-helper-hidden');
+      }, { timeout: 5000 });
+      const estadoSel = await page.evaluate((val) => {
+        const items = document.querySelectorAll("#form\\:estado_panel li.ui-selectonemenu-item");
+        for (const item of items) {
+          if (item.textContent.trim().toUpperCase() === val.toUpperCase()) {
+            item.click(); return item.textContent.trim();
+          }
+        }
+        return null;
+      }, estado || "SONORA");
+      if (!estadoSel) throw new Error('No se encontró estado: ' + (estado || "SONORA"));
+      console.log('✅ Estado seleccionado:', estadoSel);
+    } else {
+      await page.select("#form\\:estado_input", estado || "SONORA");
+      console.log('✅ Estado seleccionado (native select)');
+    }
+
+    // ── RÉGIMEN FISCAL — interacción visual PrimeFaces ──
     let regimenListo = false;
     for (let i = 0; i < 40; i++) {
       regimenListo = await page.evaluate(() => {
         window.scrollBy(0, 1);
         window.scrollBy(0, -1);
-        const nativo = document.querySelector("#form\\:selectOneMenuRegFis_input");
-        if (nativo && !nativo.disabled && nativo.options.length > 1) return true;
-        const trigger = document.querySelector("#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis");
-        return trigger && !trigger.classList.contains('ui-state-disabled');
+        const div = document.querySelector("#form\\:selectOneMenuRegFis");
+        return div && !div.classList.contains('ui-state-disabled');
       });
       if (regimenListo) break;
       await page.waitForTimeout(300);
     }
-    if (!regimenListo) throw new Error('Régimen fiscal no se habilitó a tiempo');
+    if (!regimenListo) throw new Error('Régimen fiscal nunca se habilitó');
 
-    const regimenNativo = await page.evaluate(() => {
-      const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
-      return el && el.tagName === 'SELECT' && el.options.length > 1;
-    });
-    if (regimenNativo) {
-      await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "601"));
-    } else {
-      await page.click("#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis").catch(() => {});
-      await page.waitForTimeout(400);
-      const regimenSeleccionado = await page.evaluate(() => {
-        const items = document.querySelectorAll(
-          "#form\\:selectOneMenuRegFis_panel li, #form\\:selectOneMenuRegFis_items li, .ui-selectonemenu-item"
-        );
-        for (const item of items) {
-          if (item.textContent.includes('601') || item.textContent.includes('General de Ley')) {
-            item.click(); return true;
-          }
+    await page.click("#form\\:selectOneMenuRegFis_label");
+    await page.waitForTimeout(800);
+
+    await page.waitForFunction(() => {
+      const panel = document.querySelector("#form\\:selectOneMenuRegFis_panel");
+      return panel && !panel.classList.contains('ui-helper-hidden');
+    }, { timeout: 5000 });
+
+    const regimenSeleccionado = await page.evaluate(() => {
+      const items = document.querySelectorAll(
+        "#form\\:selectOneMenuRegFis_panel li.ui-selectonemenu-item"
+      );
+      for (const item of items) {
+        if (item.textContent.includes('601') || item.textContent.includes('General de Ley')) {
+          item.click();
+          return item.textContent.trim();
         }
-        return false;
-      });
-      if (!regimenSeleccionado) throw new Error('No se encontró opción Régimen 601');
-    }
-    console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
+      }
+      return null;
+    });
+    if (!regimenSeleccionado) throw new Error('No se encontró régimen fiscal 601');
+    console.log('✅ Régimen fiscal seleccionado:', regimenSeleccionado);
+
+    await page.waitForFunction(() => {
+      return typeof PrimeFaces === 'undefined' || PrimeFaces.ajax.Queue.isEmpty();
+    }, { timeout: 15000 });
+    console.log('✅ AJAX PrimeFaces completado');
 
     // ── USO CFDI — polling activo con DOM keepalive, try-catch por iteración ──
     let cfdiListo = false;
