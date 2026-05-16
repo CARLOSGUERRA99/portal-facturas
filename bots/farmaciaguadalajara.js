@@ -191,17 +191,45 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     await tomarScreenshot("paso3_post_validar");
     console.log("✅ Folio validado");
 
-    // PASO 4 — Modal SweetAlert2 de confirmación de sucursal
-    console.log("📍 PASO 4 — Esperando modal de sucursal...");
-    const modalVisible = await page.waitForSelector(".swal2-confirm", { timeout: 8000 })
-      .catch(() => null);
-    if (modalVisible) {
-      console.log("📍 Modal de sucursal detectado, confirmando...");
-      await page.click(".swal2-confirm");
-      await page.waitForTimeout(2000);
-      console.log("✅ Sucursal confirmada");
+    // PASO 4 — Modal SweetAlert2 (sucursal o error de sistema)
+    console.log("📍 PASO 4 — Esperando modal...");
+    const modal = await page.waitForSelector(".swal2-popup", { timeout: 8000 }).catch(() => null);
+    if (modal) {
+      // Detectar si es error de sistema antes de confirmar
+      const modalTexto = await page.evaluate(() =>
+        document.querySelector(".swal2-popup")?.innerText?.toLowerCase() || ""
+      );
+      console.log("📍 Texto del modal:", modalTexto.substring(0, 100));
+
+      if (/no disponible|fuera de servicio|mantenimiento|momento|servicio no|sistema.*no/i.test(modalTexto)) {
+        console.log("⚠️ Sistema de facturación no disponible (mensaje del portal)");
+        await tomarScreenshot("sistema_no_disponible");
+        await browser.close();
+        return { ok: false, msg: "El sistema de facturación de Farmacias Guadalajara no está disponible en este momento. Intenta más tarde." };
+      }
+
+      // Es modal de confirmación de sucursal — confirmar
+      const confirmBtn = await page.$(".swal2-confirm");
+      if (confirmBtn) {
+        console.log("📍 Modal de sucursal, confirmando...");
+        await page.click(".swal2-confirm");
+        await page.waitForTimeout(2000);
+        console.log("✅ Sucursal confirmada");
+      }
     } else {
-      console.log("ℹ️ Modal de sucursal no apareció, continuando...");
+      console.log("ℹ️ Sin modal, continuando...");
+    }
+
+    // Verificar error de sistema también en el cuerpo de la página
+    const errorSistema = await activePage.evaluate(() =>
+      /no disponible|fuera de servicio|mantenimiento|sistema.*no|no est[aá] disponible/i.test(
+        document.body?.innerText || ""
+      )
+    );
+    if (errorSistema) {
+      await tomarScreenshot("sistema_no_disponible_body");
+      await browser.close();
+      return { ok: false, msg: "El sistema de facturación de Farmacias Guadalajara no está disponible en este momento. Intenta más tarde." };
     }
 
     // PASO 5 — Esperar campos de facturación y llenarlos
