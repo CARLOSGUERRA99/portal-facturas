@@ -91,10 +91,17 @@ async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
 async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, calle, ext, int, colonia, municipio, codigoPostal, estado, regimenFiscal, usoCfdi }) {
   console.log("🤖 Iniciando bot OXXO...");
 
-  const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}&timeout=120000`,
-    timeout: 120000,
-  });
+  const wsEndpoint = `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}&timeout=120000`;
+  const tokenPreview = (process.env.BROWSERLESS_TOKEN || '').substring(0, 10);
+  console.log(`🔌 Conectando a Browserless: wss://production-sfo.browserless.io?token=${tokenPreview}...&timeout=120000`);
+
+  let browser;
+  try {
+    browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+  } catch (connErr) {
+    console.error(`❌ Fallo conexión Browserless (token[:10]=${tokenPreview}): ${connErr.message}`);
+    throw connErr;
+  }
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
