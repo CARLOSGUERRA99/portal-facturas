@@ -275,14 +275,21 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     }, { timeout: 15000 });
     await page.click("#form\\:rfc", { clickCount: 3 });
     await page.type("#form\\:rfc", rfc, { delay: 80 });
-    console.log('✅ RFC llenado, esperando que habilite razón social...');
+    console.log('✅ RFC llenado, esperando razón social...');
     await page.waitForTimeout(3000);
 
-    // Razón social — esperar que se habilite
-    await page.waitForFunction(() => {
-      const el = document.querySelector("#form\\:razon");
-      return el && !el.disabled;
-    }, { timeout: 10000 });
+    // Razón social — polling activo
+    let razonHabilitada = false;
+    for (let i = 0; i < 40; i++) {
+      razonHabilitada = await page.evaluate(() => {
+        const el = document.querySelector("#form\\:razon");
+        return el && !el.disabled;
+      });
+      if (razonHabilitada) break;
+      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
+      await page.waitForTimeout(500);
+    }
+    if (!razonHabilitada) throw new Error('Razón social no se habilitó a tiempo');
     await page.click("#form\\:razon", { clickCount: 3 });
     await page.type("#form\\:razon", razonSocial, { delay: 50 });
     await page.waitForTimeout(500);
@@ -301,56 +308,54 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.click("#form\\:dele", { clickCount: 3 });
     await page.type("#form\\:dele", municipio || "", { delay: 50 });
 
-    // Código postal — esperar que habilite Estado
+    // Código postal
     console.log('📮 Llenando código postal...');
     await page.click("#form\\:codigo", { clickCount: 3 });
     await page.type("#form\\:codigo", String(codigoPostal), { delay: 80 });
-    console.log('✅ CP llenado, esperando que habilite Estado...');
-    await page.waitForTimeout(3000);
+    console.log('✅ CP llenado, esperando Estado...');
 
-    // Estado — esperar que se habilite
-    await page.waitForFunction(() => {
-      const el = document.querySelector("#form\\:estado_input");
-      return el && !el.disabled;
-    }, { timeout: 10000 });
+    // Estado — polling activo
+    let estadoHabilitado = false;
+    for (let i = 0; i < 40; i++) {
+      estadoHabilitado = await page.evaluate(() => {
+        const el = document.querySelector("#form\\:estado_input");
+        return el && !el.disabled;
+      });
+      if (estadoHabilitado) break;
+      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
+      await page.waitForTimeout(500);
+    }
+    if (!estadoHabilitado) throw new Error('Estado no se habilitó a tiempo');
     await page.select("#form\\:estado_input", estado || "SONORA");
     console.log('✅ Estado seleccionado, esperando Régimen Fiscal...');
 
-    // Keepalive mientras el portal carga las opciones de régimen
-    await page.waitForTimeout(800);
-    await page.mouse.move(400, 300);
-    await page.waitForTimeout(800);
-    await page.mouse.move(500, 300);
-    await page.waitForTimeout(800);
-    await page.mouse.move(400, 400);
-    await page.waitForTimeout(800);
-    await page.mouse.move(500, 400);
-    await page.waitForTimeout(800);
-    await page.mouse.move(450, 350);
-    await page.waitForTimeout(800);
-
-    // Régimen fiscal — esperar que se habilite y tenga opciones
-    await page.waitForFunction(() => {
-      const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
-      return el && !el.disabled && el.options.length > 1;
-    }, { timeout: 20000 });
+    // Régimen fiscal — polling activo
+    let regimenHabilitado = false;
+    for (let i = 0; i < 40; i++) {
+      regimenHabilitado = await page.evaluate(() => {
+        const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
+        return el && !el.disabled && el.options.length > 1;
+      });
+      if (regimenHabilitado) break;
+      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
+      await page.waitForTimeout(500);
+    }
+    if (!regimenHabilitado) throw new Error('Régimen fiscal no se habilitó a tiempo');
     await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "601"));
     console.log('✅ Régimen fiscal, esperando Uso CFDI...');
 
-    // Keepalive mientras el portal carga las opciones de uso CFDI
-    await page.waitForTimeout(500);
-    await page.mouse.move(400, 300);
-    await page.waitForTimeout(500);
-    await page.mouse.move(500, 300);
-    await page.waitForTimeout(500);
-    await page.mouse.move(400, 400);
-    await page.waitForTimeout(500);
-
-    // Uso CFDI — esperar que se habilite y tenga opciones
-    await page.waitForFunction(() => {
-      const el = document.querySelector("#form\\:selectOneMenuCFDI_input");
-      return el && !el.disabled && el.options.length > 1;
-    }, { timeout: 20000 });
+    // Uso CFDI — polling activo
+    let cfdiHabilitado = false;
+    for (let i = 0; i < 40; i++) {
+      cfdiHabilitado = await page.evaluate(() => {
+        const el = document.querySelector("#form\\:selectOneMenuCFDI_input");
+        return el && !el.disabled && el.options.length > 1;
+      });
+      if (cfdiHabilitado) break;
+      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
+      await page.waitForTimeout(500);
+    }
+    if (!cfdiHabilitado) throw new Error('Uso CFDI no se habilitó a tiempo');
     await page.select("#form\\:selectOneMenuCFDI_input", usoCfdi || "G03");
     console.log('✅ Uso CFDI seleccionado');
     await page.waitForTimeout(500);
