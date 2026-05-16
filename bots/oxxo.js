@@ -320,129 +320,68 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.waitForTimeout(1500);
     console.log('✅ CP llenado y blur disparado');
 
-    // ── ESTADO — interacción visual PrimeFaces ──
-    let estadoListo = false;
-    for (let i = 0; i < 40; i++) {
-      estadoListo = await page.evaluate(() => {
-        window.scrollBy(0, 1);
-        window.scrollBy(0, -1);
-        const div = document.querySelector("#form\\:estado");
-        if (div && !div.classList.contains('ui-state-disabled')) return true;
-        const sel = document.querySelector("#form\\:estado_input");
-        return sel && !sel.disabled;
-      });
-      if (estadoListo) break;
-      await page.waitForTimeout(300);
-    }
-    if (!estadoListo) throw new Error('Estado no se habilitó a tiempo');
-
-    const estadoEsPrimeFaces = await page.evaluate(() => !!document.querySelector("#form\\:estado_label"));
-    if (estadoEsPrimeFaces) {
-      await page.click("#form\\:estado_label");
-      await page.waitForTimeout(500);
-      await page.waitForFunction(() => {
-        const panel = document.querySelector("#form\\:estado_panel");
-        return panel && !panel.classList.contains('ui-helper-hidden');
-      }, { timeout: 5000 });
-      const estadoSel = await page.evaluate((val) => {
-        const items = document.querySelectorAll("#form\\:estado_panel li.ui-selectonemenu-item");
-        for (const item of items) {
-          if (item.textContent.trim().toUpperCase() === val.toUpperCase()) {
-            item.click(); return item.textContent.trim();
-          }
+    // ── ESTADO — clic visual PrimeFaces (opciones cargadas tras CP blur) ──
+    await page.waitForTimeout(1500);
+    await page.click("#form\\:estado_label");
+    await page.waitForTimeout(500);
+    const estadoOk = await page.evaluate((val) => {
+      const items = document.querySelectorAll(
+        "#form\\:estado_panel li.ui-selectonemenu-item"
+      );
+      for (const item of items) {
+        if (item.textContent.trim().toUpperCase() === val.toUpperCase()) {
+          item.click();
+          return true;
         }
-        return null;
-      }, estado || "SONORA");
-      if (!estadoSel) throw new Error('No se encontró estado: ' + (estado || "SONORA"));
-      console.log('✅ Estado seleccionado:', estadoSel);
-    } else {
-      await page.select("#form\\:estado_input", estado || "SONORA");
-      console.log('✅ Estado seleccionado (native select)');
-    }
+      }
+      return false;
+    }, estado || "SONORA");
+    console.log('✅ Estado seleccionado:', estadoOk);
+    await page.waitForTimeout(1500);
 
-    // ── RÉGIMEN FISCAL — interacción visual PrimeFaces ──
-    let regimenListo = false;
-    for (let i = 0; i < 40; i++) {
-      regimenListo = await page.evaluate(() => {
-        window.scrollBy(0, 1);
-        window.scrollBy(0, -1);
-        const div = document.querySelector("#form\\:selectOneMenuRegFis");
-        return div && !div.classList.contains('ui-state-disabled');
-      });
-      if (regimenListo) break;
-      await page.waitForTimeout(300);
-    }
-    if (!regimenListo) throw new Error('Régimen fiscal nunca se habilitó');
-
+    // ── RÉGIMEN FISCAL — clic visual PrimeFaces (9 opciones ya disponibles) ──
     await page.click("#form\\:selectOneMenuRegFis_label");
-    await page.waitForTimeout(800);
-
-    await page.waitForFunction(() => {
-      const panel = document.querySelector("#form\\:selectOneMenuRegFis_panel");
-      return panel && !panel.classList.contains('ui-helper-hidden');
-    }, { timeout: 5000 });
-
-    const regimenSeleccionado = await page.evaluate(() => {
+    await page.waitForTimeout(500);
+    const regimenOk = await page.evaluate(() => {
       const items = document.querySelectorAll(
         "#form\\:selectOneMenuRegFis_panel li.ui-selectonemenu-item"
       );
       for (const item of items) {
-        if (item.textContent.includes('601') || item.textContent.includes('General de Ley')) {
+        if (item.textContent.includes('601') ||
+            item.textContent.includes('General de Ley')) {
           item.click();
           return item.textContent.trim();
         }
       }
       return null;
     });
-    if (!regimenSeleccionado) throw new Error('No se encontró régimen fiscal 601');
-    console.log('✅ Régimen fiscal seleccionado:', regimenSeleccionado);
+    console.log('✅ Régimen fiscal:', regimenOk);
+    await page.waitForTimeout(2000);
 
-    await page.waitForFunction(() => {
-      return typeof PrimeFaces === 'undefined' || PrimeFaces.ajax.Queue.isEmpty();
-    }, { timeout: 15000 });
-    console.log('✅ AJAX PrimeFaces completado');
-
-    // ── USO CFDI — polling activo con DOM keepalive, try-catch por iteración ──
-    let cfdiListo = false;
-    for (let i = 0; i < 120; i++) {
-      try {
-        cfdiListo = await page.evaluate(() => {
-          window.scrollBy(0, 1);
-          window.scrollBy(0, -1);
-          const div = document.querySelector("#form\\:selectOneMenuCFDI");
-          return div && !div.classList.contains('ui-state-disabled');
-        });
-        if (cfdiListo) break;
-      } catch (_) {
-        // frame temporalmente desconectado por AJAX del portal
-      }
-      await page.waitForTimeout(300);
-    }
-    if (!cfdiListo) throw new Error('CFDI nunca se habilitó');
+    // ── USO CFDI — clic visual PrimeFaces (opciones cargadas tras Régimen) ──
+    const cfdiOpciones = await page.evaluate(() => {
+      const ul = document.querySelector(
+        "#form\\:selectOneMenuCFDI_panel ul"
+      );
+      return ul ? ul.querySelectorAll('li').length : 0;
+    });
+    console.log('📋 Opciones CFDI:', cfdiOpciones);
 
     await page.click("#form\\:selectOneMenuCFDI_label");
     await page.waitForTimeout(500);
-
-    await page.waitForFunction(() => {
-      const panel = document.querySelector("#form\\:selectOneMenuCFDI_panel");
-      return panel && !panel.classList.contains('ui-helper-hidden');
-    }, { timeout: 5000 });
-
-    const seleccionado = await page.evaluate(() => {
+    const cfdiOk = await page.evaluate(() => {
       const items = document.querySelectorAll(
         "#form\\:selectOneMenuCFDI_panel li.ui-selectonemenu-item"
       );
       for (const item of items) {
-        if (item.textContent.trim().includes('Gastos en general')) {
+        if (item.textContent.includes('Gastos en general')) {
           item.click();
           return item.textContent.trim();
         }
       }
       return null;
     });
-    if (!seleccionado) throw new Error('No se encontró Gastos en general');
-    console.log('✅ Uso CFDI seleccionado:', seleccionado);
-    await page.waitForTimeout(300);
+    console.log('✅ CFDI:', cfdiOk);
 
     // ── GENERAR FACTURA ──
     console.log("🧾 Generando factura...");
