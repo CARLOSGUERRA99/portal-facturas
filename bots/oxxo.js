@@ -91,10 +91,11 @@ async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
 async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, calle, ext, int, colonia, municipio, codigoPostal, estado, regimenFiscal, usoCfdi }) {
   console.log("🤖 Iniciando bot OXXO...");
 
-  const browserWSEndpoint = process.env.BROWSERLESS_URL;
-  if (!browserWSEndpoint) throw new Error('BROWSERLESS_URL no configurado en Railway');
-  console.log('🔌 Conectando a Browserless:', browserWSEndpoint.substring(0, 60) + '...');
-  const browser = await puppeteer.connect({ browserWSEndpoint });
+  const token = process.env.BROWSERLESS_TOKEN;
+  if (!token) throw new Error('BROWSERLESS_TOKEN no definido');
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}`
+  });
   console.log('✅ Conectado a Browserless');
 
   const page = await browser.newPage();
@@ -133,9 +134,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     } catch {
       console.log("ℹ️ No apareció popup");
     }
-
-    const ss1 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 1 - popup cerrado");
 
     // ── FECHA via datepicker ──
     console.log("📅 Abriendo datepicker...");
@@ -177,10 +175,8 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       }
     }, dia, mes, anio);
 
-    // Esperar que el calendario se cierre
     await page.waitForTimeout(1000);
 
-    // Si el calendario sigue abierto, forzar cierre
     const calAbierto = await page.$('.ui-datepicker:not([style*="display: none"])');
     if (calAbierto) {
       await page.click('#form\\:fecha_input');
@@ -192,7 +188,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     const fechaValor = await page.$eval('#form\\:fecha_input', el => el.value);
     console.log('📅 Fecha confirmada en campo:', fechaValor);
 
-    // Fallback: escribir la fecha directamente si el datepicker no la registró
     if (!fechaValor || fechaValor.trim() === '') {
       console.log('⚠️ Datepicker falló, escribiendo fecha directo...');
       await page.evaluate((fecha) => {
@@ -215,8 +210,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.click("#form\\:folio", { clickCount: 3 });
     await page.type("#form\\:folio", String(folio), { delay: 100 });
     await page.waitForTimeout(400);
-    const folioValor = await page.$eval("#form\\:folio", el => el.value);
-    console.log("🔢 Folio en campo:", folioValor);
+    console.log("🔢 Folio en campo:", await page.$eval("#form\\:folio", el => el.value));
 
     // ── ID VENTA ──
     console.log("🔑 Llenando ID venta...");
@@ -232,9 +226,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.waitForTimeout(500);
     console.log("💰 Total en campo:", await page.$eval("#form\\:total", el => el.value));
 
-    const ss2 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 2 - antes de validar");
-
     // ── VALIDAR TICKET ──
     console.log("✅ Validando ticket...");
     await page.evaluate(() => {
@@ -243,9 +234,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       if (validar) validar.click();
     });
     await page.waitForTimeout(5000);
-
-    const ss3 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot 3 - después de validar");
 
     const continuarHabilitado = await page.evaluate(() => {
       const btn = document.querySelector("#form\\:continuar");
@@ -260,7 +248,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       });
       console.log("⚠️ Mensaje portal:", mensajeError);
       await browser.close();
-      return { ok: false, msg: `Portal no validó el ticket. ${mensajeError || "Verifica los datos del ticket"}`, screenshot: ss3 };
+      return { ok: false, msg: `Portal no validó el ticket. ${mensajeError || "Verifica los datos del ticket"}` };
     }
 
     // ── CONTINUAR ──
@@ -268,8 +256,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.click("#form\\:continuar");
     await page.waitForTimeout(3000);
 
-    // ── DATOS FISCALES ──
-    // RFC — esperar que se habilite
+    // ── RFC ──
     console.log('📋 Llenando RFC...');
     await page.waitForFunction(() => {
       const el = document.querySelector("#form\\:rfc");
@@ -280,10 +267,12 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log('✅ RFC llenado, esperando razón social...');
     await page.waitForTimeout(3000);
 
-    // Razón social — polling activo, múltiples selectores posibles
+    // ── RAZÓN SOCIAL — polling activo con DOM keepalive ──
     let razonHabilitada = false;
     for (let i = 0; i < 40; i++) {
       razonHabilitada = await page.evaluate(() => {
+        window.scrollBy(0, 1);
+        window.scrollBy(0, -1);
         const selectors = [
           "#form\\:razon",
           "#form\\:razonSocial",
@@ -299,7 +288,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         return null;
       });
       if (razonHabilitada) break;
-      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
       await page.waitForTimeout(500);
     }
     if (!razonHabilitada) throw new Error('Razón social no se habilitó a tiempo');
@@ -308,7 +296,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log('✅ Razón social llenada:', razonSocial);
     await page.waitForTimeout(500);
 
-    // Calle, ext, int, colonia, municipio — llenar directo
+    // ── DIRECCIÓN ──
     await page.click("#form\\:calle", { clickCount: 3 });
     await page.type("#form\\:calle", calle || "", { delay: 50 });
     await page.click("#form\\:ext", { clickCount: 3 });
@@ -322,32 +310,34 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.click("#form\\:dele", { clickCount: 3 });
     await page.type("#form\\:dele", municipio || "", { delay: 50 });
 
-    // Código postal
+    // ── CÓDIGO POSTAL ──
     console.log('📮 Llenando código postal...');
     await page.click("#form\\:codigo", { clickCount: 3 });
     await page.type("#form\\:codigo", String(codigoPostal), { delay: 80 });
     console.log('✅ CP llenado, esperando Estado...');
 
-    // Estado — polling activo
+    // ── ESTADO — polling activo con DOM keepalive ──
     let estadoHabilitado = false;
     for (let i = 0; i < 40; i++) {
       estadoHabilitado = await page.evaluate(() => {
+        window.scrollBy(0, 1);
+        window.scrollBy(0, -1);
         const el = document.querySelector("#form\\:estado_input");
         return el && !el.disabled;
       });
       if (estadoHabilitado) break;
-      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
       await page.waitForTimeout(500);
     }
     if (!estadoHabilitado) throw new Error('Estado no se habilitó a tiempo');
     await page.select("#form\\:estado_input", estado || "SONORA");
     console.log('✅ Estado seleccionado, esperando Régimen Fiscal...');
 
-    // Régimen fiscal — polling activo, PrimeFaces dropdown
+    // ── RÉGIMEN FISCAL — polling activo con DOM keepalive ──
     let regimenListo = false;
     for (let i = 0; i < 40; i++) {
       regimenListo = await page.evaluate(() => {
-        // Soporta tanto <select> nativo como PrimeFaces trigger
+        window.scrollBy(0, 1);
+        window.scrollBy(0, -1);
         const nativo = document.querySelector("#form\\:selectOneMenuRegFis_input");
         if (nativo && !nativo.disabled && nativo.options.length > 1) return true;
         const trigger = document.querySelector(
@@ -356,12 +346,10 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         return trigger && !trigger.classList.contains('ui-state-disabled');
       });
       if (regimenListo) break;
-      await page.mouse.move(350 + (i % 5) * 20, 300 + (i % 3) * 15);
       await page.waitForTimeout(500);
     }
     if (!regimenListo) throw new Error('Régimen fiscal no se habilitó a tiempo');
 
-    // Intentar page.select primero (select nativo); si falla usar clic PrimeFaces
     const regimenNativo = await page.evaluate(() => {
       const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
       return el && el.tagName === 'SELECT' && el.options.length > 1;
@@ -371,27 +359,24 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     } else {
       await page.click("#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis").catch(() => {});
       await page.waitForTimeout(800);
-      const regimenSeleccionado = await page.evaluate((valor) => {
+      const regimenSeleccionado = await page.evaluate(() => {
         const items = document.querySelectorAll(
           "#form\\:selectOneMenuRegFis_panel li, #form\\:selectOneMenuRegFis_items li, .ui-selectonemenu-item"
         );
         for (const item of items) {
-          if (item.textContent.includes('601') || item.textContent.includes('General de Ley') ||
-              item.getAttribute('data-label')?.includes('601')) {
+          if (item.textContent.includes('601') || item.textContent.includes('General de Ley')) {
             item.click(); return true;
           }
         }
         return false;
-      }, regimenFiscal || "601");
+      });
       if (!regimenSeleccionado) throw new Error('No se encontró opción Régimen 601');
     }
     console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
 
-    // Uso CFDI — esperar que quite ui-state-disabled
-    console.log('⏳ Esperando que CFDI se habilite...');
+    // ── USO CFDI — polling activo con DOM keepalive ──
     let cfdiListo = false;
     for (let i = 0; i < 60; i++) {
-      // Acción real en DOM — mantiene WebSocket vivo
       cfdiListo = await page.evaluate(() => {
         window.scrollBy(0, 1);
         window.scrollBy(0, -1);
@@ -399,22 +384,18 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         return div && !div.classList.contains('ui-state-disabled');
       });
       if (cfdiListo) break;
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(200);
     }
-    if (!cfdiListo) throw new Error('CFDI nunca se habilitó tras 30s');
-    console.log('✅ CFDI habilitado, abriendo dropdown...');
+    if (!cfdiListo) throw new Error('CFDI nunca se habilitó');
 
-    // Clic en el label para abrir el panel
     await page.click("#form\\:selectOneMenuCFDI_label");
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(800);
 
-    // Esperar que el panel sea visible
     await page.waitForFunction(() => {
       const panel = document.querySelector("#form\\:selectOneMenuCFDI_panel");
       return panel && !panel.classList.contains('ui-helper-hidden');
     }, { timeout: 5000 });
 
-    // Seleccionar "Gastos en general"
     const seleccionado = await page.evaluate(() => {
       const items = document.querySelectorAll(
         "#form\\:selectOneMenuCFDI_panel li.ui-selectonemenu-item"
@@ -427,8 +408,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       }
       return null;
     });
-
-    if (!seleccionado) throw new Error('No se encontró opción Gastos en general en el panel');
+    if (!seleccionado) throw new Error('No se encontró Gastos en general');
     console.log('✅ Uso CFDI seleccionado:', seleccionado);
     await page.waitForTimeout(500);
 
@@ -437,7 +417,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.click("#form\\:generarFactura");
     await page.waitForTimeout(8000);
 
-    // Esperar pantalla de descarga
     await page.waitForFunction(() => {
       const body = document.body.innerText;
       return body.includes('Descargar PDF') ||
@@ -447,7 +426,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     }, { timeout: 15000 });
     console.log('✅ Pantalla de descarga detectada');
 
-    // Enviar al correo de captura IMAP
+    // ── ENVIAR AL CORREO DE CAPTURA IMAP ──
     const emailInput = await page.$('input[type="email"], input[placeholder*="correo"], input[placeholder*="dominio"]');
     if (emailInput) {
       await emailInput.click({ clickCount: 3 });
@@ -527,7 +506,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       }
     }
 
-    // Si no se capturaron archivos → IMAP los recogerá del correo
     if (!xmlUrl && !pdfUrl) {
       console.log('⚠️ Sin archivos directos, IMAP recogerá del correo');
       await browser.close();
@@ -539,17 +517,13 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
   } catch (err) {
     console.error("❌ Error en bot OXXO:", err.message);
-    let screenshot = null;
-    try { screenshot = await page.screenshot({ encoding: "base64" }); } catch {}
-
     const fallback = await fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total });
     if (fallback.ok) {
       await browser.close();
       return fallback;
     }
-
     await browser.close();
-    return { ok: false, msg: err.message, screenshot };
+    return { ok: false, msg: err.message };
   }
 }
 
