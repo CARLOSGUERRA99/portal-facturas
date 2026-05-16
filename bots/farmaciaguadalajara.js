@@ -44,6 +44,8 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     await page.waitForTimeout(100);
     await page.keyboard.type(String(valor), { delay: 70 });
     await page.waitForTimeout(200);
+    const valActual = await page.$eval(selector, el => el.value).catch(() => "?");
+    console.log(`📝 ${selector}: "${valActual}" (esperado: "${valor}")`);
   }
 
   // Llena el campo de folio con mask AAAAAA-AAAAAA-A* — carácter a carácter con pausa
@@ -108,6 +110,9 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
 
     // Datos del ticket inválidos / no encontrados
     if (
+      /datos\s+inv[aá]lid[ao]s?/i.test(t) ||
+      /favor\s+de\s+revisar/i.test(t) ||
+      /revisar\s+los\s+datos/i.test(t) ||
       /no\s+(se\s+)?encontr[oó]/i.test(t) ||
       /no\s+v[aá]lid[ao]/i.test(t) ||
       /datos\s+incorrectos/i.test(t) ||
