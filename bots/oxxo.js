@@ -93,11 +93,15 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
   const token = process.env.BROWSERLESS_TOKEN || '';
   const tokenPreview = token.substring(0, 10);
-
-  // Si hay una URL explícita configurada en Railway, usarla directamente
   const urlExplicita = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || '';
+
+  // Diagnóstico de variables de entorno
+  console.log(`🔑 BROWSERLESS_TOKEN presente: ${token ? 'sí, primeros 10: ' + tokenPreview : 'NO'}`);
+  console.log(`🌐 BROWSERLESS_URL: ${urlExplicita ? urlExplicita.substring(0, 60) + '...' : 'no definida'}`);
+
+  // Si BROWSERLESS_URL ya incluye el token, no añadir ?token= de nuevo
   const candidatas = urlExplicita
-    ? [`${urlExplicita}${urlExplicita.includes('?') ? '&' : '?'}timeout=120000`]
+    ? [urlExplicita.includes('timeout') ? urlExplicita : `${urlExplicita}${urlExplicita.includes('?') ? '&' : '?'}timeout=120000`]
     : [
         `wss://production-sfo.browserless.io?token=${token}&timeout=120000`,
         `wss://chrome.browserless.io?token=${token}&timeout=120000`,
@@ -106,8 +110,11 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
   let browser;
   for (const wsEndpoint of candidatas) {
-    const urlLog = wsEndpoint.replace(token, `${tokenPreview}...`);
-    console.log(`🔌 Intentando Browserless: ${urlLog}`);
+    // Ocultar token si aparece como parámetro explícito; si está embebido en BROWSERLESS_URL mostrar primeros 60 chars
+    const urlLog = token
+      ? wsEndpoint.replace(token, `${tokenPreview}[…]`)
+      : wsEndpoint.substring(0, 80) + '...';
+    console.log(`🔌 Intentando puppeteer.connect con: ${urlLog}`);
     try {
       browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
       console.log(`✅ Conectado a Browserless: ${urlLog}`);
