@@ -7,14 +7,10 @@ async function facturarGasmaz({ referencia, folio, total, rfc, email, ticketId, 
   const url = (portalUrl && portalUrl.includes('nexusfuel')) ? portalUrl : 'https://gasmazfactura.nexusfuel.mx/';
   console.log("🌐 URL portal:", url);
 
-  const _gmToken = process.env.BROWSERLESS_TOKEN || '';
-  const _gmRaw = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_gmToken}`;
-  const [_gmPath, _gmQs] = _gmRaw.split('?');
-  const _gmPathFinal = _gmPath.replace(/\/$/, '');
-  const _gmParams = new URLSearchParams(_gmQs || '');
-  if (!_gmParams.has('token') && _gmToken) _gmParams.set('token', _gmToken);
-  if (!_gmParams.has('timeout')) _gmParams.set('timeout', '120000');
-  const browser = await puppeteer.connect({ browserWSEndpoint: `${_gmPathFinal}?${_gmParams.toString()}` });
+  const _gmEndpoint = process.env.BROWSERLESS_URL;
+  if (!_gmEndpoint) throw new Error('BROWSERLESS_URL no configurado en Railway');
+  console.log('🔌 Conectando a Browserless:', _gmEndpoint.substring(0, 60) + '...');
+  const browser = await puppeteer.connect({ browserWSEndpoint: _gmEndpoint });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });

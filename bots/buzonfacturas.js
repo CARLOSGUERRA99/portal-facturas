@@ -8,14 +8,10 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
   console.log('🤖 Iniciando bot BuzonFacturas...');
   console.log(`   RFC: ${rfc} | Código: ${codigoTicket} | Email: ${email}`);
 
-  const _bfToken = process.env.BROWSERLESS_TOKEN || '';
-  const _bfRaw = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_bfToken}`;
-  const [_bfPath, _bfQs] = _bfRaw.split('?');
-  const _bfPathFinal = _bfPath.replace(/\/$/, '');
-  const _bfParams = new URLSearchParams(_bfQs || '');
-  if (!_bfParams.has('token') && _bfToken) _bfParams.set('token', _bfToken);
-  if (!_bfParams.has('timeout')) _bfParams.set('timeout', '120000');
-  const browser = await puppeteer.connect({ browserWSEndpoint: `${_bfPathFinal}?${_bfParams.toString()}` });
+  const _bfEndpoint = process.env.BROWSERLESS_URL;
+  if (!_bfEndpoint) throw new Error('BROWSERLESS_URL no configurado en Railway');
+  console.log('🔌 Conectando a Browserless:', _bfEndpoint.substring(0, 60) + '...');
+  const browser = await puppeteer.connect({ browserWSEndpoint: _bfEndpoint });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });

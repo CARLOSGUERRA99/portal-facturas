@@ -91,9 +91,9 @@ async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
 async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, calle, ext, int, colonia, municipio, codigoPostal, estado, regimenFiscal, usoCfdi }) {
   console.log("🤖 Iniciando bot OXXO...");
 
-  const token = process.env.BROWSERLESS_TOKEN;
-  const browserWSEndpoint = `wss://production-sfo.browserless.io?token=${token}&timeout=120000`;
-  console.log('🔌 Conectando a:', browserWSEndpoint.replace(token, token.substring(0, 10) + '...'));
+  const browserWSEndpoint = process.env.BROWSERLESS_URL;
+  if (!browserWSEndpoint) throw new Error('BROWSERLESS_URL no configurado en Railway');
+  console.log('🔌 Conectando a Browserless:', browserWSEndpoint.substring(0, 60) + '...');
   const browser = await puppeteer.connect({ browserWSEndpoint });
   console.log('✅ Conectado a Browserless');
 
