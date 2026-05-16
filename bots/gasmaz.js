@@ -8,10 +8,13 @@ async function facturarGasmaz({ referencia, folio, total, rfc, email, ticketId, 
   console.log("🌐 URL portal:", url);
 
   const _gmToken = process.env.BROWSERLESS_TOKEN || '';
-  const _gmBase = (process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_gmToken}`).split('?')[0].replace(/\/$/, '');
-  const _gmQs = (process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_gmToken}`).split('?')[1] || `token=${_gmToken}`;
-  const _gmEndpoint = `${_gmBase}/chromium?${_gmQs}&timeout=120000`;
-  const browser = await puppeteer.connect({ browserWSEndpoint: _gmEndpoint });
+  const _gmRaw = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_gmToken}`;
+  const [_gmPath, _gmQs] = _gmRaw.split('?');
+  const _gmPathFinal = _gmPath.replace(/\/$/, '').endsWith('/chromium') ? _gmPath.replace(/\/$/, '') : `${_gmPath.replace(/\/$/, '')}/chromium`;
+  const _gmParams = new URLSearchParams(_gmQs || '');
+  if (!_gmParams.has('token') && _gmToken) _gmParams.set('token', _gmToken);
+  if (!_gmParams.has('timeout')) _gmParams.set('timeout', '120000');
+  const browser = await puppeteer.connect({ browserWSEndpoint: `${_gmPathFinal}?${_gmParams.toString()}` });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
