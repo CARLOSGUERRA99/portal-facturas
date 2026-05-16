@@ -29,107 +29,154 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     // PASO 1 — Navegar al portal
     console.log("🌐 PASO 1 — Navegando al portal de Farmacias Guadalajara...");
 
-    // Intentar URL directa de facturación primero, luego help page como fallback
+    // Función para validar que la página es el portal de facturación (no ecommerce)
+    async function esPortalFacturacion(p) {
+      return p.evaluate(() => {
+        const texto = (document.body?.innerText || '').toLowerCase();
+        const tieneFactura = /factura|facturaci[oó]n|folio|rfc|comprobante fiscal/i.test(texto);
+        const tieneFormulario = !!document.querySelector(
+          'input#folioFactura, input#folio, input[name="folioFactura"], input[name="folio"], ' +
+          'input[placeholder*="folio" i], input[placeholder*="ticket" i], input[placeholder*="rfc" i], ' +
+          'input[placeholder*="RFC"]'
+        );
+        return tieneFactura || tieneFormulario;
+      });
+    }
+
     const urls = [
-      "https://facturacion.farmaciasguadalajara.com/",
-      "https://www.farmaciasguadalajara.com/facturacion",
       "https://www.farmaciasguadalajara.com/ayuda/facturaci%C3%B3n-electr%C3%B3nica",
+      "https://efactura.farmaciasguadalajara.com/",
+      "https://www.farmaciasguadalajara.com/facturacion-electronica",
     ];
 
+    let activePage = page;
     let paginaCargada = false;
+
     for (const url of urls) {
       try {
         console.log("  Intentando:", url);
-        await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
+        await page.goto(url, { waitUntil: "networkidle2", timeout: 25000 });
         await tomarScreenshot("paso1");
-        // Buscar cualquier input que parezca ser el campo de folio/ticket
-        const inputEncontrado = await page.evaluate(() => {
-          const inputs = Array.from(document.querySelectorAll("input[type='text'], input[type='number'], input:not([type])"));
-          return inputs.map(i => ({ id: i.id, name: i.name, placeholder: i.placeholder, class: i.className })).slice(0, 10);
+
+        // Verificar si la página principal es el portal
+        if (await esPortalFacturacion(page)) {
+          console.log("  ✅ Portal de facturación encontrado en página principal");
+          paginaCargada = true;
+          break;
+        }
+
+        // Buscar en iframes
+        const frames = page.frames();
+        console.log(`  Revisando ${frames.length} frames...`);
+        for (const frame of frames) {
+          try {
+            const src = frame.url();
+            if (!src || src === 'about:blank') continue;
+            console.log("  Frame URL:", src);
+            if (await esPortalFacturacion(frame)) {
+              console.log("  ✅ Portal encontrado en iframe:", src);
+              activePage = frame;
+              paginaCargada = true;
+              break;
+            }
+          } catch {}
+        }
+        if (paginaCargada) break;
+
+        // Dump inputs for debugging
+        const inputs = await page.evaluate(() => {
+          return Array.from(document.querySelectorAll("input")).map(i => ({
+            id: i.id, name: i.name, placeholder: i.placeholder
+          })).slice(0, 8);
         });
-        console.log("  Inputs encontrados:", JSON.stringify(inputEncontrado));
-        paginaCargada = true;
-        break;
+        console.log("  Página no es portal FG. Inputs:", JSON.stringify(inputs));
+
       } catch (e) {
         console.log("  Falló:", e.message);
       }
     }
-    if (!paginaCargada) throw new Error("No se pudo cargar ninguna URL del portal de Farmacias Guadalajara");
 
-    // Detectar el selector real del campo de folio
-    const folioSelector = await page.evaluate(() => {
+    if (!paginaCargada) {
+      await tomarScreenshot("sin_portal");
+      await browser.close();
+      return { ok: false, msg: "No se encontró el portal de facturación de Farmacias Guadalajara en ninguna URL conocida." };
+    }
+
+    // Detectar selector real del campo de folio (sin input:first-of-type como fallback)
+    const folioSelector = await activePage.evaluate(() => {
       const candidates = [
         'input#folioFactura', 'input#folio', 'input[name="folioFactura"]',
         'input[name="folio"]', 'input[placeholder*="folio" i]', 'input[placeholder*="Folio"]',
-        'input[placeholder*="ticket" i]', 'input:first-of-type',
       ];
       for (const sel of candidates) {
         if (document.querySelector(sel)) return sel;
       }
-      return null;
+      // Dump all inputs for debugging
+      return '__inputs__' + JSON.stringify(
+        Array.from(document.querySelectorAll("input")).map(i => ({
+          id: i.id, name: i.name, placeholder: i.placeholder, type: i.type
+        })).slice(0, 12)
+      );
     });
-    console.log("🔍 Selector de folio detectado:", folioSelector);
 
-    if (!folioSelector) {
+    if (!folioSelector || folioSelector.startsWith('__inputs__')) {
+      console.log("🔍 Todos los inputs en la página:", folioSelector?.replace('__inputs__', '') || 'ninguno');
       await tomarScreenshot("sin_folio_selector");
       await browser.close();
-      return { ok: false, msg: "No se encontró el campo de folio en el portal. Revisa screenshot de debug." };
+      return { ok: false, msg: "No se encontró el campo de folio. Revisa screenshot de debug." };
     }
 
-    await page.waitForSelector(folioSelector, { timeout: 10000 });
-    console.log("✅ Portal cargado, campo folio encontrado:", folioSelector);
+    console.log("🔍 Selector de folio:", folioSelector);
+    console.log("✅ Portal cargado correctamente");
 
     // PASO 2 — Llenar datos del ticket
     console.log("📋 PASO 2 — Llenando datos del ticket...");
 
-    await page.click(folioSelector, { clickCount: 3 });
-    await page.type(folioSelector, String(folioFactura), { delay: 80 });
+    await activePage.click(folioSelector, { clickCount: 3 });
+    await activePage.type(folioSelector, String(folioFactura), { delay: 80 });
 
-    // Llenar caja, fecha y ticket con búsqueda flexible si IDs no existen
-    const cajaSelector = await page.evaluate(() => {
+    const cajaSelector = await activePage.evaluate(() => {
       for (const s of ['input#caja', 'input[name="caja"]', 'input[placeholder*="caja" i]']) {
         if (document.querySelector(s)) return s;
       }
       return null;
     });
     if (cajaSelector) {
-      await page.click(cajaSelector, { clickCount: 3 });
-      await page.type(cajaSelector, String(caja), { delay: 80 });
+      await activePage.click(cajaSelector, { clickCount: 3 });
+      await activePage.type(cajaSelector, String(caja), { delay: 80 });
     }
 
-    const fechaSelector = await page.evaluate(() => {
+    const fechaSelector = await activePage.evaluate(() => {
       for (const s of ['input#fechaCompra', 'input[name="fechaCompra"]', 'input[type="date"]', 'input[placeholder*="fecha" i]']) {
         if (document.querySelector(s)) return s;
       }
       return null;
     });
     if (fechaSelector) {
-      await page.click(fechaSelector, { clickCount: 3 });
-      await page.type(fechaSelector, fechaCompra, { delay: 80 });
+      await activePage.click(fechaSelector, { clickCount: 3 });
+      await activePage.type(fechaSelector, fechaCompra, { delay: 80 });
     }
 
-    const ticketSelector = await page.evaluate(() => {
+    const ticketSelector = await activePage.evaluate(() => {
       for (const s of ['input#ticket', 'input#noTicket', 'input[name="ticket"]', 'input[name="noTicket"]', 'input[placeholder*="ticket" i]']) {
         if (document.querySelector(s)) return s;
       }
       return null;
     });
     if (ticketSelector) {
-      await page.click(ticketSelector, { clickCount: 3 });
-      await page.type(ticketSelector, String(noTicket), { delay: 80 });
+      await activePage.click(ticketSelector, { clickCount: 3 });
+      await activePage.type(ticketSelector, String(noTicket), { delay: 80 });
     }
 
-    // Checkbox políticas — buscar con selector flexible
-    const checkboxSelector = await page.evaluate(() => {
+    const checkboxSelector = await activePage.evaluate(() => {
       for (const s of ['input#politicasPr-input', 'input[name*="politica" i]', 'input[type="checkbox"]']) {
-        const el = document.querySelector(s);
-        if (el) return s;
+        if (document.querySelector(s)) return s;
       }
       return null;
     });
     if (checkboxSelector) {
-      const checked = await page.$eval(checkboxSelector, el => el.checked).catch(() => false);
-      if (!checked) await page.click(checkboxSelector);
+      const checked = await activePage.$eval(checkboxSelector, el => el.checked).catch(() => false);
+      if (!checked) await activePage.click(checkboxSelector);
     }
 
     await tomarScreenshot("paso2_filled");
@@ -137,9 +184,9 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
 
     // PASO 3 — Click en Validar Folio
     console.log("✅ PASO 3 — Validando folio...");
-    await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button[type='submit']"));
-      const btn = btns.find(b => b.textContent?.includes("Validar Folio"));
+    await activePage.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button[type='submit'], button"));
+      const btn = btns.find(b => /validar folio|validar|buscar/i.test(b.textContent));
       if (btn) btn.click();
     });
     await page.waitForTimeout(3000);
@@ -148,7 +195,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
 
     // PASO 4 — Modal SweetAlert2 de confirmación de sucursal
     console.log("📍 PASO 4 — Esperando modal de sucursal...");
-    const modalVisible = await page.waitForSelector(".swal2-confirm", { timeout: 10000 })
+    const modalVisible = await page.waitForSelector(".swal2-confirm", { timeout: 8000 })
       .catch(() => null);
     if (modalVisible) {
       console.log("📍 Modal de sucursal detectado, confirmando...");
@@ -161,56 +208,89 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
 
     // PASO 5 — Esperar campos de facturación y llenarlos
     console.log("📋 PASO 5 — Esperando campos de facturación...");
-    await page.waitForFunction(() => {
-      const rfc = document.querySelector("input#rfc");
-      return rfc && !rfc.disabled;
+    await activePage.waitForFunction(() => {
+      const rfcInput = document.querySelector("input#rfc, input[name='rfc'], input[placeholder*='RFC']");
+      return rfcInput && !rfcInput.disabled;
     }, { timeout: 15000 });
+    await tomarScreenshot("paso5_campos_habilitados");
     console.log("✅ Campos de facturación habilitados");
 
-    await page.click("input#rfc", { clickCount: 3 });
-    await page.type("input#rfc", rfc, { delay: 80 });
-    await page.waitForTimeout(500);
+    const rfcSelector = await activePage.evaluate(() => {
+      for (const s of ['input#rfc', 'input[name="rfc"]', 'input[placeholder*="RFC"]', 'input[placeholder*="rfc"]']) {
+        if (document.querySelector(s)) return s;
+      }
+      return null;
+    });
+    if (rfcSelector) {
+      await activePage.click(rfcSelector, { clickCount: 3 });
+      await activePage.type(rfcSelector, rfc, { delay: 80 });
+      await page.waitForTimeout(500);
+    }
 
-    await page.click("input#codigoPostal", { clickCount: 3 });
-    await page.type("input#codigoPostal", String(codigoPostal), { delay: 80 });
-    await page.waitForTimeout(500);
+    const cpSelector = await activePage.evaluate(() => {
+      for (const s of ['input#codigoPostal', 'input[name="codigoPostal"]', 'input[placeholder*="postal" i]', 'input[placeholder*="C.P" i]']) {
+        if (document.querySelector(s)) return s;
+      }
+      return null;
+    });
+    if (cpSelector) {
+      await activePage.click(cpSelector, { clickCount: 3 });
+      await activePage.type(cpSelector, String(codigoPostal), { delay: 80 });
+      await page.waitForTimeout(500);
+    }
 
-    await page.click("input#razonSocial", { clickCount: 3 });
-    await page.type("input#razonSocial", razonSocial, { delay: 80 });
-    await page.waitForTimeout(500);
+    const razonSelector = await activePage.evaluate(() => {
+      for (const s of ['input#razonSocial', 'input[name="razonSocial"]', 'input[placeholder*="raz" i]', 'input[placeholder*="nombre" i]']) {
+        if (document.querySelector(s)) return s;
+      }
+      return null;
+    });
+    if (razonSelector) {
+      await activePage.click(razonSelector, { clickCount: 3 });
+      await activePage.type(razonSelector, razonSocial, { delay: 80 });
+      await page.waitForTimeout(500);
+    }
 
-    await page.select("select#regimenFiscal", String(regimenFiscal || "601"));
-    await page.waitForTimeout(500);
+    const regSelect = await activePage.$('select#regimenFiscal, select[name="regimenFiscal"]');
+    if (regSelect) {
+      await activePage.select('select#regimenFiscal, select[name="regimenFiscal"]', String(regimenFiscal || "601")).catch(() => {});
+      await page.waitForTimeout(500);
+    }
 
-    await page.select("select#usoCfdi", usoCfdi || "G03");
-    await page.waitForTimeout(500);
+    const cfdiSelect = await activePage.$('select#usoCfdi, select[name="usoCfdi"]');
+    if (cfdiSelect) {
+      await activePage.select('select#usoCfdi, select[name="usoCfdi"]', usoCfdi || "G03").catch(() => {});
+      await page.waitForTimeout(500);
+    }
 
     // Checkbox envío por correo
-    const envioCorreo = await page.$("input#envioCorreo-input");
-    if (envioCorreo) {
-      await page.click("input#envioCorreo-input");
+    const envioCorreoEl = await activePage.$("input#envioCorreo-input, input[name*='envio' i]");
+    if (envioCorreoEl) {
+      await envioCorreoEl.click();
       await page.waitForTimeout(500);
-      const correoInput = await page.$("input[type='email']");
+      const correoInput = await activePage.$("input[type='email']");
       if (correoInput) {
         await correoInput.click({ clickCount: 3 });
         await correoInput.type("buzonfacturas@serviciosga.site", { delay: 50 });
         console.log("📧 Correo de captura ingresado");
       }
     }
+    await tomarScreenshot("paso5_filled");
     console.log(`✅ Datos fiscales: RFC=${rfc} CP=${codigoPostal} Régimen=${regimenFiscal || "601"}`);
 
     // PASO 6 — Click en Obtener Factura
     console.log("🧾 PASO 6 — Generando factura...");
-    await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button[type='submit']"));
-      const btn = btns.find(b => b.textContent?.includes("Obtener Factura"));
+    await activePage.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button[type='submit'], button"));
+      const btn = btns.find(b => /obtener factura|generar factura|facturar/i.test(b.textContent));
       if (btn) btn.click();
     });
     await page.waitForTimeout(8000);
+    await tomarScreenshot("paso6_post_generar");
     console.log("✅ Factura generada");
 
     // Verificar error de plazo
-    const errorPlazo = await page.evaluate(() =>
+    const errorPlazo = await activePage.evaluate(() =>
       document.body.innerText.match(/plazo|excede|vencido|expirad/i) !== null &&
       document.body.innerText.match(/error|no se puede|inválid/i) !== null
     );
