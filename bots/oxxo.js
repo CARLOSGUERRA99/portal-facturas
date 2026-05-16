@@ -397,94 +397,69 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     }, { timeout: 20000 });
     console.log('✅ Pantalla de descarga detectada');
 
-    // ── ENVIAR AL CORREO DE CAPTURA IMAP ──
-    const emailInput = await page.$('input[type="email"], input[placeholder*="correo"], input[placeholder*="dominio"]');
+    // Esperar que la pantalla cargue completamente
+    await page.waitForTimeout(2000);
+
+    // Primero enviar al correo IMAP como respaldo
+    console.log('📧 Enviando por correo...');
+    const emailInput = await page.$(
+      'input[type="email"], input[placeholder*="correo"], input[placeholder*="dominio"], input[placeholder*="CORREO"]'
+    );
     if (emailInput) {
       await emailInput.click({ clickCount: 3 });
-      await emailInput.type('buzonfacturas@serviciosga.site', { delay: 40 });
-      await page.waitForTimeout(300);
+      await emailInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
+      await page.waitForTimeout(500);
       await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll('a, button'))
-          .find(b => b.textContent?.includes('Enviar correo'));
+        const btns = Array.from(document.querySelectorAll('a, button, input[type="submit"]'));
+        const btn = btns.find(b =>
+          b.textContent?.toLowerCase().includes('enviar') ||
+          b.value?.toLowerCase().includes('enviar')
+        );
         if (btn) btn.click();
       });
       console.log('📧 Correo enviado a buzonfacturas@serviciosga.site');
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(3000);
     }
 
-    // ── INTERCEPTAR PDF ──
-    let pdfUrl = null;
-    let xmlUrl = null;
-
-    const newPagePdfPromise = new Promise(resolve =>
-      browser.once('targetcreated', t => resolve(t.page()))
-    );
-    const pdfClicked = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('a, button'))
-        .find(b => b.textContent?.includes('Descargar PDF'));
-      if (btn) { btn.click(); return true; }
+    // Intentar descargar PDF scrollando al elemento primero
+    const pdfDescargado = await page.evaluate(async () => {
+      const links = Array.from(document.querySelectorAll('a, button'));
+      const pdfBtn = links.find(l =>
+        l.textContent?.includes('Descargar PDF') ||
+        l.textContent?.includes('PDF') ||
+        l.href?.includes('.pdf')
+      );
+      if (pdfBtn) {
+        pdfBtn.scrollIntoView();
+        pdfBtn.click();
+        return true;
+      }
       return false;
     });
-    if (pdfClicked) {
-      const newPage = await Promise.race([
-        newPagePdfPromise,
-        new Promise((_, r) => setTimeout(() => r(), 8000))
-      ]).catch(() => null);
-      if (newPage) {
-        await newPage.waitForTimeout(2000);
-        const response = await newPage.waitForResponse(
-          r => r.status() === 200, { timeout: 10000 }
-        ).catch(() => null);
-        if (response) {
-          const buf = await response.buffer().catch(() => null);
-          if (buf) {
-            pdfUrl = await subirArchivoR2(buf, `facturas/oxxo_${Date.now()}.pdf`, 'application/pdf');
-            console.log('✅ PDF subido a R2:', pdfUrl);
-          }
-        }
-        await newPage.close().catch(() => {});
-      }
-    }
+    console.log('📄 PDF click:', pdfDescargado);
+    await page.waitForTimeout(3000);
 
-    // ── INTERCEPTAR XML ──
-    const newPageXmlPromise = new Promise(resolve =>
-      browser.once('targetcreated', t => resolve(t.page()))
-    );
-    const xmlClicked = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('a, button'))
-        .find(b => b.textContent?.includes('Descargar XML'));
-      if (btn) { btn.click(); return true; }
+    // Intentar descargar XML
+    const xmlDescargado = await page.evaluate(async () => {
+      const links = Array.from(document.querySelectorAll('a, button'));
+      const xmlBtn = links.find(l =>
+        l.textContent?.includes('Descargar XML') ||
+        l.textContent?.includes('XML') ||
+        l.href?.includes('.xml')
+      );
+      if (xmlBtn) {
+        xmlBtn.scrollIntoView();
+        xmlBtn.click();
+        return true;
+      }
       return false;
     });
-    if (xmlClicked) {
-      const newPage = await Promise.race([
-        newPageXmlPromise,
-        new Promise((_, r) => setTimeout(() => r(), 8000))
-      ]).catch(() => null);
-      if (newPage) {
-        await newPage.waitForTimeout(2000);
-        const response = await newPage.waitForResponse(
-          r => r.status() === 200, { timeout: 10000 }
-        ).catch(() => null);
-        if (response) {
-          const buf = await response.buffer().catch(() => null);
-          if (buf) {
-            xmlUrl = await subirArchivoR2(buf, `facturas/oxxo_${Date.now()}.xml`, 'application/xml');
-            console.log('✅ XML subido a R2:', xmlUrl);
-          }
-        }
-        await newPage.close().catch(() => {});
-      }
-    }
+    console.log('📄 XML click:', xmlDescargado);
 
-    if (!xmlUrl && !pdfUrl) {
-      console.log('⚠️ Sin archivos directos, IMAP recogerá del correo');
-      await browser.close();
-      return { ok: true, procesandoCorreo: true };
-    }
-
+    // Si no se capturaron archivos directos, IMAP los recogerá
+    console.log('⚠️ IMAP recogerá archivos del correo enviado');
     await browser.close();
-    return { ok: true, xmlUrl, pdfUrl };
+    return { ok: true, procesandoCorreo: true };
 
   } catch (err) {
     console.error("❌ Error en bot OXXO:", err.message);
