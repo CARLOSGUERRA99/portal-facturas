@@ -11,7 +11,7 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
   const _bfToken = process.env.BROWSERLESS_TOKEN || '';
   const _bfRaw = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || `wss://production-sfo.browserless.io?token=${_bfToken}`;
   const [_bfPath, _bfQs] = _bfRaw.split('?');
-  const _bfPathFinal = _bfPath.replace(/\/$/, '').endsWith('/chromium') ? _bfPath.replace(/\/$/, '') : `${_bfPath.replace(/\/$/, '')}/chromium`;
+  const _bfPathFinal = _bfPath.replace(/\/$/, '');
   const _bfParams = new URLSearchParams(_bfQs || '');
   if (!_bfParams.has('token') && _bfToken) _bfParams.set('token', _bfToken);
   if (!_bfParams.has('timeout')) _bfParams.set('timeout', '120000');

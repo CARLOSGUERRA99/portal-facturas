@@ -95,21 +95,19 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
   const tokenPreview = token.substring(0, 10);
   const urlExplicita = process.env.BROWSERLESS_URL || process.env.BROWSERLESS_WS_ENDPOINT || '';
 
-  // Normalizar URL: asegurar /chromium en el path y timeout en query, sin duplicados
+  // Usar URL exactamente como está en Railway, solo agregar timeout si falta
   function normalizarBrowserlessUrl(base) {
     const [path, qs] = base.split('?');
-    const pathLimpio = path.replace(/\/$/, '');
-    const pathFinal = pathLimpio.endsWith('/chromium') ? pathLimpio : `${pathLimpio}/chromium`;
     const params = new URLSearchParams(qs || '');
     if (!params.has('timeout')) params.set('timeout', '120000');
     if (!params.has('token') && token) params.set('token', token);
-    return `${pathFinal}?${params.toString()}`;
+    return `${path}?${params.toString()}`;
   }
 
   const candidatas = urlExplicita
     ? [normalizarBrowserlessUrl(urlExplicita)]
     : [
-        `wss://production-sfo.browserless.io/chromium?token=${token}&timeout=120000`,
+        `wss://production-sfo.browserless.io?token=${token}&timeout=120000`,
         `wss://chrome.browserless.io?token=${token}&timeout=120000`,
       ];
 
