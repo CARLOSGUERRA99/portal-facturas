@@ -4,84 +4,120 @@ const { subirArchivoR2 } = require("../storage/r2");
 async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
   try {
     console.log("🔄 Fallback: reimpresión OXXO...");
-    await page.waitForTimeout(2000);
+
+    // 1. Navegar a reimpresión
     await page.goto(
       "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/reimpresionFactura.do",
       { waitUntil: "networkidle2", timeout: 30000 }
     );
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1500);
 
-    await page.evaluate(() => {
-      const tabs = Array.from(document.querySelectorAll("a, button, li"));
-      const tab = tabs.find(el => el.textContent.trim() === "Factura");
-      if (tab) tab.click();
-    });
-    await page.waitForTimeout(1000);
+    // 2. Fecha via datepicker
+    await page.waitForSelector("#form\\:fecha_input", { timeout: 10000 });
+    await page.click("#form\\:fecha_input");
+    await page.waitForTimeout(500);
 
-    await page.evaluate((fecha) => {
-      const input = document.querySelector("#form\\:fecha_input");
-      if (input) {
-        input.removeAttribute("readonly");
-        input.value = fecha;
-        ["change", "blur"].forEach(ev =>
-          input.dispatchEvent(new Event(ev, { bubbles: true }))
-        );
+    const partes = fecha.split("/");
+    const dia = parseInt(partes[0]);
+    const mes = parseInt(partes[1]) - 1;
+    const anio = parseInt(partes[2]);
+
+    await page.evaluate(async (dia, mes, anio) => {
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+      for (let intento = 0; intento < 24; intento++) {
+        const mesSpan = document.querySelector(".ui-datepicker-month");
+        const anioSpan = document.querySelector(".ui-datepicker-year");
+        if (!mesSpan || !anioSpan) break;
+        const meses = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+        const mesIdx = meses.indexOf(mesSpan.textContent.toLowerCase().trim());
+        const anioActual = parseInt(anioSpan.textContent);
+        if (mesIdx === mes && anioActual === anio) break;
+        const fechaTarget = new Date(anio, mes, 1);
+        const fechaActual = new Date(anioActual, mesIdx === -1 ? 0 : mesIdx, 1);
+        if (fechaTarget < fechaActual) {
+          document.querySelector(".ui-datepicker-prev")?.click();
+        } else {
+          document.querySelector(".ui-datepicker-next:not(.ui-state-disabled)")?.click();
+        }
+        await sleep(300);
       }
-    }, fecha);
-    await page.waitForTimeout(300);
+      const celdas = document.querySelectorAll(".ui-datepicker-calendar td[data-handler='selectDay']");
+      for (const celda of celdas) {
+        const link = celda.querySelector("a");
+        if (link && parseInt(link.textContent) === dia) { link.click(); break; }
+      }
+    }, dia, mes, anio);
+    await page.waitForTimeout(500);
 
+    const fechaValor = await page.$eval('#form\\:fecha_input', el => el.value);
+    if (!fechaValor || fechaValor.trim() === '') {
+      await page.evaluate((f) => {
+        const input = document.querySelector('#form\\:fecha_input');
+        if (input) {
+          input.removeAttribute('readonly');
+          input.value = f;
+          ['input', 'change', 'blur'].forEach(ev =>
+            input.dispatchEvent(new Event(ev, { bubbles: true }))
+          );
+        }
+      }, fecha);
+      await page.waitForTimeout(500);
+    }
+    console.log('📅 Fecha reimpresión:', fechaValor || fecha);
+
+    // 3. Folio
     await page.click("#form\\:folio", { clickCount: 3 });
     await page.type("#form\\:folio", String(folio), { delay: 60 });
-    await page.waitForTimeout(200);
+
+    // 4. ID Venta
     await page.click("#form\\:venta", { clickCount: 3 });
     await page.type("#form\\:venta", String(idVenta).toUpperCase(), { delay: 60 });
-    await page.waitForTimeout(200);
+
+    // 5. Total
     await page.click("#form\\:total", { clickCount: 3 });
     await page.type("#form\\:total", parseFloat(total).toFixed(2), { delay: 60 });
-    await page.waitForTimeout(300);
 
+    // 6. Click Verificar
+    console.log("✅ Click Verificar reimpresión...");
+    await page.click("#form\\:j_idt62");
+    await page.waitForTimeout(3000);
+
+    // 8. Email IMAP
     await page.evaluate(() => {
-      const spans = Array.from(document.querySelectorAll("span"));
-      const btn = spans.find(s => s.textContent.trim() === "Validar Ticket");
-      if (btn) btn.click();
+      const el = document.querySelector("#form\\:emailEnv");
+      if (el) {
+        el.scrollIntoView();
+        el.click();
+      }
     });
+    await page.click("#form\\:emailEnv", { clickCount: 3 });
+    await page.type("#form\\:emailEnv", "buzonfacturas@serviciosga.site", { delay: 50 });
 
-    await page.waitForFunction(() => {
-      const btn = document.querySelector("#form\\:continuar");
-      return btn && !btn.disabled;
-    }, { timeout: 15000 });
-
-    await page.click("#form\\:continuar");
+    // 9. Enviar correo
+    await page.evaluate(() => {
+      const el = document.querySelector("#form\\:j_idt66");
+      if (el) { el.scrollIntoView(); el.click(); }
+    });
+    console.log('📧 Correo de reimpresión enviado');
     await page.waitForTimeout(2000);
 
-    const downloadFile = async (selector) => {
-      const newPageP = new Promise(resolve =>
-        page.browser().once("targetcreated", t => resolve(t.page()))
-      );
-      await page.evaluate((sel) => {
-        const el = document.querySelector(sel);
-        if (el) el.click();
-      }, selector);
-      const np = await newPageP.catch(() => null);
-      if (!np) return null;
-      await np.waitForTimeout(1500);
-      const r = await np.waitForResponse(r => r.status() === 200, { timeout: 10000 }).catch(() => null);
-      const buf = r ? await r.buffer().catch(() => null) : null;
-      await np.close().catch(() => {});
-      return buf;
-    };
+    // 11. PDF
+    await page.evaluate(() => {
+      const el = document.querySelector("#form\\:j_idt68");
+      if (el) { el.scrollIntoView(); el.click(); }
+    });
+    console.log('📄 PDF reimpresión click');
+    await page.waitForTimeout(2000);
 
-    const xmlBuffer = await downloadFile("#form\\:btnDescargarXml, [id*='Xml']");
-    const pdfBuffer = await downloadFile("#form\\:btnDescargarPdf, [id*='Pdf']");
+    // 13. XML
+    await page.evaluate(() => {
+      const el = document.querySelector("#form\\:j_idt70");
+      if (el) { el.scrollIntoView(); el.click(); }
+    });
+    console.log('📄 XML reimpresión click');
 
-    if (!xmlBuffer && !pdfBuffer) throw new Error("Sin archivos en reimpresión");
-
-    const ts = Date.now();
-    const xmlUrl = xmlBuffer ? await subirArchivoR2(xmlBuffer, `facturas/oxxo_reimp_${ts}.xml`, "application/xml") : null;
-    const pdfUrl = pdfBuffer ? await subirArchivoR2(pdfBuffer, `facturas/oxxo_reimp_${ts}.pdf`, "application/pdf") : null;
-
-    console.log("✅ Reimpresión OXXO exitosa");
-    return { ok: true, xmlUrl, pdfUrl, fuente: "reimpresion" };
+    console.log("✅ Reimpresión OXXO completada — IMAP recogerá archivos");
+    return { ok: true, procesandoCorreo: true };
   } catch (e) {
     console.log("❌ Fallback reimpresión OXXO falló:", e.message);
     return { ok: false, msg: e.message };
