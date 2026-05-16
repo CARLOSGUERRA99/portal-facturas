@@ -372,20 +372,23 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       });
       if (!regimenSeleccionado) throw new Error('No se encontró opción Régimen 601');
     }
-    console.log('✅ Régimen fiscal seleccionado, esperando AJAX del portal...');
-    await page.waitForTimeout(3000);
-    console.log('⏳ Esperando Uso CFDI...');
+    console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
 
-    // ── USO CFDI — polling activo con DOM keepalive (45s) ──
+    // ── USO CFDI — polling activo con DOM keepalive (60s) ──
+    // try-catch por iteración: el portal puede hacer AJAX reload momentáneo
     let cfdiListo = false;
-    for (let i = 0; i < 90; i++) {
-      cfdiListo = await page.evaluate(() => {
-        window.scrollBy(0, 1);
-        window.scrollBy(0, -1);
-        const div = document.querySelector("#form\\:selectOneMenuCFDI");
-        return div && !div.classList.contains('ui-state-disabled');
-      });
-      if (cfdiListo) break;
+    for (let i = 0; i < 120; i++) {
+      try {
+        cfdiListo = await page.evaluate(() => {
+          window.scrollBy(0, 1);
+          window.scrollBy(0, -1);
+          const div = document.querySelector("#form\\:selectOneMenuCFDI");
+          return div && !div.classList.contains('ui-state-disabled');
+        });
+        if (cfdiListo) break;
+      } catch (_) {
+        // frame temporalmente desconectado por AJAX del portal — continuar
+      }
       await page.waitForTimeout(500);
     }
     if (!cfdiListo) throw new Error('CFDI nunca se habilitó');
