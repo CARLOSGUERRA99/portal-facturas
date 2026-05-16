@@ -4,19 +4,19 @@ const { subirArchivoR2 } = require("../storage/r2");
 async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
   try {
     console.log("🔄 Fallback: reimpresión OXXO...");
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(2000);
     await page.goto(
       "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/reimpresionFactura.do",
       { waitUntil: "networkidle2", timeout: 30000 }
     );
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
 
     await page.evaluate(() => {
       const tabs = Array.from(document.querySelectorAll("a, button, li"));
       const tab = tabs.find(el => el.textContent.trim() === "Factura");
       if (tab) tab.click();
     });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1000);
 
     await page.evaluate((fecha) => {
       const input = document.querySelector("#form\\:fecha_input");
@@ -28,17 +28,17 @@ async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
         );
       }
     }, fecha);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(300);
 
     await page.click("#form\\:folio", { clickCount: 3 });
-    await page.type("#form\\:folio", String(folio), { delay: 80 });
-    await page.waitForTimeout(300);
+    await page.type("#form\\:folio", String(folio), { delay: 60 });
+    await page.waitForTimeout(200);
     await page.click("#form\\:venta", { clickCount: 3 });
-    await page.type("#form\\:venta", String(idVenta).toUpperCase(), { delay: 80 });
-    await page.waitForTimeout(300);
+    await page.type("#form\\:venta", String(idVenta).toUpperCase(), { delay: 60 });
+    await page.waitForTimeout(200);
     await page.click("#form\\:total", { clickCount: 3 });
-    await page.type("#form\\:total", parseFloat(total).toFixed(2), { delay: 80 });
-    await page.waitForTimeout(500);
+    await page.type("#form\\:total", parseFloat(total).toFixed(2), { delay: 60 });
+    await page.waitForTimeout(300);
 
     await page.evaluate(() => {
       const spans = Array.from(document.querySelectorAll("span"));
@@ -52,7 +52,7 @@ async function fallbackReimpresionOxxo(page, { fecha, folio, idVenta, total }) {
     }, { timeout: 15000 });
 
     await page.click("#form\\:continuar");
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
 
     const downloadFile = async (selector) => {
       const newPageP = new Promise(resolve =>
@@ -94,7 +94,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error('BROWSERLESS_TOKEN no definido');
   const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&timeout=120000`
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}`
   });
   console.log('✅ Conectado a Browserless');
 
@@ -108,29 +108,24 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       waitUntil: "networkidle2",
       timeout: 30000,
     });
-    await page.waitForTimeout(4000);
+    await page.waitForTimeout(1500);
 
     // ── CERRAR POPUP INICIAL ──
-    console.log("❌ Cerrando popup...");
     try {
-      await page.waitForSelector(".ui-dialog-titlebar-close", { timeout: 8000 });
-      await page.waitForTimeout(1000);
+      await page.waitForSelector(".ui-dialog-titlebar-close", { timeout: 6000 });
       await page.evaluate(() => {
-        const btns = document.querySelectorAll(".ui-dialog-titlebar-close, .ui-dialog-titlebar-icon");
-        btns.forEach(b => b.click());
+        document.querySelectorAll(".ui-dialog-titlebar-close, .ui-dialog-titlebar-icon").forEach(b => b.click());
       });
-      console.log("✅ Popup cerrado via JS");
-      await page.waitForTimeout(2000);
-
+      await page.waitForTimeout(500);
       const popupVisible = await page.evaluate(() => {
-        const dialog = document.querySelector(".ui-dialog");
-        return dialog && dialog.style.display !== "none";
+        const d = document.querySelector(".ui-dialog");
+        return d && d.style.display !== "none";
       });
       if (popupVisible) {
         await page.keyboard.press("Escape");
-        console.log("✅ Popup cerrado via Escape");
-        await page.waitForTimeout(1000);
+        await page.waitForTimeout(300);
       }
+      console.log("✅ Popup cerrado");
     } catch {
       console.log("ℹ️ No apareció popup");
     }
@@ -139,13 +134,13 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log("📅 Abriendo datepicker...");
     await page.waitForSelector("#form\\:fecha_input", { timeout: 15000 });
     await page.click("#form\\:fecha_input");
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(500);
 
     const partes = fecha.split("/");
     const dia = parseInt(partes[0]);
     const mes = parseInt(partes[1]) - 1;
     const anio = parseInt(partes[2]);
-    console.log(`📅 Fecha a seleccionar: día=${dia}, mes=${mes}, año=${anio}`);
+    console.log(`📅 Fecha: día=${dia}, mes=${mes}, año=${anio}`);
 
     await page.evaluate(async (dia, mes, anio) => {
       const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -157,16 +152,14 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         const mesIdx = meses.indexOf(mesSpan.textContent.toLowerCase().trim());
         const anioActual = parseInt(anioSpan.textContent);
         if (mesIdx === mes && anioActual === anio) break;
-        const fechaActual = new Date(anioActual, mesIdx === -1 ? 0 : mesIdx, 1);
         const fechaTarget = new Date(anio, mes, 1);
+        const fechaActual = new Date(anioActual, mesIdx === -1 ? 0 : mesIdx, 1);
         if (fechaTarget < fechaActual) {
-          const prev = document.querySelector(".ui-datepicker-prev");
-          if (prev) prev.click();
+          document.querySelector(".ui-datepicker-prev")?.click();
         } else {
-          const next = document.querySelector(".ui-datepicker-next:not(.ui-state-disabled)");
-          if (next) next.click();
+          document.querySelector(".ui-datepicker-next:not(.ui-state-disabled)")?.click();
         }
-        await sleep(800);
+        await sleep(300);
       }
       const celdas = document.querySelectorAll(".ui-datepicker-calendar td[data-handler='selectDay']");
       for (const celda of celdas) {
@@ -175,65 +168,68 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       }
     }, dia, mes, anio);
 
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(800);
 
     const calAbierto = await page.$('.ui-datepicker:not([style*="display: none"])');
     if (calAbierto) {
       await page.click('#form\\:fecha_input');
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
       await page.keyboard.press('Escape');
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
     }
 
     const fechaValor = await page.$eval('#form\\:fecha_input', el => el.value);
-    console.log('📅 Fecha confirmada en campo:', fechaValor);
+    console.log('📅 Fecha confirmada:', fechaValor);
 
     if (!fechaValor || fechaValor.trim() === '') {
       console.log('⚠️ Datepicker falló, escribiendo fecha directo...');
-      await page.evaluate((fecha) => {
+      await page.evaluate((f) => {
         const input = document.querySelector('#form\\:fecha_input');
         if (input) {
           input.removeAttribute('readonly');
-          input.value = fecha;
+          input.value = f;
           ['input', 'change', 'blur'].forEach(ev =>
             input.dispatchEvent(new Event(ev, { bubbles: true }))
           );
         }
       }, fecha);
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(500);
     }
 
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(500);
 
     // ── FOLIO ──
     console.log("🔢 Llenando folio...", folio);
     await page.click("#form\\:folio", { clickCount: 3 });
-    await page.type("#form\\:folio", String(folio), { delay: 100 });
-    await page.waitForTimeout(400);
-    console.log("🔢 Folio en campo:", await page.$eval("#form\\:folio", el => el.value));
+    await page.type("#form\\:folio", String(folio), { delay: 60 });
+    await page.waitForTimeout(150);
+    console.log("🔢 Folio:", await page.$eval("#form\\:folio", el => el.value));
 
     // ── ID VENTA ──
     console.log("🔑 Llenando ID venta...");
     await page.click("#form\\:venta", { clickCount: 3 });
-    await page.type("#form\\:venta", String(idVenta).toUpperCase(), { delay: 100 });
-    await page.waitForTimeout(400);
-    console.log("🔑 ID venta en campo:", await page.$eval("#form\\:venta", el => el.value));
+    await page.type("#form\\:venta", String(idVenta).toUpperCase(), { delay: 60 });
+    await page.waitForTimeout(150);
+    console.log("🔑 ID venta:", await page.$eval("#form\\:venta", el => el.value));
 
     // ── TOTAL ──
     console.log("💰 Llenando total...");
     await page.click("#form\\:total", { clickCount: 3 });
-    await page.type("#form\\:total", parseFloat(total).toFixed(2), { delay: 100 });
-    await page.waitForTimeout(500);
-    console.log("💰 Total en campo:", await page.$eval("#form\\:total", el => el.value));
+    await page.type("#form\\:total", parseFloat(total).toFixed(2), { delay: 60 });
+    await page.waitForTimeout(150);
+    console.log("💰 Total:", await page.$eval("#form\\:total", el => el.value));
 
-    // ── VALIDAR TICKET ──
+    // ── VALIDAR TICKET — reactivo ──
     console.log("✅ Validando ticket...");
     await page.evaluate(() => {
       const spans = Array.from(document.querySelectorAll("span"));
       const validar = spans.find(s => s.textContent.trim() === "Validar Ticket");
       if (validar) validar.click();
     });
-    await page.waitForTimeout(5000);
+    await page.waitForFunction(() => {
+      const btn = document.querySelector("#form\\:continuar");
+      return btn && !btn.disabled;
+    }, { timeout: 15000 });
 
     const continuarHabilitado = await page.evaluate(() => {
       const btn = document.querySelector("#form\\:continuar");
@@ -246,7 +242,6 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         const msgs = document.querySelectorAll(".ui-messages-error, .ui-message-error-detail, [class*='error']");
         return Array.from(msgs).map(m => m.textContent.trim()).filter(t => t).join(" | ");
       });
-      console.log("⚠️ Mensaje portal:", mensajeError);
       await browser.close();
       return { ok: false, msg: `Portal no validó el ticket. ${mensajeError || "Verifica los datos del ticket"}` };
     }
@@ -254,7 +249,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     // ── CONTINUAR ──
     console.log("▶️ Clic Continuar...");
     await page.click("#form\\:continuar");
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(1000);
 
     // ── RFC ──
     console.log('📋 Llenando RFC...');
@@ -263,9 +258,9 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       return el && !el.disabled;
     }, { timeout: 15000 });
     await page.click("#form\\:rfc", { clickCount: 3 });
-    await page.type("#form\\:rfc", rfc, { delay: 80 });
-    console.log('✅ RFC llenado, esperando razón social...');
-    await page.waitForTimeout(3000);
+    await page.type("#form\\:rfc", rfc, { delay: 60 });
+    console.log('✅ RFC llenado');
+    await page.waitForTimeout(1000);
 
     // ── RAZÓN SOCIAL — polling activo con DOM keepalive ──
     let razonHabilitada = false;
@@ -273,48 +268,39 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       razonHabilitada = await page.evaluate(() => {
         window.scrollBy(0, 1);
         window.scrollBy(0, -1);
-        const selectors = [
-          "#form\\:razon",
-          "#form\\:razonSocial",
-          "input[name*='razon']",
-          "input[name*='razonSocial']",
-          "input[placeholder*='az']",
-          "input[placeholder*='ombre']",
-        ];
-        for (const sel of selectors) {
+        for (const sel of ["#form\\:razon","#form\\:razonSocial","input[name*='razon']","input[name*='razonSocial']","input[placeholder*='az']","input[placeholder*='ombre']"]) {
           const el = document.querySelector(sel);
           if (el && !el.disabled) return sel;
         }
         return null;
       });
       if (razonHabilitada) break;
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
     }
     if (!razonHabilitada) throw new Error('Razón social no se habilitó a tiempo');
     await page.click(razonHabilitada, { clickCount: 3 });
-    await page.type(razonHabilitada, razonSocial, { delay: 50 });
+    await page.type(razonHabilitada, razonSocial, { delay: 40 });
     console.log('✅ Razón social llenada:', razonSocial);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(200);
 
     // ── DIRECCIÓN ──
     await page.click("#form\\:calle", { clickCount: 3 });
-    await page.type("#form\\:calle", calle || "", { delay: 50 });
+    await page.type("#form\\:calle", calle || "", { delay: 40 });
     await page.click("#form\\:ext", { clickCount: 3 });
-    await page.type("#form\\:ext", ext || "S/N", { delay: 50 });
+    await page.type("#form\\:ext", ext || "S/N", { delay: 40 });
     if (int) {
       await page.click("#form\\:int", { clickCount: 3 });
-      await page.type("#form\\:int", int, { delay: 50 });
+      await page.type("#form\\:int", int, { delay: 40 });
     }
     await page.click("#form\\:colonia", { clickCount: 3 });
-    await page.type("#form\\:colonia", colonia || "", { delay: 50 });
+    await page.type("#form\\:colonia", colonia || "", { delay: 40 });
     await page.click("#form\\:dele", { clickCount: 3 });
-    await page.type("#form\\:dele", municipio || "", { delay: 50 });
+    await page.type("#form\\:dele", municipio || "", { delay: 40 });
 
     // ── CÓDIGO POSTAL ──
     console.log('📮 Llenando código postal...');
     await page.click("#form\\:codigo", { clickCount: 3 });
-    await page.type("#form\\:codigo", String(codigoPostal), { delay: 80 });
-    console.log('✅ CP llenado, esperando Estado...');
+    await page.type("#form\\:codigo", String(codigoPostal), { delay: 60 });
 
     // ── ESTADO — polling activo con DOM keepalive ──
     let estadoHabilitado = false;
@@ -326,11 +312,11 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         return el && !el.disabled;
       });
       if (estadoHabilitado) break;
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
     }
     if (!estadoHabilitado) throw new Error('Estado no se habilitó a tiempo');
     await page.select("#form\\:estado_input", estado || "SONORA");
-    console.log('✅ Estado seleccionado, esperando Régimen Fiscal...');
+    console.log('✅ Estado seleccionado');
 
     // ── RÉGIMEN FISCAL — polling activo con DOM keepalive ──
     let regimenListo = false;
@@ -340,13 +326,11 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         window.scrollBy(0, -1);
         const nativo = document.querySelector("#form\\:selectOneMenuRegFis_input");
         if (nativo && !nativo.disabled && nativo.options.length > 1) return true;
-        const trigger = document.querySelector(
-          "#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis"
-        );
+        const trigger = document.querySelector("#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis");
         return trigger && !trigger.classList.contains('ui-state-disabled');
       });
       if (regimenListo) break;
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
     }
     if (!regimenListo) throw new Error('Régimen fiscal no se habilitó a tiempo');
 
@@ -358,7 +342,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "601"));
     } else {
       await page.click("#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis").catch(() => {});
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(400);
       const regimenSeleccionado = await page.evaluate(() => {
         const items = document.querySelectorAll(
           "#form\\:selectOneMenuRegFis_panel li, #form\\:selectOneMenuRegFis_items li, .ui-selectonemenu-item"
@@ -374,8 +358,7 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     }
     console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
 
-    // ── USO CFDI — polling activo con DOM keepalive (60s) ──
-    // try-catch por iteración: el portal puede hacer AJAX reload momentáneo
+    // ── USO CFDI — polling activo con DOM keepalive, try-catch por iteración ──
     let cfdiListo = false;
     for (let i = 0; i < 120; i++) {
       try {
@@ -387,14 +370,14 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
         });
         if (cfdiListo) break;
       } catch (_) {
-        // frame temporalmente desconectado por AJAX del portal — continuar
+        // frame temporalmente desconectado por AJAX del portal
       }
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(300);
     }
     if (!cfdiListo) throw new Error('CFDI nunca se habilitó');
 
     await page.click("#form\\:selectOneMenuCFDI_label");
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(500);
 
     await page.waitForFunction(() => {
       const panel = document.querySelector("#form\\:selectOneMenuCFDI_panel");
@@ -415,12 +398,12 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     });
     if (!seleccionado) throw new Error('No se encontró Gastos en general');
     console.log('✅ Uso CFDI seleccionado:', seleccionado);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(300);
 
     // ── GENERAR FACTURA ──
     console.log("🧾 Generando factura...");
     await page.click("#form\\:generarFactura");
-    await page.waitForTimeout(8000);
+    await page.waitForTimeout(5000);
 
     await page.waitForFunction(() => {
       const body = document.body.innerText;
@@ -428,22 +411,22 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
              body.includes('Descargar XML') ||
              body.includes('Enviar correo') ||
              body.includes('Envía o descarga');
-    }, { timeout: 15000 });
+    }, { timeout: 20000 });
     console.log('✅ Pantalla de descarga detectada');
 
     // ── ENVIAR AL CORREO DE CAPTURA IMAP ──
     const emailInput = await page.$('input[type="email"], input[placeholder*="correo"], input[placeholder*="dominio"]');
     if (emailInput) {
       await emailInput.click({ clickCount: 3 });
-      await emailInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
-      await page.waitForTimeout(500);
+      await emailInput.type('buzonfacturas@serviciosga.site', { delay: 40 });
+      await page.waitForTimeout(300);
       await page.evaluate(() => {
-        const btns = Array.from(document.querySelectorAll('a, button'));
-        const btn = btns.find(b => b.textContent?.includes('Enviar correo'));
+        const btn = Array.from(document.querySelectorAll('a, button'))
+          .find(b => b.textContent?.includes('Enviar correo'));
         if (btn) btn.click();
       });
       console.log('📧 Correo enviado a buzonfacturas@serviciosga.site');
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(1500);
     }
 
     // ── INTERCEPTAR PDF ──
