@@ -11,11 +11,13 @@ const r2 = new S3Client({
 
 async function subirArchivoR2(buffer, key, contentType) {
   try {
+    const fileName = key.split('/').pop();
     await r2.send(new PutObjectCommand({
       Bucket: process.env.R2_BUCKET,
       Key: key,
       Body: buffer,
       ContentType: contentType,
+      ContentDisposition: `attachment; filename="${fileName}"`,
     }));
     const url = `${process.env.R2_PUBLIC_URL}/${key}`;
     console.log('☁️ Subido a R2:', url);

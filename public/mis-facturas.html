@@ -213,11 +213,12 @@
           ? '<span class="badge badge-success">Completado</span>'
           : '<span class="badge badge-pending">Pendiente</span>';
 
+        const folio = f.folio || f.id || Date.now();
         const xmlBtn = f.xml_url
-          ? `<a href="${f.xml_url}" target="_blank" class="btn-xml">⬇ XML</a>`
+          ? `<a href="${f.xml_url}" download="factura_${folio}.xml" target="_blank" class="btn-xml">⬇ XML</a>`
           : '';
         const pdfBtn = f.pdf_url
-          ? `<a href="${f.pdf_url}" target="_blank" class="btn-pdf">⬇ PDF</a>`
+          ? `<a href="${f.pdf_url}" download="factura_${folio}.pdf" target="_blank" class="btn-pdf">⬇ PDF</a>`
           : '';
 
         const fecha = new Date(f.creado).toLocaleDateString('es-MX', {
