@@ -278,20 +278,32 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     console.log('✅ RFC llenado, esperando razón social...');
     await page.waitForTimeout(3000);
 
-    // Razón social — polling activo
+    // Razón social — polling activo, múltiples selectores posibles
     let razonHabilitada = false;
     for (let i = 0; i < 40; i++) {
       razonHabilitada = await page.evaluate(() => {
-        const el = document.querySelector("#form\\:razon");
-        return el && !el.disabled;
+        const selectors = [
+          "#form\\:razon",
+          "#form\\:razonSocial",
+          "input[name*='razon']",
+          "input[name*='razonSocial']",
+          "input[placeholder*='az']",
+          "input[placeholder*='ombre']",
+        ];
+        for (const sel of selectors) {
+          const el = document.querySelector(sel);
+          if (el && !el.disabled) return sel;
+        }
+        return null;
       });
       if (razonHabilitada) break;
       await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
       await page.waitForTimeout(500);
     }
     if (!razonHabilitada) throw new Error('Razón social no se habilitó a tiempo');
-    await page.click("#form\\:razon", { clickCount: 3 });
-    await page.type("#form\\:razon", razonSocial, { delay: 50 });
+    await page.click(razonHabilitada, { clickCount: 3 });
+    await page.type(razonHabilitada, razonSocial, { delay: 50 });
+    console.log('✅ Razón social llenada:', razonSocial);
     await page.waitForTimeout(500);
 
     // Calle, ext, int, colonia, municipio — llenar directo
@@ -329,35 +341,92 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     await page.select("#form\\:estado_input", estado || "SONORA");
     console.log('✅ Estado seleccionado, esperando Régimen Fiscal...');
 
-    // Régimen fiscal — polling activo
-    let regimenHabilitado = false;
+    // Régimen fiscal — polling activo, PrimeFaces dropdown
+    let regimenListo = false;
     for (let i = 0; i < 40; i++) {
-      regimenHabilitado = await page.evaluate(() => {
-        const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
-        return el && !el.disabled && el.options.length > 1;
+      regimenListo = await page.evaluate(() => {
+        // Soporta tanto <select> nativo como PrimeFaces trigger
+        const nativo = document.querySelector("#form\\:selectOneMenuRegFis_input");
+        if (nativo && !nativo.disabled && nativo.options.length > 1) return true;
+        const trigger = document.querySelector(
+          "#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis"
+        );
+        return trigger && !trigger.classList.contains('ui-state-disabled');
       });
-      if (regimenHabilitado) break;
-      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
+      if (regimenListo) break;
+      await page.mouse.move(350 + (i % 5) * 20, 300 + (i % 3) * 15);
       await page.waitForTimeout(500);
     }
-    if (!regimenHabilitado) throw new Error('Régimen fiscal no se habilitó a tiempo');
-    await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "601"));
-    console.log('✅ Régimen fiscal, esperando Uso CFDI...');
+    if (!regimenListo) throw new Error('Régimen fiscal no se habilitó a tiempo');
 
-    // Uso CFDI — polling activo
-    let cfdiHabilitado = false;
+    // Intentar page.select primero (select nativo); si falla usar clic PrimeFaces
+    const regimenNativo = await page.evaluate(() => {
+      const el = document.querySelector("#form\\:selectOneMenuRegFis_input");
+      return el && el.tagName === 'SELECT' && el.options.length > 1;
+    });
+    if (regimenNativo) {
+      await page.select("#form\\:selectOneMenuRegFis_input", String(regimenFiscal || "601"));
+    } else {
+      await page.click("#form\\:selectOneMenuRegFis_label, #form\\:selectOneMenuRegFis").catch(() => {});
+      await page.waitForTimeout(800);
+      const regimenSeleccionado = await page.evaluate((valor) => {
+        const items = document.querySelectorAll(
+          "#form\\:selectOneMenuRegFis_panel li, #form\\:selectOneMenuRegFis_items li, .ui-selectonemenu-item"
+        );
+        for (const item of items) {
+          if (item.textContent.includes('601') || item.textContent.includes('General de Ley') ||
+              item.getAttribute('data-label')?.includes('601')) {
+            item.click(); return true;
+          }
+        }
+        return false;
+      }, regimenFiscal || "601");
+      if (!regimenSeleccionado) throw new Error('No se encontró opción Régimen 601');
+    }
+    console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
+
+    // Uso CFDI — polling activo, PrimeFaces dropdown
+    let cfdiListo = false;
     for (let i = 0; i < 40; i++) {
-      cfdiHabilitado = await page.evaluate(() => {
-        const el = document.querySelector("#form\\:selectOneMenuCFDI_input");
-        return el && !el.disabled && el.options.length > 1;
+      cfdiListo = await page.evaluate(() => {
+        const nativo = document.querySelector("#form\\:selectOneMenuCFDI_input");
+        if (nativo && !nativo.disabled && nativo.options.length > 1) return true;
+        const trigger = document.querySelector(
+          "#form\\:selectOneMenuCFDI_label, #form\\:selectOneMenuCFDI"
+        );
+        return trigger && !trigger.classList.contains('ui-state-disabled');
       });
-      if (cfdiHabilitado) break;
-      await page.mouse.move(350 + (i % 5) * 30, 300 + (i % 3) * 20);
+      if (cfdiListo) break;
+      await page.mouse.move(350 + (i % 5) * 20, 300 + (i % 3) * 15);
       await page.waitForTimeout(500);
     }
-    if (!cfdiHabilitado) throw new Error('Uso CFDI no se habilitó a tiempo');
-    await page.select("#form\\:selectOneMenuCFDI_input", usoCfdi || "G03");
-    console.log('✅ Uso CFDI seleccionado');
+    if (!cfdiListo) throw new Error('Dropdown CFDI no se habilitó');
+
+    const cfdiNativo = await page.evaluate(() => {
+      const el = document.querySelector("#form\\:selectOneMenuCFDI_input");
+      return el && el.tagName === 'SELECT' && el.options.length > 1;
+    });
+    if (cfdiNativo) {
+      await page.select("#form\\:selectOneMenuCFDI_input", usoCfdi || "G03");
+    } else {
+      await page.click("#form\\:selectOneMenuCFDI_label, #form\\:selectOneMenuCFDI").catch(() => {});
+      await page.waitForTimeout(800);
+      const cfdiSeleccionado = await page.evaluate((valorBuscado) => {
+        const items = document.querySelectorAll(
+          "#form\\:selectOneMenuCFDI_panel li, #form\\:selectOneMenuCFDI_items li, .ui-selectonemenu-item"
+        );
+        for (const item of items) {
+          if (item.textContent.includes('Gastos en general') ||
+              item.getAttribute('data-label')?.includes('Gastos') ||
+              item.textContent.includes(valorBuscado)) {
+            item.click(); return true;
+          }
+        }
+        return false;
+      }, usoCfdi || 'G03');
+      if (!cfdiSeleccionado) throw new Error('No se encontró opción Gastos en general');
+    }
+    console.log('✅ Uso CFDI seleccionado: Gastos en general');
     await page.waitForTimeout(500);
 
     // ── GENERAR FACTURA ──
