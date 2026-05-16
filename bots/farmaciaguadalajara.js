@@ -94,7 +94,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
       const textoModal = await page.$eval(".swal2-popup", el => el.innerText.toLowerCase());
       console.log("📍 Modal:", textoModal.substring(0, 100));
 
-      if (/no disponible|fuera de servicio|mantenimiento|servicio no disponible/i.test(textoModal)) {
+      if (/no\s+est[aá]\s+disponible|no\s+disponible|fuera de servicio|mantenimiento|servicio.*no.*disponible/i.test(textoModal)) {
         console.log("⚠️ Sistema de facturación no disponible");
         await screenshot("sistema_no_disponible");
         await browser.close();
