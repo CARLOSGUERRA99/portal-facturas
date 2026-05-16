@@ -497,66 +497,135 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
     const mimeType = req.file.mimetype;
     const residente_id = req.body.residente_id ? parseInt(req.body.residente_id) : null;
 
-    console.log("🔍 Analizando ticket con Claude Haiku...");
-
     let datosOCR = {};
     let textoOCR = "";
+    let portalDetectado = "desconocido";
 
-    const promptOCR = `Analiza este ticket de compra y extrae EXACTAMENTE estos datos en formato JSON.
-
-DETECTA EL TIPO DE COMERCIO:
-- Si es OXXO: extrae folio (después de "Fol_Vta:") e idVenta (después de "ID="), pon portal = null
-- Si es gasolinera ARCO u otro comercio con portal buzonfacturas.com: extrae el código de ticket/folio visible, pon portal = "buzonfacturas", pon codigoTicket con ese código
-- Si es gasolinera GASMAZ o ves URL nexusfuel.mx en el ticket/QR: extrae referencia (primer número grande), folio (número de ticket), total (importe), pon portal = "nexusfuel", pon portalUrl con la URL completa del QR si aparece
-- Si no reconoces el portal de facturación: pon portal = "desconocido"
-
-REGLAS para tickets OXXO:
-1. "folio" — SOLO números, después de "Fol_Vta:"
-   Ejemplo: Fol_Vta:4682868 → folio = "4682868"
-2. "idVenta" — después de "ID=". Formato: 2 números + 3 letras mayúsculas + 3 números + letras/números + 1 número
-   Ejemplo: 10OBR500NG1. NO confundas cero (0) con letra O.
-
-IMPORTANTE para tickets OXXO: El ID de venta siempre tiene formato 2 números + 3 letras + 2 números + alfanumérico + 1-2 números. Ejemplo: 10MON50MCZ2. Los primeros 2 caracteres SIEMPRE son dígitos numéricos. Si ves T al inicio es 1, O es 0, S es 5, I es 1. El folio es solo números.
-
-Responde SOLO este JSON sin texto adicional:
-{
-  "comercio": "nombre del comercio",
-  "fecha": "DD/MM/YYYY",
-  "folio": "solo números del Fol_Vta o null",
-  "idVenta": "código exacto del ID= o null",
-  "codigoTicket": "código de ticket para otros portales o null",
-  "referencia": "número de referencia para GASMAZ/nexusfuel o null",
-  "portalUrl": "URL completa del QR de facturación si aparece, o null",
-  "portal": null,
-  "total": número sin signos,
-  "ok": true
-}`;
-
+    // ── PASADA 1: Detección de portal (Haiku) ──
+    console.log("🔍 Pasada 1: detección con Haiku...");
+    const t1start = Date.now();
     try {
-      const response = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
+      const resp1 = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 200,
         messages: [{
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
-            { type: "text", text: promptOCR }
+            { type: "text", text: `Identifica el tipo de ticket de compra. Responde SOLO este JSON:
+{
+  "portal": "oxxo" | "arco" | "gasmaz" | "desconocido",
+  "confianza": número del 0 al 100,
+  "urlQR": "URL completa si hay un QR de facturación, o null",
+  "comercio": "nombre del comercio"
+}
+- "oxxo": si ves logo/nombre OXXO, o texto "Fol_Vta:" e "ID="
+- "arco": si ves ARCO o referencia a buzonfacturas.com
+- "gasmaz": si ves GASMAZ, NexusFuel, o URL nexusfuel.mx
+- "desconocido": cualquier otro caso` }
           ],
         }],
       });
-      textoOCR = response.content[0].text;
-      datosOCR = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
-      console.log("✅ Sonnet respondió:", datosOCR);
+      const t1ms = Date.now() - t1start;
+      const det = JSON.parse(resp1.content[0].text.replace(/```json|```/g, "").trim());
+      portalDetectado = det.portal || "desconocido";
+      const urlQR = det.urlQR || null;
+      if (det.comercio) datosOCR.comercio = det.comercio;
+      console.log(`⏱️ Haiku detección: ${t1ms}ms | Portal: ${portalDetectado} (${det.confianza || 0}pts)`);
+
+      // Si desconocido pero hay URL en QR, intentar resolver por URL
+      if (portalDetectado === "desconocido" && urlQR) {
+        const urlLow = urlQR.toLowerCase();
+        if (urlLow.includes("nexusfuel") || urlLow.includes("gasmaz")) portalDetectado = "gasmaz";
+        else if (urlLow.includes("buzonfacturas") || urlLow.includes("arco")) portalDetectado = "arco";
+        else if (urlLow.includes("oxxo")) portalDetectado = "oxxo";
+        if (portalDetectado !== "desconocido")
+          console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
+        datosOCR.portalUrl = urlQR;
+      }
     } catch (e) {
-      console.log("⚠️ OCR falló:", e.message);
-      datosOCR = { ok: false, raw: textoOCR };
+      console.log("⚠️ Haiku detección falló:", e.message);
     }
 
-    // Aplicar correcciones automáticas siempre
-    datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
-    datosOCR.idVenta = corregirIdVentaOxxo(datosOCR.idVenta);
+    // ── PASADA 2: Extracción dirigida (Sonnet) ──
+    const promptsPorPortal = {
+      oxxo: `Extrae estos datos del ticket OXXO. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "OXXO",
+  "fecha": "DD/MM/YYYY",
+  "folio": "SOLO dígitos después de Fol_Vta: — corrige O→0 S→5 I→1 T→1",
+  "idVenta": "código después de ID= — corrige O→0 S→5 I→1 en posiciones 0,1,5,6 — formato 2dig+3let+2dig+alfanum+1dig",
+  "total": número sin signos,
+  "portal": "oxxo",
+  "ok": true
+}`,
+      arco: `Extrae estos datos del ticket ARCO/BuzonFacturas. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "nombre exacto de la gasolinera ARCO",
+  "fecha": "DD/MM/YYYY",
+  "codigoTicket": "número de barcode o código grande impreso para facturación (bajo el código de barras o etiquetado como Código/Folio)",
+  "total": número sin signos,
+  "portal": "arco",
+  "ok": true
+}`,
+      gasmaz: `Extrae estos datos del ticket GASMAZ/NexusFuel. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "nombre de la gasolinera",
+  "fecha": "DD/MM/YYYY",
+  "referencia": "número de referencia grande (primer número prominente del ticket)",
+  "folio": "número de ticket o folio",
+  "total": número sin signos,
+  "portalUrl": "URL COMPLETA del QR de facturación (debe incluir nexusfuel.mx), o null",
+  "portal": "gasmaz",
+  "ok": true
+}`,
+      desconocido: `Extrae los datos que puedas de este ticket. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "nombre del comercio",
+  "fecha": "DD/MM/YYYY",
+  "folio": "número de folio o ticket, o null",
+  "total": número sin signos,
+  "portalUrl": "URL de QR de facturación si aparece, o null",
+  "portal": "desconocido",
+  "ok": true
+}`,
+    };
 
-    const portalUrl = datosOCR.portalUrl || datosOCR.portal || null;
+    console.log(`🔍 Pasada 2: extracción Sonnet para portal '${portalDetectado}'...`);
+    const t2start = Date.now();
+    try {
+      const resp2 = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 500,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
+            { type: "text", text: promptsPorPortal[portalDetectado] || promptsPorPortal.desconocido }
+          ],
+        }],
+      });
+      const t2ms = Date.now() - t2start;
+      textoOCR = resp2.content[0].text;
+      const extraido = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
+      datosOCR = { ...datosOCR, ...extraido };
+      const nCampos = Object.values(datosOCR).filter(v => v !== null && v !== undefined).length;
+      console.log(`⏱️ Sonnet extracción: ${t2ms}ms | Campos: ${nCampos}`);
+      console.log("✅ Datos extraídos:", datosOCR);
+    } catch (e) {
+      console.log("⚠️ Sonnet extracción falló:", e.message);
+      if (!datosOCR.comercio) {
+        return res.json({ ok: false, error: "No se pudo identificar el portal" });
+      }
+    }
+
+    // Correcciones SOLO para OXXO
+    if (portalDetectado === "oxxo" || datosOCR.portal === "oxxo") {
+      datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
+      datosOCR.idVenta = corregirIdVentaOxxo(datosOCR.idVenta);
+    }
+
+    const portalUrl = datosOCR.portalUrl || (portalDetectado === "arco" ? "buzonfacturas" : null) || null;
 
     const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -632,8 +701,10 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = tickets[0];
     const datos = JSON.parse(ticket.ocr_json || "{}");
-    datos.folio = corregirFolioOxxo(datos.folio);
-    datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
+    if (datos.portal === "oxxo" || (ticket.comercio || "").toLowerCase().includes("oxxo")) {
+      datos.folio = corregirFolioOxxo(datos.folio);
+      datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
+    }
 
     const [userRows] = await db.query(
       "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
