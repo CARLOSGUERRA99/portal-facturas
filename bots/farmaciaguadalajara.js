@@ -15,38 +15,124 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
   await page.setViewport({ width: 1280, height: 900 });
   await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
+  async function tomarScreenshot(label) {
+    try {
+      const buf = await page.screenshot({ fullPage: false });
+      const url = await subirArchivoR2(buf, `debug/fg_${label}_${Date.now()}.png`, "image/png");
+      console.log(`📸 Screenshot [${label}]:`, url);
+    } catch (e) {
+      console.log(`📸 Screenshot [${label}] falló:`, e.message);
+    }
+  }
+
   try {
     // PASO 1 — Navegar al portal
     console.log("🌐 PASO 1 — Navegando al portal de Farmacias Guadalajara...");
-    await page.goto(
+
+    // Intentar URL directa de facturación primero, luego help page como fallback
+    const urls = [
+      "https://facturacion.farmaciasguadalajara.com/",
+      "https://www.farmaciasguadalajara.com/facturacion",
       "https://www.farmaciasguadalajara.com/ayuda/facturaci%C3%B3n-electr%C3%B3nica",
-      { waitUntil: "networkidle2", timeout: 30000 }
-    );
-    await page.waitForSelector("input#folioFactura", { timeout: 15000 });
-    console.log("✅ Portal cargado");
+    ];
+
+    let paginaCargada = false;
+    for (const url of urls) {
+      try {
+        console.log("  Intentando:", url);
+        await page.goto(url, { waitUntil: "networkidle2", timeout: 20000 });
+        await tomarScreenshot("paso1");
+        // Buscar cualquier input que parezca ser el campo de folio/ticket
+        const inputEncontrado = await page.evaluate(() => {
+          const inputs = Array.from(document.querySelectorAll("input[type='text'], input[type='number'], input:not([type])"));
+          return inputs.map(i => ({ id: i.id, name: i.name, placeholder: i.placeholder, class: i.className })).slice(0, 10);
+        });
+        console.log("  Inputs encontrados:", JSON.stringify(inputEncontrado));
+        paginaCargada = true;
+        break;
+      } catch (e) {
+        console.log("  Falló:", e.message);
+      }
+    }
+    if (!paginaCargada) throw new Error("No se pudo cargar ninguna URL del portal de Farmacias Guadalajara");
+
+    // Detectar el selector real del campo de folio
+    const folioSelector = await page.evaluate(() => {
+      const candidates = [
+        'input#folioFactura', 'input#folio', 'input[name="folioFactura"]',
+        'input[name="folio"]', 'input[placeholder*="folio" i]', 'input[placeholder*="Folio"]',
+        'input[placeholder*="ticket" i]', 'input:first-of-type',
+      ];
+      for (const sel of candidates) {
+        if (document.querySelector(sel)) return sel;
+      }
+      return null;
+    });
+    console.log("🔍 Selector de folio detectado:", folioSelector);
+
+    if (!folioSelector) {
+      await tomarScreenshot("sin_folio_selector");
+      await browser.close();
+      return { ok: false, msg: "No se encontró el campo de folio en el portal. Revisa screenshot de debug." };
+    }
+
+    await page.waitForSelector(folioSelector, { timeout: 10000 });
+    console.log("✅ Portal cargado, campo folio encontrado:", folioSelector);
 
     // PASO 2 — Llenar datos del ticket
     console.log("📋 PASO 2 — Llenando datos del ticket...");
 
-    await page.click("input#folioFactura", { clickCount: 3 });
-    await page.type("input#folioFactura", String(folioFactura), { delay: 80 });
+    await page.click(folioSelector, { clickCount: 3 });
+    await page.type(folioSelector, String(folioFactura), { delay: 80 });
 
-    await page.click("input#caja", { clickCount: 3 });
-    await page.type("input#caja", String(caja), { delay: 80 });
-
-    await page.click("input#fechaCompra", { clickCount: 3 });
-    await page.type("input#fechaCompra", fechaCompra, { delay: 80 });
-
-    await page.click("input#ticket", { clickCount: 3 });
-    await page.type("input#ticket", String(noTicket), { delay: 80 });
-
-    // Checkbox políticas
-    const checkboxChecked = await page.$eval(
-      "input#politicasPr-input", el => el.checked
-    ).catch(() => false);
-    if (!checkboxChecked) {
-      await page.click("input#politicasPr-input");
+    // Llenar caja, fecha y ticket con búsqueda flexible si IDs no existen
+    const cajaSelector = await page.evaluate(() => {
+      for (const s of ['input#caja', 'input[name="caja"]', 'input[placeholder*="caja" i]']) {
+        if (document.querySelector(s)) return s;
+      }
+      return null;
+    });
+    if (cajaSelector) {
+      await page.click(cajaSelector, { clickCount: 3 });
+      await page.type(cajaSelector, String(caja), { delay: 80 });
     }
+
+    const fechaSelector = await page.evaluate(() => {
+      for (const s of ['input#fechaCompra', 'input[name="fechaCompra"]', 'input[type="date"]', 'input[placeholder*="fecha" i]']) {
+        if (document.querySelector(s)) return s;
+      }
+      return null;
+    });
+    if (fechaSelector) {
+      await page.click(fechaSelector, { clickCount: 3 });
+      await page.type(fechaSelector, fechaCompra, { delay: 80 });
+    }
+
+    const ticketSelector = await page.evaluate(() => {
+      for (const s of ['input#ticket', 'input#noTicket', 'input[name="ticket"]', 'input[name="noTicket"]', 'input[placeholder*="ticket" i]']) {
+        if (document.querySelector(s)) return s;
+      }
+      return null;
+    });
+    if (ticketSelector) {
+      await page.click(ticketSelector, { clickCount: 3 });
+      await page.type(ticketSelector, String(noTicket), { delay: 80 });
+    }
+
+    // Checkbox políticas — buscar con selector flexible
+    const checkboxSelector = await page.evaluate(() => {
+      for (const s of ['input#politicasPr-input', 'input[name*="politica" i]', 'input[type="checkbox"]']) {
+        const el = document.querySelector(s);
+        if (el) return s;
+      }
+      return null;
+    });
+    if (checkboxSelector) {
+      const checked = await page.$eval(checkboxSelector, el => el.checked).catch(() => false);
+      if (!checked) await page.click(checkboxSelector);
+    }
+
+    await tomarScreenshot("paso2_filled");
     console.log(`✅ Datos del ticket: folio=${folioFactura} caja=${caja} fecha=${fechaCompra} ticket=${noTicket}`);
 
     // PASO 3 — Click en Validar Folio
@@ -57,6 +143,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
       if (btn) btn.click();
     });
     await page.waitForTimeout(3000);
+    await tomarScreenshot("paso3_post_validar");
     console.log("✅ Folio validado");
 
     // PASO 4 — Modal SweetAlert2 de confirmación de sucursal
