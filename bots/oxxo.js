@@ -385,6 +385,27 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
     }
     console.log('✅ Régimen fiscal seleccionado, esperando Uso CFDI...');
 
+    // DIAGNÓSTICO — remover después de confirmar selectores
+    console.log('🔍 Diagnosticando dropdown CFDI...');
+    const cfdiDiag = await page.evaluate(() => {
+      const todos = document.querySelectorAll('[id*="CFDI"], [id*="cfdi"], [class*="cfdi"]');
+      const resultado = [];
+      todos.forEach(el => {
+        resultado.push({
+          id: el.id,
+          tag: el.tagName,
+          clase: el.className,
+          disabled: el.disabled,
+          texto: el.textContent?.substring(0, 50),
+          visible: el.offsetParent !== null
+        });
+      });
+      return resultado;
+    });
+    console.log('🔍 Elementos CFDI encontrados:', JSON.stringify(cfdiDiag, null, 2));
+    const cfdiScreenshot = await page.screenshot({ encoding: 'base64' });
+    console.log('📸 Screenshot CFDI (base64):', cfdiScreenshot.substring(0, 100) + '...[ver Railway logs completos]');
+
     // Uso CFDI — polling activo, PrimeFaces dropdown
     let cfdiListo = false;
     for (let i = 0; i < 40; i++) {
