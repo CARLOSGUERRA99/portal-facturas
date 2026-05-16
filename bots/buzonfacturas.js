@@ -182,8 +182,8 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     }
     console.log('✅ Ticket verificado correctamente');
 
-    // PASO 4 — Forma de pago y Uso CFDI
-    console.log('💳 PASO 4 — Seleccionando forma de pago y uso CFDI...');
+    // PASO 4 — Forma de pago, Uso CFDI y correo (todo antes de generar)
+    console.log('💳 PASO 4 — Configurando forma de pago, CFDI y correo...');
     await page.waitForFunction(() => {
       const fp = document.querySelector('select#FormaDePago');
       return fp && !fp.disabled;
@@ -200,6 +200,17 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     await page.select('select#UsoCFDI', 'G03');
     console.log('✅ Uso CFDI: Gastos en general (G03)');
 
+    // Llenar correo ANTES de generar para que el portal lo envíe al generar
+    await page.evaluate(() => {
+      const input = document.querySelector('input#correo');
+      if (input) {
+        input.removeAttribute('readonly');
+        input.value = '';
+      }
+    });
+    await page.type('input#correo', 'buzonfacturas@serviciosga.site', { delay: 50 });
+    console.log('📧 Correo de captura ingresado');
+
     // PASO 5 — Generar factura
     console.log('🧾 PASO 5 — Generando factura...');
     await Promise.all([
@@ -212,66 +223,76 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
         }
       }),
     ]);
+    console.log('✅ PASO 5 completado, URL:', page.url());
 
     const paso5YaFacturado = await page.evaluate(() =>
       document.body.innerText.match(/ya fue facturado|ya existe|ya procesado|previously|ya tiene factura/i) !== null
     );
     if (paso5YaFacturado) {
-      console.log('⚠️ PASO 5: ticket ya facturado — saltando a runEstrategiaB...');
-      const r = await runEstrategiaB(null);
+      console.log('⚠️ PASO 5: ticket ya facturado — retornando procesandoCorreo...');
       await browser.close();
-      return r;
+      return { ok: true, procesandoCorreo: true };
     }
 
-    const folioGenerado = await page.$eval('input#folioFactura', el => el.value).catch(() => null);
+    // Buscar folio en múltiples selectores posibles
+    const folioGenerado = await page.evaluate(() => {
+      const candidates = [
+        document.querySelector('input#folioFactura'),
+        document.querySelector('input[id*="folio" i]'),
+        document.querySelector('input[id*="Folio"]'),
+        document.querySelector('span#folioFactura'),
+        document.querySelector('[id*="folio" i]'),
+      ];
+      for (const el of candidates) {
+        const val = el?.value || el?.textContent;
+        if (val && /[A-Z]{2,6}-\d+/.test(val)) return val.trim();
+      }
+      // Buscar en texto de la página
+      const match = document.body.innerText.match(/[A-Z]{2,6}-\d{6,10}/);
+      return match ? match[0] : null;
+    });
     console.log('✅ Folio generado:', folioGenerado);
 
-    // PASO 6 — Enviar al correo de captura
-    console.log('📧 PASO 6 — Enviando a correo de captura...');
-    await page.evaluate(() => {
-      const input = document.querySelector('input#correo');
-      if (input) {
-        input.removeAttribute('readonly');
-        input.value = '';
-      }
-    });
-    await page.type('input#correo', 'buzonfacturas@serviciosga.site', { delay: 50 });
+    // PASO 6 — Intentar reenviar correo si hay botón separado
     await page.evaluate(() => {
       const btn = document.querySelector('button[name="btn"][value="btnCorreo"]');
-      if (btn) {
-        btn.removeAttribute('disabled');
-        btn.click();
-      }
+      if (btn) { btn.removeAttribute('disabled'); btn.click(); }
     });
-    await page.waitForTimeout(3000);
-    console.log('📧 Correo enviado a buzonfacturas@serviciosga.site');
+    await page.waitForTimeout(2000);
+    console.log('📧 Correo procesado (enviado al generar + reenvío si disponible)');
 
-    // PASO 7 — Descargar XML y PDF
-    console.log('📥 PASO 7 — Descargando archivos...');
+    // PASO 7 — Intentar descarga directa
+    console.log('📥 PASO 7 — Intentando descarga directa...');
     let xmlBuffer = null, pdfBuffer = null;
 
     await page.evaluate(() => {
-      document.querySelectorAll('input[type="submit"]').forEach(b => b.removeAttribute('disabled'));
+      document.querySelectorAll('input[type="submit"], a, button').forEach(b => {
+        if (b.removeAttribute) b.removeAttribute('disabled');
+      });
     });
 
     const xmlBuf = await interceptarDescarga(() =>
       page.evaluate(() => {
-        const btn = document.querySelector('input[type="submit"][value="Descargar XML"]');
-        if (btn) btn.click();
+        const btn = document.querySelector('input[type="submit"][value="Descargar XML"]')
+          || Array.from(document.querySelectorAll('a, button'))
+              .find(el => el.textContent?.includes('XML') || el.href?.includes('.xml'));
+        if (btn) { btn.scrollIntoView(); btn.click(); }
       })
     ).catch(() => null);
 
     const pdfBuf = await interceptarDescarga(() =>
       page.evaluate(() => {
-        const btn = document.querySelector('input[type="submit"][value="Descargar PDF"]');
-        if (btn) btn.click();
+        const btn = document.querySelector('input[type="submit"][value="Descargar PDF"]')
+          || Array.from(document.querySelectorAll('a, button'))
+              .find(el => el.textContent?.includes('PDF') || el.href?.includes('.pdf'));
+        if (btn) { btn.scrollIntoView(); btn.click(); }
       })
     ).catch(() => null);
 
     if (!xmlBuf && !pdfBuf) {
-      console.log('⚠️ Descarga directa falló, usando recuperador...');
+      console.log('⚠️ Descarga directa falló — IMAP recogerá del correo enviado');
       await browser.close();
-      return await runEstrategiaB(folioGenerado);
+      return { ok: true, procesandoCorreo: true, folioGenerado };
     }
 
     if (xmlBuf) xmlBuffer = xmlBuf;
