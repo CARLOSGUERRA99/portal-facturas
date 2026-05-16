@@ -712,15 +712,9 @@ app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
       return res.json({ ok: false, msg: "Acción inválida" });
     }
 
-    // Actualizar datos OCR con los confirmados por el usuario
+    // Actualizar datos OCR con los confirmados por el usuario (merge genérico)
     const datosActuales = JSON.parse(ticket.ocr_json || '{}');
-    const datosConfirmados = {
-      ...datosActuales,
-      ...(datos.fecha !== undefined && { fecha: datos.fecha }),
-      ...(datos.folio !== undefined && { folio: datos.folio }),
-      ...(datos.idVenta !== undefined && { idVenta: datos.idVenta }),
-      ...(datos.total !== undefined && { total: datos.total }),
-    };
+    const datosConfirmados = { ...datosActuales, ...datos };
 
     await db.query(
       "UPDATE tickets SET ocr_json = ?, status = 'pendiente' WHERE id = ?",
