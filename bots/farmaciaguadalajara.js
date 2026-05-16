@@ -191,125 +191,141 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     await tomarScreenshot("paso3_post_validar");
     console.log("✅ Folio validado");
 
-    // PASO 4 — Modal SweetAlert2 (sucursal o error de sistema)
-    console.log("📍 PASO 4 — Esperando modal...");
+    // PASO 4 — Modal de confirmación de sucursal
+    console.log("📍 PASO 4 — Esperando modal de sucursal...");
     const modal = await page.waitForSelector(".swal2-popup", { timeout: 8000 }).catch(() => null);
     if (modal) {
-      // Detectar si es error de sistema antes de confirmar
       const modalTexto = await page.evaluate(() =>
         document.querySelector(".swal2-popup")?.innerText?.toLowerCase() || ""
       );
-      console.log("📍 Texto del modal:", modalTexto.substring(0, 100));
+      console.log("📍 Texto del modal:", modalTexto.substring(0, 120));
 
-      if (/no disponible|fuera de servicio|mantenimiento|momento|servicio no|sistema.*no/i.test(modalTexto)) {
-        console.log("⚠️ Sistema de facturación no disponible (mensaje del portal)");
+      if (/no disponible|fuera de servicio|mantenimiento|servicio no/i.test(modalTexto)) {
+        console.log("⚠️ Sistema de facturación no disponible");
         await tomarScreenshot("sistema_no_disponible");
         await browser.close();
         return { ok: false, msg: "El sistema de facturación de Farmacias Guadalajara no está disponible en este momento. Intenta más tarde." };
       }
 
-      // Es modal de confirmación de sucursal — confirmar
-      const confirmBtn = await page.$(".swal2-confirm");
-      if (confirmBtn) {
-        console.log("📍 Modal de sucursal, confirmando...");
-        await page.click(".swal2-confirm");
-        await page.waitForTimeout(2000);
+      // Buscar botón SI (texto) o .swal2-confirm
+      const clicConfirmar = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll(".swal2-popup button, .swal2-actions button"));
+        const si = btns.find(b => /^s[ií]$/i.test(b.textContent.trim()) || b.classList.contains("swal2-confirm"));
+        if (si) { si.click(); return true; }
+        return false;
+      });
+      if (clicConfirmar) {
+        await page.waitForTimeout(2500);
         console.log("✅ Sucursal confirmada");
+      } else {
+        console.log("⚠️ No se encontró botón SI en modal");
       }
     } else {
-      console.log("ℹ️ Sin modal, continuando...");
+      console.log("ℹ️ Sin modal de sucursal, continuando...");
     }
 
-    // Verificar error de sistema también en el cuerpo de la página
-    const errorSistema = await activePage.evaluate(() =>
-      /no disponible|fuera de servicio|mantenimiento|sistema.*no|no est[aá] disponible/i.test(
-        document.body?.innerText || ""
-      )
-    );
-    if (errorSistema) {
-      await tomarScreenshot("sistema_no_disponible_body");
-      await browser.close();
-      return { ok: false, msg: "El sistema de facturación de Farmacias Guadalajara no está disponible en este momento. Intenta más tarde." };
-    }
+    // Scroll para revelar la sección 2
+    await activePage.evaluate(() => window.scrollTo(0, 600));
+    await page.waitForTimeout(1000);
+    await tomarScreenshot("paso4_post_modal");
 
-    // PASO 5 — Esperar campos de facturación y llenarlos
+    // PASO 5 — Esperar y llenar datos de facturación
     console.log("📋 PASO 5 — Esperando campos de facturación...");
+
+    // Esperar que aparezca al menos 1 input habilitado visible (no es el folio ya completado)
     await activePage.waitForFunction(() => {
-      const rfcInput = document.querySelector("input#rfc, input[name='rfc'], input[placeholder*='RFC']");
-      return rfcInput && !rfcInput.disabled;
+      const inputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
+      return inputs.some(i => !i.disabled && !i.readOnly && i.offsetParent !== null && i.value === '');
     }, { timeout: 15000 });
+
+    // Dump de inputs para debug
+    const todosInputs = await activePage.evaluate(() =>
+      Array.from(document.querySelectorAll('input, select')).map(el => ({
+        tag: el.tagName, id: el.id, name: el.name, placeholder: el.placeholder,
+        type: el.type, disabled: el.disabled, value: el.value?.substring(0, 20)
+      }))
+    );
+    console.log("🔍 Inputs en página:", JSON.stringify(todosInputs));
     await tomarScreenshot("paso5_campos_habilitados");
-    console.log("✅ Campos de facturación habilitados");
+    console.log("✅ Sección de facturación activa");
 
-    const rfcSelector = await activePage.evaluate(() => {
-      for (const s of ['input#rfc', 'input[name="rfc"]', 'input[placeholder*="RFC"]', 'input[placeholder*="rfc"]']) {
-        if (document.querySelector(s)) return s;
-      }
-      return null;
-    });
-    if (rfcSelector) {
-      await activePage.click(rfcSelector, { clickCount: 3 });
-      await activePage.type(rfcSelector, rfc, { delay: 80 });
-      await page.waitForTimeout(500);
+    // Función para llenar por label (busca label con texto, luego su input asociado)
+    async function llenarPorLabel(labelTexto, valor) {
+      const selector = await activePage.evaluate((txt) => {
+        const labels = Array.from(document.querySelectorAll('label'));
+        const label = labels.find(l => l.textContent.trim().toLowerCase().includes(txt.toLowerCase()));
+        if (!label) return null;
+        if (label.htmlFor) return '#' + label.htmlFor;
+        const inp = label.nextElementSibling?.tagName === 'INPUT'
+          ? label.nextElementSibling
+          : label.closest('div,p,li')?.querySelector('input');
+        if (inp) {
+          if (inp.id) return '#' + inp.id;
+          if (inp.name) return `input[name="${inp.name}"]`;
+        }
+        return null;
+      }, labelTexto);
+      if (!selector) { console.log(`⚠️ Label no encontrado: "${labelTexto}"`); return; }
+      await activePage.click(selector, { clickCount: 3 }).catch(() => {});
+      await activePage.type(selector, String(valor), { delay: 60 });
+      console.log(`✅ "${labelTexto}" → ${String(valor).substring(0, 20)}`);
     }
 
-    const cpSelector = await activePage.evaluate(() => {
-      for (const s of ['input#codigoPostal', 'input[name="codigoPostal"]', 'input[placeholder*="postal" i]', 'input[placeholder*="C.P" i]']) {
-        if (document.querySelector(s)) return s;
-      }
-      return null;
-    });
-    if (cpSelector) {
-      await activePage.click(cpSelector, { clickCount: 3 });
-      await activePage.type(cpSelector, String(codigoPostal), { delay: 80 });
-      await page.waitForTimeout(500);
+    // Función para seleccionar por label
+    async function seleccionarPorLabel(labelTexto, valor) {
+      const selector = await activePage.evaluate((txt) => {
+        const labels = Array.from(document.querySelectorAll('label'));
+        const label = labels.find(l => l.textContent.trim().toLowerCase().includes(txt.toLowerCase()));
+        if (!label) return null;
+        if (label.htmlFor) return '#' + label.htmlFor;
+        const sel = label.nextElementSibling?.tagName === 'SELECT'
+          ? label.nextElementSibling
+          : label.closest('div,p,li')?.querySelector('select');
+        if (sel) {
+          if (sel.id) return '#' + sel.id;
+          if (sel.name) return `select[name="${sel.name}"]`;
+        }
+        return null;
+      }, labelTexto);
+      if (!selector) { console.log(`⚠️ Select label no encontrado: "${labelTexto}"`); return; }
+      await activePage.select(selector, String(valor)).catch(e => console.log(`⚠️ select "${labelTexto}":`, e.message));
+      console.log(`✅ "${labelTexto}" → ${valor}`);
     }
 
-    const razonSelector = await activePage.evaluate(() => {
-      for (const s of ['input#razonSocial', 'input[name="razonSocial"]', 'input[placeholder*="raz" i]', 'input[placeholder*="nombre" i]']) {
-        if (document.querySelector(s)) return s;
-      }
-      return null;
-    });
-    if (razonSelector) {
-      await activePage.click(razonSelector, { clickCount: 3 });
-      await activePage.type(razonSelector, razonSocial, { delay: 80 });
-      await page.waitForTimeout(500);
+    await llenarPorLabel("RFC", rfc);
+    await page.waitForTimeout(400);
+    await llenarPorLabel("Código Postal", String(codigoPostal));
+    await page.waitForTimeout(400);
+    await llenarPorLabel("Nombre", razonSocial);
+    await page.waitForTimeout(400);
+
+    await seleccionarPorLabel("Régimen", String(regimenFiscal || "601"));
+    await page.waitForTimeout(400);
+    await seleccionarPorLabel("Uso CFDI", usoCfdi || "G03");
+    await page.waitForTimeout(400);
+
+    // Correo electrónico — llenar por label o input[type=email]
+    const emailField = await activePage.$('input[type="email"]');
+    if (emailField) {
+      await emailField.click({ clickCount: 3 });
+      await emailField.type("buzonfacturas@serviciosga.site", { delay: 50 });
+      console.log("📧 Correo ingresado por input[type=email]");
+    } else {
+      await llenarPorLabel("correo", "buzonfacturas@serviciosga.site");
+      await llenarPorLabel("email", "buzonfacturas@serviciosga.site");
     }
 
-    const regSelect = await activePage.$('select#regimenFiscal, select[name="regimenFiscal"]');
-    if (regSelect) {
-      await activePage.select('select#regimenFiscal, select[name="regimenFiscal"]', String(regimenFiscal || "601")).catch(() => {});
-      await page.waitForTimeout(500);
-    }
-
-    const cfdiSelect = await activePage.$('select#usoCfdi, select[name="usoCfdi"]');
-    if (cfdiSelect) {
-      await activePage.select('select#usoCfdi, select[name="usoCfdi"]', usoCfdi || "G03").catch(() => {});
-      await page.waitForTimeout(500);
-    }
-
-    // Checkbox envío por correo
-    const envioCorreoEl = await activePage.$("input#envioCorreo-input, input[name*='envio' i]");
-    if (envioCorreoEl) {
-      await envioCorreoEl.click();
-      await page.waitForTimeout(500);
-      const correoInput = await activePage.$("input[type='email']");
-      if (correoInput) {
-        await correoInput.click({ clickCount: 3 });
-        await correoInput.type("buzonfacturas@serviciosga.site", { delay: 50 });
-        console.log("📧 Correo de captura ingresado");
-      }
-    }
     await tomarScreenshot("paso5_filled");
-    console.log(`✅ Datos fiscales: RFC=${rfc} CP=${codigoPostal} Régimen=${regimenFiscal || "601"}`);
+    console.log(`✅ Datos fiscales llenados: RFC=${rfc} CP=${codigoPostal}`);
 
-    // PASO 6 — Click en Obtener Factura
+    // PASO 6 — Click en Obtener Factura / Generar / Continuar
     console.log("🧾 PASO 6 — Generando factura...");
     await activePage.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button[type='submit'], button"));
-      const btn = btns.find(b => /obtener factura|generar factura|facturar/i.test(b.textContent));
-      if (btn) btn.click();
+      const btns = Array.from(document.querySelectorAll("button[type='submit'], button, input[type='submit']"));
+      const btn = btns.find(b => /obtener factura|generar factura|facturar|continuar|siguiente/i.test(
+        b.textContent || b.value || ""
+      ));
+      if (btn) { btn.scrollIntoView(); btn.click(); }
     });
     await page.waitForTimeout(8000);
     await tomarScreenshot("paso6_post_generar");
