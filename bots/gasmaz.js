@@ -109,12 +109,32 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
     await page.waitForSelector("#selFiscalRegime", { visible: true, timeout: 10000 });
     await selectByText(page, "#selFiscalRegime", regimenKeywords);
 
-    // Uso CFDI
+    // Uso CFDI — esperar a que las opciones carguen vía AJAX tras seleccionar régimen
+    console.log("⏳ Esperando opciones de Uso CFDI (carga AJAX)...");
+    await page.waitForFunction(
+      () => {
+        const sel = document.querySelector("#selVoucherUse");
+        return sel && sel.options.length > 1;
+      },
+      { timeout: 15000 }
+    );
+    const cfdiCount = await page.$eval("#selVoucherUse", el => el.options.length);
+    console.log(`✅ Opciones de Uso CFDI cargadas: ${cfdiCount}`);
+
     const cfdiKeywords = usoCfdi
       ? [String(usoCfdi)]
-      : ["G03", "Gastos en general", "gastos en general", "gasto"];
-    await page.waitForSelector("#selVoucherUse", { visible: true, timeout: 10000 });
+      : ["gastos en general", "gasto general", "gasto"];
     await selectByText(page, "#selVoucherUse", cfdiKeywords);
+
+    // Validar que el CFDI quedó seleccionado
+    const cfdiVal = await page.$eval("#selVoucherUse", el => el.value);
+    if (!cfdiVal || cfdiVal === "" || cfdiVal === "undefined") {
+      const opciones = await page.$eval("#selVoucherUse", el =>
+        Array.from(el.options).map(o => o.text).join(" | ")
+      );
+      throw new Error(`Uso CFDI no seleccionado — opciones disponibles: ${opciones}`);
+    }
+    console.log(`✅ Uso CFDI seleccionado: "${cfdiVal}"`);
 
     // Forma de pago — tarjeta de débito por defecto
     await selectByText(page, "#selPaymentWay", ["débito", "debito", "Tarjeta de déb"]);
