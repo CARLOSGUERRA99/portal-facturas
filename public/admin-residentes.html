@@ -546,12 +546,23 @@
                 <td style="padding:14px 20px;"><span class="badge badge-error">${g.total_tickets}</span></td>
                 <td style="padding:14px 20px;font-size:0.8rem;color:var(--text-muted);">${new Date(g.ultimo_ticket).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
                 <td style="padding:14px 20px;text-align:right;display:flex;gap:6px;justify-content:flex-end;">
-                  <button class="debug-btn" onclick="abrirPrompt('${(g.comercio||'').replace(/'/g,"\\'")}', '${(g.url||'').replace(/'/g,"\\'")}', \`${(g.notas||'').replace(/`/g,'\\`').replace(/'/g,"\\'")}\`)">🤖 Generar bot</button>
+                  <button class="debug-btn"
+                    data-comercio="${(g.comercio||'').replace(/"/g,'&quot;')}"
+                    data-url="${(g.url||'').replace(/"/g,'&quot;')}"
+                    data-notas="${(g.notas||'').replace(/"/g,'&quot;')}"
+                    onclick="abrirPromptDesdeBtn(this)">🤖 Generar bot</button>
                   <button class="btn btn-primary btn-sm" onclick="abrirModalPortal('${(g.comercio||'').replace(/'/g,"\\'")}')">Registrar</button>
                 </td>
               </tr>`).join('')}
           </tbody>
         </table>`;
+    }
+
+    function abrirPromptDesdeBtn(btn) {
+      const comercio = btn.dataset.comercio || '';
+      const url      = btn.dataset.url      || '';
+      const notas    = btn.dataset.notas    || '';
+      abrirPrompt(comercio, url, notas);
     }
 
     function parsearNotas(notas) {

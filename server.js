@@ -994,13 +994,13 @@ app.get("/api/portales-pendientes", auth, requireAdmin, async (req, res) => {
         t.comercio,
         COUNT(*) AS total_tickets,
         MAX(t.creado) AS ultimo_ticket,
-        pp.url,
-        pp.notas
+        MAX(pp.url)   AS url,
+        MAX(pp.notas) AS notas
       FROM tickets t
       LEFT JOIN portales_pendientes pp ON pp.nombre LIKE CONCAT('%', t.comercio, '%')
       WHERE t.portal_url = 'desconocido'
         AND t.status = 'error'
-      GROUP BY t.comercio, pp.url, pp.notas
+      GROUP BY t.comercio
       ORDER BY ultimo_ticket DESC
     `);
     res.json({ ok: true, grupos });
