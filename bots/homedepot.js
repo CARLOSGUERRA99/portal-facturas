@@ -253,12 +253,15 @@ async function facturarHomeDepotMexico({
       const widgetIdMatch = iframeSrc.match(/cf-chl-widget-([a-z0-9]+)/);
       const widgetId = widgetIdMatch ? widgetIdMatch[1] : undefined;
 
-      // Varios formatos que Cloudflare usa en distintas versiones del widget
+      // Formato real confirmado por interceptación: source="cloudflare-challenge", widgetId del iframe
+      // Extraer widgetId de la URL del iframe: /rch/{widgetId}/
+      const iframeUrl = iframe?.src || "";
+      const wIdFromUrl = iframeUrl.match(/\/rch\/([a-z0-9]+)\//)?.[1] || widgetId;
       const formats = [
-        { source: "cloudflare-challenge-platform", token, widgetId },
-        { token, widgetId, event: "token", msgType: "token" },
-        { token, widgetId },
-        { token },
+        { source: "cloudflare-challenge", widgetId: wIdFromUrl, event: "token", token },
+        { source: "cloudflare-challenge", widgetId: wIdFromUrl, event: "complete", token },
+        { source: "cloudflare-challenge", widgetId: wIdFromUrl, event: "solve",    token },
+        { source: "cloudflare-challenge", widgetId: wIdFromUrl, token },
       ];
       const fakeOrigin = "https://challenges.cloudflare.com";
       for (const data of formats) {
@@ -413,11 +416,17 @@ async function facturarHomeDepotMexico({
             for (let i = 0; i < arr.length; i++) {
               const item = arr[i];
               if (!item || typeof item !== "object") continue;
+              // Buscar el componente ngx-turnstile por sus propiedades características
+              const isTs = "siteKey" in item || "resolved" in item || el.tagName === "NGX-TURNSTILE";
               if (typeof item.onChange === "function") {
-                try { item.onChange(token); log.push("B:onChange@" + el.tagName + "[" + i + "]"); } catch(e) { log.push("B:ERR:" + e.message); }
+                try { item.onChange(token); log.push("B:onChange@" + el.tagName + "[" + i + "]" + (isTs ? "✓" : "")); } catch(e) { log.push("B:ERR:" + e.message); }
               }
               if (item.resolved?.emit) {
                 try { item.resolved.emit(token); log.push("B:emit@" + el.tagName + "[" + i + "]"); } catch {}
+              }
+              // Log diagnosis para NGX-TURNSTILE
+              if (el.tagName === "NGX-TURNSTILE" && isTs) {
+                log.push("NGX-TS@[" + i + "]:keys=" + Object.keys(item).slice(0, 8).join(","));
               }
             }
           }
