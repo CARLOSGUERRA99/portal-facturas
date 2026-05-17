@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "MCP server para portal-facturas — expone la BD de Railway a Claude",
   "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node index.js"
   },
