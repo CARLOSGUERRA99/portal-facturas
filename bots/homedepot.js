@@ -398,7 +398,35 @@ async function facturarHomeDepotMexico({
         console.log(`🔍 render params: ${cfDiag.renderParams}`);
         console.log(`🔍 Angular elements: ${cfDiag.angularEls || "ninguno"}`);
 
-        // Inyectar token por todos los mecanismos: render() callbacks + postMessage handlers + __ngContext__
+        // Mecanismo D: ejecutar postMessage DESDE DENTRO del iframe CF via CDP
+        // El mensaje llega con event.origin = "https://challenges.cloudflare.com"
+        // y event.source = cfIframe.contentWindow — ambos validados por CF's api.js
+        const cfFrame = page.frames().find(f => f.url().includes("challenges.cloudflare.com"));
+        if (cfFrame) {
+          const frameUrl = cfFrame.url();
+          const wId = frameUrl.match(/\/rch\/([a-z0-9]+)\//)?.[1]
+                   || frameUrl.match(/cf-chl-widget-([a-z0-9]+)/)?.[1];
+          console.log(`🔑 Mecanismo D — postMessage desde iframe CF (widgetId: ${wId || "unknown"})`);
+          for (const evtName of ["token", "complete", "success", "solve"]) {
+            await cfFrame.evaluate((tok, wid, evt) => {
+              try {
+                window.parent.postMessage(
+                  { source: "cloudflare-challenge", widgetId: wid, event: evt, token: tok },
+                  "*"
+                );
+              } catch {}
+            }, capToken, wId, evtName).catch(e => console.log(`⚠️ cfFrame.evaluate error (${evtName}):`, e.message));
+            await page.waitForTimeout(200);
+          }
+          await page.waitForTimeout(600);
+          // Comprobar si Angular ya aceptó el token tras Mecanismo D
+          const tokenTrasD = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
+          console.log(`🔍 Token tras Mecanismo D: ${tokenTrasD ? tokenTrasD.length + " chars" : "vacío"}`);
+        } else {
+          console.log("⚠️ Mecanismo D: iframe CF no encontrado");
+        }
+
+        // Mecanismos A/B/C como fallback
         const injResult = await page.evaluate((token) => {
           const log = [];
 
