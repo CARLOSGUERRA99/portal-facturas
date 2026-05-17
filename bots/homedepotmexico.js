@@ -1,33 +1,37 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
-// ── Helpers reutilizables ─────────────────────────────────────────────────────
-
+// Llena un input y dispara eventos Angular para que el form reactive se actualice
 async function fillInput(page, selector, value) {
   await page.click(selector);
-  await page.waitForTimeout(200);
-  // Triple-click selecciona todo el texto en el campo
-  await page.click(selector, { clickCount: 3 });
   await page.waitForTimeout(100);
+  await page.click(selector, { clickCount: 3 });
   await page.keyboard.press("Backspace");
-  await page.waitForTimeout(80);
-  await page.keyboard.type(String(value), { delay: 80 });
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(50);
+  await page.keyboard.type(String(value), { delay: 60 });
+  await page.waitForTimeout(100);
+  // Angular necesita eventos input + blur para marcar el campo como válido
+  await page.$eval(selector, el => {
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
+  });
+  await page.waitForTimeout(150);
   const actual = await page.$eval(selector, el => el.value).catch(() => "?");
   console.log(`📝 ${selector}: "${actual}"`);
 }
 
-async function selectByText(page, selector, keywords) {
-  const found = await page.$eval(selector, (el, kws) => {
-    const opt = Array.from(el.options).find(o =>
-      kws.some(k => o.text.toLowerCase().includes(k.toLowerCase()))
-    );
+// Selecciona por value exacto en un <select> de Angular
+async function selectByValue(page, selector, value) {
+  const found = await page.$eval(selector, (el, v) => {
+    const opt = Array.from(el.options).find(o => o.value === v || o.text.toLowerCase().includes(v.toLowerCase()));
     if (!opt) return null;
     el.value = opt.value;
     el.dispatchEvent(new Event("change", { bubbles: true }));
-    el.dispatchEvent(new Event("input",  { bubbles: true }));
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
     return opt.text;
-  }, keywords);
+  }, value);
   console.log(`📝 ${selector}: "${found || "NO ENCONTRADO"}"`);
   return !!found;
 }
@@ -38,10 +42,13 @@ async function facturarHomeDepotMexico({
   rfc, razonSocial, regimenFiscal, usoCfdi, codigoPostal,
   barcode, folio, ticketId,
 }) {
-  // El OCR puede guardar el folio como "folio" o "barcode" según el portal
-  const codigoTicket = barcode || folio;
+  // El OCR guarda el número de ticket en "folio" o "barcode"
+  const noTicket = barcode || folio;
+
   console.log("🤖 Iniciando bot Home Depot Mexico...");
-  console.log(`   Ticket: ${codigoTicket} | RFC: ${rfc} | CP: ${codigoPostal}`);
+  console.log(`   Ticket: ${noTicket} | RFC: ${rfc} | CP: ${codigoPostal}`);
+
+  if (!noTicket) return { ok: false, msg: "No. de Ticket no disponible en los datos del ticket" };
 
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
@@ -69,149 +76,75 @@ async function facturarHomeDepotMexico({
   try {
     // ── PASO 1 — Cargar portal ────────────────────────────────────────────────
     console.log("🌐 PASO 1 — Cargando portal...");
+    // La URL base redirige automáticamente al puerto 2053 con Angular SPA
     await page.goto(
       "https://facturacion.homedepot.com.mx/",
       { waitUntil: "networkidle2", timeout: 40000 }
     );
     await page.waitForTimeout(3000);
     await screenshot("paso1_cargado");
+    console.log(`📍 URL final: ${page.url()}`);
 
-    // Loguear URL actual y título para diagnóstico
-    const urlActual = page.url();
-    const titulo = await page.title();
-    console.log(`📍 URL: ${urlActual} | Título: ${titulo}`);
+    // ── PASO 2 — Esperar campos y llenar RFC + Ticket ─────────────────────────
+    console.log("📋 PASO 2 — Llenando RFC y No. de Ticket...");
 
-    // ── PASO 2 — Inspeccionar campos ──────────────────────────────────────────
-    console.log("📋 PASO 2 — Inspeccionando campos del formulario...");
-    await page.waitForSelector("input", { timeout: 20000 });
+    // Esperar que los campos del formulario Angular estén disponibles
+    await page.waitForSelector("#rfc", { timeout: 20000 });
+    await page.waitForSelector("#ticket", { timeout: 10000 });
 
-    // Loguear todos los inputs visibles para diagnóstico
-    const inputsInfo = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("input:not([type='hidden'])")).map(el => ({
-        id: el.id,
-        name: el.name,
-        placeholder: el.placeholder,
-        type: el.type,
-        value: el.value,
-      }))
-    );
-    console.log("📊 Inputs encontrados:", JSON.stringify(inputsInfo));
+    // Verificar estado del Turnstile (debería estar resuelto por stealth)
+    const turnstileToken = await page.$eval(
+      "input[name='cf-turnstile-response']",
+      el => el.value
+    ).catch(() => null);
+    console.log(`🔒 Turnstile token: ${turnstileToken ? "PRESENTE (" + turnstileToken.length + " chars)" : "AUSENTE"}`);
 
-    // ── PASO 3 — Llenar RFC (primer campo) ────────────────────────────────────
-    // El portal muestra: RFC primero, luego No. de Ticket
-    console.log("📋 PASO 3 — Llenando RFC y No. de Ticket...");
+    // Llenar RFC — id="rfc"
+    await fillInput(page, "#rfc", rfc);
+    await page.waitForTimeout(300);
 
-    // Buscar campo RFC por placeholder, id, o name
-    const rfcSelector = await page.evaluate(() => {
-      const all = Array.from(document.querySelectorAll("input:not([type='hidden'])"));
-      for (const el of all) {
-        const hint = `${el.id} ${el.name} ${el.placeholder}`.toLowerCase();
-        if (hint.includes("rfc")) {
-          if (el.id) return `#${el.id}`;
-          if (el.name) return `input[name="${el.name}"]`;
-        }
-      }
-      // Fallback: primer input visible
-      const first = all.find(el => el.offsetParent !== null);
-      if (first) {
-        if (first.id) return `#${first.id}`;
-        if (first.name) return `input[name="${first.name}"]`;
-      }
-      return "input:not([type='hidden'])";
-    });
-    console.log(`🔍 Selector RFC: ${rfcSelector}`);
-    await fillInput(page, rfcSelector, rfc);
-    await page.waitForTimeout(400);
+    // Llenar No. de Ticket — id="ticket" (solo dígitos, 18-23 chars)
+    await fillInput(page, "#ticket", noTicket);
+    await page.waitForTimeout(500);
 
-    // Buscar campo de ticket/folio/barcode
-    const ticketSelector = await page.evaluate(() => {
-      const all = Array.from(document.querySelectorAll("input:not([type='hidden'])"));
-      for (const el of all) {
-        const hint = `${el.id} ${el.name} ${el.placeholder}`.toLowerCase();
-        if (hint.includes("ticket") || hint.includes("folio") || hint.includes("barcode") || hint.includes("no.")) {
-          if (el.id) return `#${el.id}`;
-          if (el.name) return `input[name="${el.name}"]`;
-        }
-      }
-      // Fallback: segundo input visible
-      const visible = all.filter(el => el.offsetParent !== null);
-      if (visible[1]) {
-        if (visible[1].id) return `#${visible[1].id}`;
-        if (visible[1].name) return `input[name="${visible[1].name}"]`;
-      }
-      return null;
-    });
-    console.log(`🔍 Selector Ticket: ${ticketSelector}`);
-    if (ticketSelector) {
-      await fillInput(page, ticketSelector, codigoTicket);
-      await page.waitForTimeout(400);
-    }
+    await screenshot("paso2_rfc_ticket");
 
-    await screenshot("paso3_rfc_ticket");
+    // ── PASO 3 — Esperar que Continuar se habilite y hacer click ──────────────
+    console.log("⏳ PASO 3 — Esperando que el botón Continuar se habilite...");
 
-    // ── PASO 4 — Cloudflare Turnstile ─────────────────────────────────────────
-    console.log("🔒 PASO 4 — Manejando Cloudflare CAPTCHA...");
-
-    // Buscar iframe de Cloudflare en los frames activos de Puppeteer
-    const frames = page.frames();
-    console.log(`🔒 Frames en página: ${frames.length}`);
-    for (const f of frames) {
-      console.log(`   frame url: ${f.url()}`);
-    }
-
-    const cfFrame = frames.find(f =>
-      f.url().includes("cloudflare") ||
-      f.url().includes("challenges.cloudflare") ||
-      f.url().includes("turnstile")
-    );
-
-    if (cfFrame) {
-      console.log(`🔒 Frame Cloudflare encontrado: ${cfFrame.url()}`);
-      try {
-        // Esperar a que el checkbox aparezca dentro del iframe
-        await cfFrame.waitForSelector("input[type='checkbox']", { timeout: 8000 });
-        await cfFrame.$eval("input[type='checkbox']", el => el.click());
-        console.log("🔒 Checkbox Cloudflare clickado");
-        await page.waitForTimeout(4000);
-      } catch {
-        // Stealth mode puede haberlo resuelto solo
-        console.log("🔒 No se pudo clickar checkbox — esperando resolución stealth...");
-        await page.waitForTimeout(6000);
-      }
-    } else {
-      // Sin iframe visible — stealth pudo resolverlo o el portal no muestra CAPTCHA
-      console.log("🔒 Sin iframe Cloudflare visible — asumiendo resuelto");
-      await page.waitForTimeout(2000);
-    }
-    await screenshot("paso4_post_captcha");
-
-    // Esperar a que el botón Continuar se habilite (CAPTCHA completado)
-    console.log("⏳ Esperando que Continuar se habilite...");
+    // El botón se habilita cuando RFC + ticket son válidos Y el Turnstile está resuelto
     await page.waitForFunction(
       () => {
-        const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
-          .find(el => /continuar|siguiente|validar|buscar|facturar/i.test(el.textContent || el.value || ""));
+        const btn = document.querySelector("button.btn-primary");
         return btn && !btn.disabled;
       },
-      { timeout: 15000 }
-    ).catch(() => console.log("⚠️ Timeout esperando botón habilitado — intentando click de todos modos"));
+      { timeout: 20000 }
+    ).catch(() => console.log("⚠️ Botón Continuar no se habilitó en 20s — intentando click de todos modos"));
 
-    // ── PASO 5 — Click en Continuar ───────────────────────────────────────────
-    console.log("🔍 PASO 5 — Haciendo click en Continuar...");
-    const clickedContinuar = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button, input[type='submit'], a"))
-        .find(el => /continuar|siguiente|validar|buscar|facturar/i.test(el.textContent || el.value || ""));
-      if (btn) { btn.scrollIntoView(); btn.click(); return btn.textContent?.trim() || btn.value || "btn"; }
-      return null;
-    });
-    console.log(`✅ Click en: "${clickedContinuar}"`);
+    // Si el Turnstile aún no está resuelto, esperar un poco más
+    const btnHabilitado = await page.$eval("button.btn-primary", el => !el.disabled).catch(() => false);
+    if (!btnHabilitado) {
+      console.log("⏳ Botón aún deshabilitado — esperando 5s más por Turnstile...");
+      await page.waitForTimeout(5000);
+    }
+
+    await screenshot("paso3_pre_continuar");
+
+    const estadoBtn = await page.$eval("button.btn-primary", el => ({
+      texto: el.textContent.trim(),
+      disabled: el.disabled,
+    })).catch(() => ({ texto: "?", disabled: true }));
+    console.log(`🔘 Botón Continuar: "${estadoBtn.texto}" | disabled: ${estadoBtn.disabled}`);
+
+    await page.click("button.btn-primary");
+    console.log("✅ Click en Continuar");
     await page.waitForTimeout(3000);
-    await screenshot("paso5_post_continuar");
+    await screenshot("paso3_post_continuar");
 
-    // Detectar resultado del paso 1
-    const textoActual = await page.evaluate(() => document.body.innerText.toLowerCase());
+    // Detectar casos especiales
+    const textoTrasValidar = await page.evaluate(() => document.body.innerText.toLowerCase());
 
-    if (/ya\s*(fue\s*)?facturad|previously\s*invoiced/i.test(textoActual)) {
+    if (/ya\s*(fue\s*)?facturad|previously\s*invoiced/i.test(textoTrasValidar)) {
       console.log("♻️ Folio ya facturado — intentando recuperar...");
       await screenshot("ya_facturado");
       const { xmlUrl, pdfUrl } = await intentarDescarga(page, browser, ticketId);
@@ -220,12 +153,12 @@ async function facturarHomeDepotMexico({
       return { ok: true, procesandoCorreo: true };
     }
 
-    if (/folio\s*inv[aá]lido|no\s*(se\s*)?encontr|ticket\s*no\s*v[aá]lid|vencid|expirad|no\s*existe/i.test(textoActual)) {
+    if (/folio\s*inv[aá]lido|no\s*(se\s*)?encontr|ticket\s*no\s*v[aá]lid|vencid|expirad|no\s*existe/i.test(textoTrasValidar)) {
       const msg = await page.evaluate(() => {
-        const alertas = document.querySelectorAll(".alert, .error, [class*='error'], [class*='alert'], p");
+        const alertas = document.querySelectorAll(".alert, .error, [class*='error'], p");
         for (const a of alertas) {
           const t = a.innerText?.trim();
-          if (t && t.length > 5) return t;
+          if (t && t.length > 10 && t.length < 300) return t;
         }
         return "Folio o RFC inválido";
       });
@@ -233,64 +166,50 @@ async function facturarHomeDepotMexico({
       return { ok: false, msg: `Home Depot rechazó el folio: ${msg}` };
     }
 
-    // ── PASO 6 — Llenar datos fiscales (paso 2 del portal) ───────────────────
-    console.log("📋 PASO 6 — Llenando datos fiscales...");
-    await page.waitForTimeout(2000);
+    // ── PASO 4 — Llenar datos fiscales (página 2) ─────────────────────────────
+    // IDs exactos del HTML: #nombre, #codigoPostal, #regimenFiscal, #usoCfdi, #correo
+    console.log("📋 PASO 4 — Llenando datos fiscales...");
+    await page.waitForSelector("#nombre", { timeout: 15000 });
 
-    // Loguear inputs del paso 2
-    const inputs2 = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("input:not([type='hidden']), select")).map(el => ({
-        tag: el.tagName,
-        id: el.id,
-        name: el.name,
-        placeholder: el.placeholder,
-        type: el.type,
-      }))
-    );
-    console.log("📊 Inputs paso 2:", JSON.stringify(inputs2));
+    // Razón Social — sin régimen societario
+    await fillInput(page, "#nombre", razonSocial);
 
-    // Razón social
-    const rsSelector = await encontrarInputPorLabel(page, ["razón social", "razon social", "nombre", "empresa", "name"]);
-    if (rsSelector) await fillInput(page, rsSelector, razonSocial);
+    // Código Postal — máx 5 dígitos
+    await fillInput(page, "#codigoPostal", String(codigoPostal || "").slice(0, 5));
+    await page.waitForTimeout(500);
 
-    // Código postal
-    const cpSelector = await encontrarInputPorLabel(page, ["código postal", "codigo postal", "c.p.", "cp", "postal"]);
-    if (cpSelector) {
-      await fillInput(page, cpSelector, String(codigoPostal || ""));
-      await page.waitForTimeout(800);
-    }
-
-    // Uso CFDI — select
-    const cfdiOk = await selectByText(page, "select", ["gastos en general", "G03"]).catch(() => false);
-    if (!cfdiOk) {
-      await page.evaluate(() => {
-        const selects = document.querySelectorAll("select");
-        selects.forEach(s => {
-          const opt = Array.from(s.options || []).find(o =>
-            o.text.toLowerCase().includes("gastos en general")
-          );
-          if (opt) { s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true })); }
-        });
-      });
-    }
+    // Régimen Fiscal — select con value numérico ("601", "626", etc.)
+    const regimenCodigo = String(regimenFiscal || "").match(/\d{3}/)?.[0] || "601";
+    await selectByValue(page, "#regimenFiscal", regimenCodigo);
     await page.waitForTimeout(300);
 
-    // Correo
-    const emailSelector = await encontrarInputPorLabel(page, ["correo", "email", "e-mail", "mail"]);
-    if (emailSelector) await fillInput(page, emailSelector, "buzonfacturas@serviciosga.site");
+    // Uso CFDI — select con value tipo "G03"
+    const cfdiCodigo = String(usoCfdi || "").match(/[A-Z]\d+/)?.[0] || "G03";
+    await selectByValue(page, "#usoCfdi", cfdiCodigo);
+    await page.waitForTimeout(300);
 
-    await screenshot("paso6_datos_fiscales");
+    // Correo electrónico
+    await fillInput(page, "#correo", "buzonfacturas@serviciosga.site");
 
-    // ── PASO 7 — Generar factura ──────────────────────────────────────────────
-    console.log("🧾 PASO 7 — Generando factura...");
-    await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
-        .find(el => /facturar|generar|emitir|continuar/i.test(el.textContent || el.value || ""));
-      if (btn) { btn.scrollIntoView(); btn.click(); }
-    });
+    await screenshot("paso4_datos_fiscales");
+    console.log("✅ Datos fiscales completos");
 
+    // ── PASO 5 — Click en Facturar ────────────────────────────────────────────
+    console.log("🧾 PASO 5 — Haciendo click en Facturar...");
+
+    // Esperar que el botón Facturar esté habilitado
+    await page.waitForFunction(
+      () => {
+        const btn = document.querySelector("button.btn-primary");
+        return btn && !btn.disabled;
+      },
+      { timeout: 10000 }
+    ).catch(() => console.log("⚠️ Botón Facturar no disponible — intentando de todos modos"));
+
+    await page.click("button.btn-primary");
+    console.log("✅ Click en Facturar");
     await page.waitForTimeout(6000);
-    await screenshot("paso7_post_facturar");
+    await screenshot("paso5_post_facturar");
 
     const textoFinal = await page.evaluate(() => document.body.innerText.toLowerCase());
     if (/error|inv[aá]lid|rechazad/i.test(textoFinal) && !/descarg|xml|pdf/i.test(textoFinal)) {
@@ -302,8 +221,8 @@ async function facturarHomeDepotMexico({
       return { ok: false, msg: msgErr };
     }
 
-    // ── PASO 8 — Descargar XML y PDF ──────────────────────────────────────────
-    console.log("📥 PASO 8 — Descargando archivos...");
+    // ── PASO 6 — Descargar XML y PDF ──────────────────────────────────────────
+    console.log("📥 PASO 6 — Descargando archivos...");
     const { xmlUrl, pdfUrl } = await intentarDescarga(page, browser, ticketId);
     await browser.close();
 
@@ -324,31 +243,6 @@ async function facturarHomeDepotMexico({
 }
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
-
-async function encontrarInputPorLabel(page, keywords) {
-  return await page.evaluate((kws) => {
-    const labels = Array.from(document.querySelectorAll("label, .label, [class*='label']"));
-    for (const label of labels) {
-      const texto = label.innerText?.toLowerCase() || "";
-      if (kws.some(k => texto.includes(k))) {
-        const forAttr = label.getAttribute("for");
-        if (forAttr) {
-          const input = document.getElementById(forAttr);
-          if (input) return `#${forAttr}`;
-        }
-        const parent = label.closest(".form-group, .field, [class*='form']");
-        if (parent) {
-          const input = parent.querySelector("input, textarea");
-          if (input) {
-            if (input.id) return `#${input.id}`;
-            if (input.name) return `input[name="${input.name}"]`;
-          }
-        }
-      }
-    }
-    return null;
-  }, keywords);
-}
 
 async function intentarDescarga(page, browser, ticketId) {
   const ts = ticketId || Date.now();
