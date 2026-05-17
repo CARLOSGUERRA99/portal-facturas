@@ -1093,7 +1093,7 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
     setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
 
     if (portalDetectado === 'desconocido') {
-      return res.json({ ok: true, agenteActivado: true, comercio: datosOCR.comercio || 'este comercio', ticketId });
+      return res.json({ ok: true, agenteActivado: true, comercio: datosOCR.comercio || 'este comercio', urlQR: datosOCR.portalUrl || null, ticketId });
     }
     res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
   } catch (err) {

@@ -259,7 +259,7 @@
           </div>
         </div>
         <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;line-height:1.45;">
-          Ayúdanos a configurar este portal y lo tendremos listo en 24–48 hrs.
+          Nuestros agentes ya lo están analizando automáticamente. Tu información nos ayuda a configurarlo más rápido y con más detalle.
         </div>
         <!-- Steps -->
         <div style="display:flex;align-items:center;gap:6px;margin-top:16px;">
@@ -347,7 +347,7 @@
       <div id="mpn-paso-ok" style="padding:32px 26px;text-align:center;display:none;">
         <div style="font-size:48px;margin-bottom:14px;">✅</div>
         <div style="font-weight:700;font-size:1.05rem;color:var(--text);margin-bottom:8px;">¡Gracias por tu ayuda!</div>
-        <div style="font-size:0.84rem;color:var(--text-muted);line-height:1.55;margin-bottom:24px;">Revisaremos la información y configuraremos el portal de <strong id="mpn-ok-comercio"></strong> en las próximas 24–48 horas.</div>
+        <div style="font-size:0.84rem;color:var(--text-muted);line-height:1.55;margin-bottom:24px;">Nuestros agentes ya están trabajando en <strong id="mpn-ok-comercio"></strong>. Tu reporte les ayuda a entender mejor el proceso. Te notificaremos cuando esté listo para facturar.</div>
         <button class="btn btn-primary btn-sm" onclick="cerrarModalPortalNuevo()">Entendido</button>
       </div>
     </div>
@@ -633,13 +633,7 @@
         const res = await fetch('/upload-ticket', { method: 'POST', body: formData });
         const data = await res.json();
 
-        if (data.ok && data.agenteActivado) {
-          limpiarUpload();
-          alert.className = 'alert alert-success';
-          alert.innerHTML = `⚙️ <strong>Portal nuevo: ${data.comercio}</strong><br>Nuestros agentes ya están analizando el portal. Te notificaremos cuando esté listo. Consulta el avance en <a href="/mis-tickets" style="color:#27500a;font-weight:600;">Mis Tickets</a>.`;
-          alert.style.display = 'block';
-          cargarDatos();
-        } else if (data.ok && data.sinPortal) {
+        if (data.ok && (data.agenteActivado || data.sinPortal)) {
           limpiarUpload();
           abrirModalPortalNuevo(data.ticketId, data.comercio, data.urlQR);
           cargarDatos();
