@@ -87,13 +87,6 @@ async function facturarHomeDepotMexico({
     await page.waitForSelector("#rfc", { timeout: 20000 });
     await page.waitForSelector("#ticket", { timeout: 10000 });
 
-    // Verificar estado del Turnstile (debería estar resuelto por stealth)
-    const turnstileToken = await page.$eval(
-      "input[name='cf-turnstile-response']",
-      el => el.value
-    ).catch(() => null);
-    console.log(`🔒 Turnstile token: ${turnstileToken ? "PRESENTE (" + turnstileToken.length + " chars)" : "AUSENTE"}`);
-
     // Llenar RFC — id="rfc"
     await fillInput(page, "#rfc", rfc);
     await page.waitForTimeout(300);
@@ -104,30 +97,33 @@ async function facturarHomeDepotMexico({
 
     await screenshot("paso2_rfc_ticket");
 
-    // ── PASO 3 — Esperar que Continuar se habilite y hacer click ──────────────
-    console.log("⏳ PASO 3 — Esperando que el botón Continuar se habilite...");
+    // ── PASO 3 — Esperar Turnstile y habilitar Continuar ─────────────────────
+    console.log("🔒 PASO 3 — Esperando resolución de Cloudflare Turnstile...");
 
-    // El botón se habilita cuando RFC + ticket son válidos Y el Turnstile está resuelto
+    // Esperar hasta 30s a que stealth resuelva el Turnstile (token en hidden input)
     await page.waitForFunction(
       () => {
-        const btn = document.querySelector("button.btn-primary");
-        return btn && !btn.disabled;
+        const t = document.querySelector("input[name='cf-turnstile-response']");
+        return t && t.value && t.value.length > 50;
       },
-      { timeout: 20000 }
-    ).catch(() => console.log("⚠️ Botón Continuar no se habilitó en 20s — intentando click de todos modos"));
+      { timeout: 30000 }
+    ).catch(() => console.log("⚠️ Turnstile no se resolvió en 30s — intentando de todos modos"));
 
-    // Si el Turnstile aún no está resuelto, esperar un poco más
-    const btnHabilitado = await page.$eval("button.btn-primary", el => !el.disabled).catch(() => false);
-    if (!btnHabilitado) {
-      console.log("⏳ Botón aún deshabilitado — esperando 5s más por Turnstile...");
-      await page.waitForTimeout(5000);
-    }
+    const tokenFinal = await page.$eval(
+      "input[name='cf-turnstile-response']", el => el.value
+    ).catch(() => "");
+    console.log(`🔒 Turnstile token: ${tokenFinal.length > 50 ? "PRESENTE (" + tokenFinal.length + " chars)" : "AUSENTE"}`);
+
+    // Esperar que el botón también se habilite (Angular validation)
+    await page.waitForFunction(
+      () => { const btn = document.querySelector("button.btn-primary"); return btn && !btn.disabled; },
+      { timeout: 10000 }
+    ).catch(() => {});
 
     await screenshot("paso3_pre_continuar");
 
     const estadoBtn = await page.$eval("button.btn-primary", el => ({
-      texto: el.textContent.trim(),
-      disabled: el.disabled,
+      texto: el.textContent.trim(), disabled: el.disabled,
     })).catch(() => ({ texto: "?", disabled: true }));
     console.log(`🔘 Botón Continuar: "${estadoBtn.texto}" | disabled: ${estadoBtn.disabled}`);
 
@@ -135,6 +131,28 @@ async function facturarHomeDepotMexico({
     console.log("✅ Click en Continuar");
     await page.waitForTimeout(3000);
     await screenshot("paso3_post_continuar");
+
+    // Si el portal muestra error de verificación, esperar más y reintentar una vez
+    const errorVerif = await page.$eval("app-modal-alert, .modal, [class*='modal']", el =>
+      /verificaci|seguridad|captcha/i.test(el.innerText || "")
+    ).catch(() => false);
+    if (errorVerif) {
+      console.log("⚠️ Error de verificación — cerrando modal y reintentando...");
+      await page.evaluate(() => {
+        const btn = Array.from(document.querySelectorAll("button"))
+          .find(b => /aceptar|ok|cerrar/i.test(b.textContent));
+        if (btn) btn.click();
+      });
+      await page.waitForTimeout(8000);
+      // Segundo intento: esperar token y hacer click
+      await page.waitForFunction(
+        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
+        { timeout: 20000 }
+      ).catch(() => {});
+      await page.click("button.btn-primary").catch(() => {});
+      await page.waitForTimeout(3000);
+      await screenshot("paso3_reintento");
+    }
 
     // Detectar casos especiales
     const textoTrasValidar = await page.evaluate(() => document.body.innerText.toLowerCase());
