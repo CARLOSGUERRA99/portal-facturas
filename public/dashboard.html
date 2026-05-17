@@ -685,6 +685,7 @@
       arco:                ['codigoTicket', 'total'],
       gasmaz:              ['portalUrl', 'referencia', 'folio', 'total'],
       farmaciaguadalajara: ['folioFactura', 'caja', 'fechaCompra', 'noTicket'],
+      homedepot:           ['folio', 'fecha', 'total'],
       desconocido:         ['fecha', 'total'],
     };
     const LABELES = {
@@ -699,10 +700,12 @@
       caja:         'Número de caja',
       fechaCompra:  'Fecha de compra (YYYY-MM-DD)',
       noTicket:     'Número de ticket',
+      folio:        'No. de Ticket (código bajo el código de barras, 18–23 dígitos) ✏️',
     };
     const INPUT_EXTRA = {
       idVenta:   'font-family:monospace;',
       portalUrl: 'font-size:0.78rem;',
+      folio:     'font-family:monospace;letter-spacing:1px;font-size:0.95rem;border-color:#F97316;',
     };
 
     let modalTicketId = null;

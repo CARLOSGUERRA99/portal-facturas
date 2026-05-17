@@ -623,6 +623,16 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "portal": "farmaciaguadalajara",
   "ok": true
 }`,
+      homedepot: `Extrae estos datos del ticket de The Home Depot México. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "Home Depot Mexico",
+  "fecha": "DD/MM/YYYY",
+  "folio": "EL NÚMERO BAJO EL CÓDIGO DE BARRAS — es el código numérico más largo del ticket, entre 18 y 23 dígitos. Lee cada dígito con cuidado: NO omitas ni agregues dígitos. Si hay ambigüedad entre 0 y O, usa 0.",
+  "total": número sin signos,
+  "portal": "homedepot",
+  "ok": true
+}
+IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo debajo del código de barras principal del ticket. Léelo dígito por dígito. Si no puedes leerlo con certeza absoluta, devuelve null en folio.`,
       desconocido: `Extrae los datos que puedas de este ticket. Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
