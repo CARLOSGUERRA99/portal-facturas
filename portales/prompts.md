@@ -93,9 +93,9 @@ Analiza qué salió mal y dame:
 
 ---
 
-## 4. OCR — Detección de portal (Haiku, Pasada 1)
+## 4. OCR — Detección de portal (Sonnet, Pasada 1)
 
-Este es el prompt activo en server.js para detección con Haiku.
+Este es el prompt activo en server.js para detección con Sonnet.
 
 ```
 Identifica el tipo de ticket de compra. Responde SOLO este JSON:

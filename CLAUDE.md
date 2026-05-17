@@ -9,7 +9,7 @@ y un bot Puppeteer factura automáticamente en el portal del comercio.
 - **Backend:** Node.js + Express, puerto 8080
 - **Hosting:** Railway
 - **Browser automation:** Puppeteer conectado a Browserless (`wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}&stealth=true`)
-- **IA:** Anthropic SDK (`@anthropic-ai/sdk`) — Haiku para detección, Sonnet para extracción
+- **IA:** Anthropic SDK (`@anthropic-ai/sdk`) — Sonnet para detección y extracción (ambas pasadas)
 - **Storage:** Cloudflare R2 (`storage/r2.js` → `subirArchivoR2(buffer, key, contentType)`)
 - **Email:** IMAP + mailparser + unzipper para recibir XML/PDF por correo
 - **BD:** MySQL en Railway (`db.query`)
@@ -53,7 +53,7 @@ portales/
 ## Flujo principal (server.js)
 
 1. **POST /api/tickets/subir** — usuario sube imagen del ticket
-2. **Pasada 1 (Haiku)** — detecta portal: `oxxo | arco | gasmaz | farmaciaguadalajara | desconocido`
+2. **Pasada 1 (Sonnet)** — detecta portal: `oxxo | arco | gasmaz | farmaciaguadalajara | desconocido`
    - Fallback por URL del QR
    - Fallback por nombre del comercio (solo "oxxo" por nombre)
 3. **Pasada 2 (Sonnet)** — extrae datos con prompt específico por portal
