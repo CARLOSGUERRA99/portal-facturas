@@ -597,15 +597,27 @@ async function facturarHomeDepotMexico({
       });
       console.log(`✅ Click en botón: "${clicked || "no encontrado"}"`);
 
-      // Esperar que la página cambie: URL nueva, o aparezca XML/PDF/descarga, o pasen 40s
+      // Esperar a que el SAT timbre y aparezca el modal de éxito o error (hasta 40s)
       await Promise.race([
-        page.waitForNavigation({ waitUntil: "networkidle0", timeout: 40000 }).catch(() => null),
         page.waitForFunction(
-          () => /xml|pdf|descarg|factura\s*(generada|exitosa|list)/i.test(document.body.innerText),
+          () => /generada\s*correctamente|xml|pdf|descarg|reenviar\s*factura/i.test(document.body.innerText),
           { timeout: 40000 }
         ).catch(() => null),
         page.waitForTimeout(35000),
       ]);
+
+      // Modal de éxito: "¡Tu Factura ha sido generada correctamente!"
+      // Tiene un botón "Aceptar" que hay que clicar para ir a la página final
+      const aceptarClicked = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        const aceptar = btns.find(b => /aceptar/i.test(b.textContent) && b.offsetParent !== null);
+        if (aceptar) { aceptar.click(); return true; }
+        return false;
+      });
+      if (aceptarClicked) {
+        console.log("✅ Click en Aceptar — factura generada");
+        await page.waitForTimeout(2000);
+      }
     } else {
       console.log("⚠️ Modal de confirmación no apareció — esperando carga directa...");
       await page.waitForTimeout(10000);
