@@ -204,10 +204,19 @@ async function facturarHomeDepotMexico({
           val.render = function(container, params) {
             try {
               if (params && params.sitekey) window.__turnstileSitekey = params.sitekey;
-              // Guardar callback de éxito para poder inyectar token de CapSolver
-              const cb = params && (params.callback || params["callback"]);
-              if (typeof cb === "function") window.__turnstileCallbacks.push(cb);
-            } catch {}
+              // Log de diagnóstico (visible via page.on('console'))
+              console.log("[TS-INTERCEPTOR] render() params keys:", JSON.stringify(Object.keys(params || {})));
+              console.log("[TS-INTERCEPTOR] callback type:", typeof params?.callback, "| value:", String(params?.callback).slice(0, 80));
+              // Callback puede ser función directa O nombre de función global (string)
+              const cb = params?.callback;
+              if (typeof cb === "function") {
+                window.__turnstileCallbacks.push(cb);
+              } else if (typeof cb === "string" && typeof window[cb] === "function") {
+                window.__turnstileCallbacks.push(window[cb]);
+              }
+            } catch(e) {
+              console.log("[TS-INTERCEPTOR] error:", e.message);
+            }
             return orig.apply(this, arguments);
           };
         }
@@ -236,6 +245,13 @@ async function facturarHomeDepotMexico({
         try { cb(token); } catch {}
       }
     };
+  });
+
+  // Mostrar en Railway los console.log del browser (diagnóstico de Turnstile)
+  page.on("console", msg => {
+    if (msg.text().includes("[TS-INTERCEPTOR]")) {
+      console.log("🔍 [browser]", msg.text());
+    }
   });
 
   // Capturar sitekey vía respuestas HTTP: chunks Angular + URLs de Cloudflare
