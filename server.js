@@ -41,9 +41,8 @@ async function renombrarConUUID(xmlUrlOrig, pdfUrlOrig, comercio) {
       return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
     }
 
-    const slug = (comercio || 'factura').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    const prefijo = `facturas/${slug}_${uuid}`;
-    console.log(`🔖 UUID CFDI: ${uuid} → ${prefijo}`);
+    const prefijo = `facturas/${uuid}`;
+    console.log(`🔖 UUID CFDI: ${uuid}`);
 
     // Re-subir XML
     const xmlUrl = await subirArchivoR2(xmlBuf, `${prefijo}.xml`, 'application/xml');
@@ -327,7 +326,7 @@ async function migrarUUIDFacturas() {
   const [facturas] = await db.query(
     `SELECT id, comercio, xml_url, pdf_url FROM facturas
      WHERE xml_url IS NOT NULL
-       AND xml_url NOT REGEXP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'`
+       AND xml_url NOT REGEXP 'facturas/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.xml'`
   );
   if (!facturas.length) return;
   console.log(`🔖 Migración UUID: ${facturas.length} factura(s) pendiente(s) de renombrar`);
@@ -1632,10 +1631,8 @@ async function procesarTicketsPorCorreo() {
       // UUID desde el contenido del XML (fuente canónica del CFDI)
       // Fallback: timestamp si el XML no está disponible
       const uuid = xmlBuffer ? extraerUUIDcfdi(xmlBuffer) : null;
-      const slug = (ticket.comercio || 'factura').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-      const fileId = uuid || String(Date.now());
-      const prefijo = `facturas/${slug}_${fileId}`;
-      console.log(`📄 UUID CFDI: ${uuid || 'no encontrado'} → ${prefijo}`);
+      const prefijo = `facturas/${uuid || Date.now()}`;
+      console.log(`📄 UUID CFDI: ${uuid || 'no encontrado'}`);
 
       let xmlUrl = null, pdfUrl = null;
       if (xmlBuffer) xmlUrl = await subirArchivoR2(xmlBuffer, `${prefijo}.xml`, "application/xml");
