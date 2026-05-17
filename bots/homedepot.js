@@ -3,6 +3,8 @@ const { subirArchivoR2 } = require("../storage/r2");
 
 // ── CapSolver: resuelve Cloudflare Turnstile vía API ─────────────────────────
 async function resolverTurnstile(page, apiKey, capturedSitekey) {
+  // Sitekey conocido de facturacion.homedepot.com.mx (respaldo por si los métodos dinámicos fallan)
+  const SITEKEY_KNOWN = "0x4AAAAAAB6nsteTRVZ39dGq";
   let sitekey = capturedSitekey || null;
 
   // Método 1: leer main.js (mismo origen) y buscar el sitekey compilado
@@ -57,7 +59,7 @@ async function resolverTurnstile(page, apiKey, capturedSitekey) {
         for (const script of scripts) {
           const text = await fetch(script.src).then(r => r.text()).catch(() => "");
           const m = text.match(/["'`](0x[0-9a-zA-Z]{8,})["'`]/);
-          if (m) return m[1];
+          if (m) return m[1]; // grupo sin comillas
         }
       } catch {}
       return null;
@@ -66,12 +68,13 @@ async function resolverTurnstile(page, apiKey, capturedSitekey) {
   }
 
   if (!sitekey) {
-    console.log("❌ CapSolver: sitekey no encontrado en main.js, turnstile ni iframe");
-    return null;
+    sitekey = SITEKEY_KNOWN;
+    console.log(`🔑 Usando sitekey hardcodeado como respaldo: ${sitekey}`);
   }
   console.log(`🔑 Sitekey: ${sitekey}`);
 
-  const pageUrl = page.url();
+  // Eliminar hash fragment (#/portalweb) — CapSolver rechaza URLs con #
+  const pageUrl = page.url().split("#")[0];
 
   // Crear tarea en CapSolver
   const createRes = await fetch("https://api.capsolver.com/createTask", {
@@ -245,7 +248,7 @@ async function facturarHomeDepotMexico({
         const text = await resp.text().catch(() => "");
         const m = text.match(/["'`](0x[0-9a-zA-Z]{8,})["'`]/);
         if (m) {
-          capturedSitekey = m[0];
+          capturedSitekey = m[1]; // m[1] = grupo de captura sin comillas
           console.log(`🔑 Sitekey en chunk JS (${u.split("/").pop().split("?")[0]}): ${capturedSitekey}`);
         }
       } catch {}
