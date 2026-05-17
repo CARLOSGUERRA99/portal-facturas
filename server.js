@@ -10,8 +10,66 @@ const { execSync } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk");
 const nodemailer = require("nodemailer");
 const { detectarYFacturar } = require("./bots/index");
-const { borrarArchivoR2, listarArchivosR2 } = require("./storage/r2");
+const { subirArchivoR2, borrarArchivoR2, listarArchivosR2 } = require("./storage/r2");
 const { esperarFacturaPorCorreo } = require("./mail/imap");
+
+// Extrae el UUID del CFDI desde el contenido XML (atributo UUID de TimbreFiscalDigital)
+function extraerUUIDcfdi(xmlBuffer) {
+  try {
+    const xml = xmlBuffer.toString('utf8');
+    const m = xml.match(/UUID="([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i);
+    return m ? m[1].toLowerCase() : null;
+  } catch { return null; }
+}
+
+// Descarga XML desde R2, extrae UUID, re-sube XML y PDF con nombre {comercio}_{uuid},
+// borra los archivos originales y devuelve { xmlUrl, pdfUrl } con los nuevos nombres.
+// Si no puede extraer UUID, devuelve las URLs originales sin cambios.
+async function renombrarConUUID(xmlUrlOrig, pdfUrlOrig, comercio) {
+  try {
+    const r2Base = process.env.R2_PUBLIC_URL;
+    if (!r2Base || !xmlUrlOrig) return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
+
+    // Descargar XML para leer el UUID
+    const xmlResp = await fetch(xmlUrlOrig).catch(() => null);
+    if (!xmlResp?.ok) return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
+    const xmlBuf = Buffer.from(await xmlResp.arrayBuffer());
+
+    const uuid = extraerUUIDcfdi(xmlBuf);
+    if (!uuid) {
+      console.log('⚠️ UUID no encontrado en XML — se mantienen nombres originales');
+      return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
+    }
+
+    const slug = (comercio || 'factura').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    const prefijo = `facturas/${slug}_${uuid}`;
+    console.log(`🔖 UUID CFDI: ${uuid} → ${prefijo}`);
+
+    // Re-subir XML
+    const xmlUrl = await subirArchivoR2(xmlBuf, `${prefijo}.xml`, 'application/xml');
+
+    // Re-subir PDF si existe
+    let pdfUrl = pdfUrlOrig;
+    if (pdfUrlOrig) {
+      const pdfResp = await fetch(pdfUrlOrig).catch(() => null);
+      if (pdfResp?.ok) {
+        const pdfBuf = Buffer.from(await pdfResp.arrayBuffer());
+        pdfUrl = await subirArchivoR2(pdfBuf, `${prefijo}.pdf`, 'application/pdf');
+      }
+    }
+
+    // Borrar archivos originales si cambiaron de nombre
+    const xmlKeyOrig = xmlUrlOrig.replace(r2Base + '/', '');
+    const pdfKeyOrig = pdfUrlOrig?.replace(r2Base + '/', '');
+    if (xmlUrl && xmlKeyOrig !== `${prefijo}.xml`) await borrarArchivoR2(xmlKeyOrig);
+    if (pdfUrl && pdfKeyOrig && pdfKeyOrig !== `${prefijo}.pdf`) await borrarArchivoR2(pdfKeyOrig);
+
+    return { xmlUrl, pdfUrl };
+  } catch (e) {
+    console.log('⚠️ renombrarConUUID error:', e.message);
+    return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
+  }
+}
 
 // Construye el prompt de detección dinámicamente desde portales.json
 function buildPromptDeteccion() {
@@ -859,8 +917,15 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     }
 
     if (resultado.ok) {
-      const pdfUrl = resultado.pdfUrl || resultado.pdf || null;
-      const xmlUrl = resultado.xmlUrl || resultado.xml || null;
+      let pdfUrl = resultado.pdfUrl || resultado.pdf || null;
+      let xmlUrl = resultado.xmlUrl || resultado.xml || null;
+
+      // Renombrar archivos con UUID del CFDI si el bot los subió con nombre genérico
+      if (xmlUrl) {
+        const renombrado = await renombrarConUUID(xmlUrl, pdfUrl, ticket.comercio);
+        xmlUrl = renombrado.xmlUrl;
+        pdfUrl = renombrado.pdfUrl;
+      }
 
       await db.query(
         "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
@@ -1458,6 +1523,40 @@ app.post("/api/admin/tickets/:id/reprocess-imap", auth, requireAdmin, async (req
   }
 });
 
+// ── ENDPOINT ADMIN: renombrar facturas existentes con UUID del CFDI ──
+app.post("/api/admin/facturas/renombrar-uuid", auth, requireAdmin, async (req, res) => {
+  try {
+    const [facturas] = await db.query(
+      `SELECT id, ticket_id, comercio, xml_url, pdf_url FROM facturas
+       WHERE xml_url IS NOT NULL AND xml_url NOT REGEXP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+       ORDER BY id ASC`
+    );
+    console.log(`🔖 Migración UUID: ${facturas.length} factura(s) sin UUID en nombre`);
+
+    const resultados = [];
+    for (const f of facturas) {
+      try {
+        const { xmlUrl, pdfUrl } = await renombrarConUUID(f.xml_url, f.pdf_url, f.comercio);
+        if (xmlUrl !== f.xml_url || pdfUrl !== f.pdf_url) {
+          await db.query(
+            "UPDATE facturas SET xml_url = ?, pdf_url = ? WHERE id = ?",
+            [xmlUrl, pdfUrl, f.id]
+          );
+          console.log(`✅ Factura #${f.id} renombrada`);
+          resultados.push({ id: f.id, ok: true, xmlUrl, pdfUrl });
+        } else {
+          resultados.push({ id: f.id, ok: false, msg: 'UUID no extraído o nombre ya correcto' });
+        }
+      } catch (e) {
+        resultados.push({ id: f.id, ok: false, msg: e.message });
+      }
+    }
+    res.json({ ok: true, total: facturas.length, resultados });
+  } catch (err) {
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
 // ── JOB IMAP: procesar tickets en espera de correo ──
 async function procesarTicketsPorCorreo() {
   let rows;
@@ -1502,22 +1601,19 @@ async function procesarTicketsPorCorreo() {
     console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo...`);
 
     try {
-      const { xmlBuffer, pdfBuffer, subject: mailSubject } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000);
+      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000);
 
-      // Extraer UUID del subject del correo (ej: "...HOME DEPOT MEXICO - 571319ce-fddd-...")
-      const uuidMatch = (mailSubject || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
-      const fileId = uuidMatch ? uuidMatch[0] : String(Date.now());
-      const comercioSlug = (ticket.comercio || 'factura').toLowerCase().replace(/\s+/g, '_');
-      console.log(`📄 Nombre de archivos: ${comercioSlug}_${fileId}`);
+      // UUID desde el contenido del XML (fuente canónica del CFDI)
+      // Fallback: timestamp si el XML no está disponible
+      const uuid = xmlBuffer ? extraerUUIDcfdi(xmlBuffer) : null;
+      const slug = (ticket.comercio || 'factura').toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      const fileId = uuid || String(Date.now());
+      const prefijo = `facturas/${slug}_${fileId}`;
+      console.log(`📄 UUID CFDI: ${uuid || 'no encontrado'} → ${prefijo}`);
 
-      const { subirArchivoR2 } = require("./storage/r2");
       let xmlUrl = null, pdfUrl = null;
-      if (xmlBuffer) {
-        xmlUrl = await subirArchivoR2(xmlBuffer, `facturas/${comercioSlug}_${fileId}.xml`, "application/xml");
-      }
-      if (pdfBuffer) {
-        pdfUrl = await subirArchivoR2(pdfBuffer, `facturas/${comercioSlug}_${fileId}.pdf`, "application/pdf");
-      }
+      if (xmlBuffer) xmlUrl = await subirArchivoR2(xmlBuffer, `${prefijo}.xml`, "application/xml");
+      if (pdfBuffer) pdfUrl = await subirArchivoR2(pdfBuffer, `${prefijo}.pdf`, "application/pdf");
 
       await db.query(
         "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
