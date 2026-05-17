@@ -1090,9 +1090,11 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
     );
     const ticketId = insertResult.insertId;
 
-    // Auto-facturar en background para TODOS los portales (conocidos y desconocidos).
-    // Si es desconocido, ejecutarFacturacion detecta sinPortal y dispara los agentes.
     setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
+
+    if (portalDetectado === 'desconocido') {
+      return res.json({ ok: true, agenteActivado: true, comercio: datosOCR.comercio || 'este comercio', ticketId });
+    }
     res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
   } catch (err) {
     console.error("❌ Error:", err.message);

@@ -633,7 +633,13 @@
         const res = await fetch('/upload-ticket', { method: 'POST', body: formData });
         const data = await res.json();
 
-        if (data.ok && data.sinPortal) {
+        if (data.ok && data.agenteActivado) {
+          limpiarUpload();
+          alert.className = 'alert alert-success';
+          alert.innerHTML = `⚙️ <strong>Portal nuevo: ${data.comercio}</strong><br>Nuestros agentes ya están analizando el portal. Te notificaremos cuando esté listo. Consulta el avance en <a href="/mis-tickets" style="color:#27500a;font-weight:600;">Mis Tickets</a>.`;
+          alert.style.display = 'block';
+          cargarDatos();
+        } else if (data.ok && data.sinPortal) {
           limpiarUpload();
           abrirModalPortalNuevo(data.ticketId, data.comercio, data.urlQR);
           cargarDatos();
