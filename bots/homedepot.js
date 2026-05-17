@@ -69,59 +69,51 @@ async function facturarHomeDepotMexico({
   }
 
   try {
-    // ── PASO 1 — Cargar portal y esperar Turnstile ANTES de interactuar ─────────
+    // ── PASO 1 — Cargar portal ────────────────────────────────────────────────
     console.log("🌐 PASO 1 — Cargando portal...");
     await page.goto(
       "https://facturacion.homedepot.com.mx/",
       { waitUntil: "networkidle0", timeout: 40000 }
     );
     console.log(`📍 URL final: ${page.url()}`);
-
-    // Esperar Turnstile SIN tocar nada — stealth necesita que la página esté quieta
-    console.log("🔒 Esperando Turnstile (intento 1/2, 20s)...");
-    await page.waitForFunction(
-      () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
-      { timeout: 20000 }
-    ).catch(() => null);
-
-    let tokenCheck = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
-
-    if (tokenCheck.length < 50) {
-      // Recargar y dar 25s más — a veces la segunda carga lo resuelve
-      console.log("🔄 Token ausente — recargando portal...");
-      await page.reload({ waitUntil: "networkidle0", timeout: 40000 });
-      console.log("🔒 Esperando Turnstile (intento 2/2, 25s)...");
-      await page.waitForFunction(
-        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
-        { timeout: 25000 }
-      ).catch(() => null);
-      tokenCheck = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
-    }
-
-    console.log(`🔒 Turnstile token: ${tokenCheck.length > 50 ? "PRESENTE (" + tokenCheck.length + " chars)" : "AUSENTE — continuando de todos modos"}`);
     await screenshot("paso1_cargado");
 
-    // ── PASO 2 — Llenar RFC + Ticket (rápido, el token ya debería estar) ────────
+    // ── PASO 2 — Llenar RFC + Ticket ─────────────────────────────────────────
     console.log("📋 PASO 2 — Llenando RFC y No. de Ticket...");
     await page.waitForSelector("#rfc",    { timeout: 15000 });
     await page.waitForSelector("#ticket", { timeout: 10000 });
-
     await fillInput(page, "#rfc",    rfc);
     await fillInput(page, "#ticket", noTicket);
     await screenshot("paso2_rfc_ticket");
 
-    // ── PASO 3 — Esperar que Angular habilite el botón y hacer click ──────────
-    console.log("⏳ PASO 3 — Esperando que Continuar se habilite...");
-    const tokenFinal = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
+    // ── PASO 3 — Esperar Turnstile con dos intentos de 25s ───────────────────
+    // El widget Turnstile puede tardar en resolverse después de que el usuario llena los campos
+    const esperarToken = async (segundos) => {
+      const ms = segundos * 1000;
+      console.log(`🔒 Esperando Turnstile ${segundos}s...`);
+      await page.waitForFunction(
+        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
+        { timeout: ms }
+      ).catch(() => null);
+      return page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
+    };
 
-    // Esperar que el botón también se habilite (Angular validation)
+    let token = await esperarToken(25);
+
+    if (token.length < 50) {
+      console.log("⚠️ Token ausente tras 25s — esperando 25s más...");
+      token = await esperarToken(25);
+    }
+
+    console.log(`🔒 Turnstile: ${token.length > 50 ? "RESUELTO (" + token.length + " chars)" : "NO RESUELTO — intentando click de todos modos"}`);
+
+    // Esperar que Angular habilite el botón (campos válidos)
     await page.waitForFunction(
       () => { const btn = document.querySelector("button.btn-primary"); return btn && !btn.disabled; },
       { timeout: 10000 }
     ).catch(() => {});
 
     await screenshot("paso3_pre_continuar");
-
     const estadoBtn = await page.$eval("button.btn-primary", el => ({
       texto: el.textContent.trim(), disabled: el.disabled,
     })).catch(() => ({ texto: "?", disabled: true }));
@@ -132,26 +124,11 @@ async function facturarHomeDepotMexico({
     await page.waitForTimeout(3000);
     await screenshot("paso3_post_continuar");
 
-    // Si el portal muestra error de verificación, esperar más y reintentar una vez
-    const errorVerif = await page.$eval("app-modal-alert, .modal, [class*='modal']", el =>
-      /verificaci|seguridad|captcha/i.test(el.innerText || "")
-    ).catch(() => false);
-    if (errorVerif) {
-      console.log("⚠️ Error de verificación — cerrando modal y reintentando...");
-      await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll("button"))
-          .find(b => /aceptar|ok|cerrar/i.test(b.textContent));
-        if (btn) btn.click();
-      });
-      await page.waitForTimeout(8000);
-      // Segundo intento: esperar token y hacer click
-      await page.waitForFunction(
-        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
-        { timeout: 20000 }
-      ).catch(() => {});
-      await page.click("button.btn-primary").catch(() => {});
-      await page.waitForTimeout(3000);
-      await screenshot("paso3_reintento");
+    // Si sigue el error de captcha, registrar y salir
+    const textoError = await page.evaluate(() => document.body.innerText).catch(() => "");
+    if (/verificaci|seguridad/i.test(textoError)) {
+      await browser.close();
+      return { ok: false, msg: "Cloudflare Turnstile no resuelto — se requiere servicio de CAPTCHA" };
     }
 
     // Detectar casos especiales
