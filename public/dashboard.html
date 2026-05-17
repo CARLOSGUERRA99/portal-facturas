@@ -875,7 +875,23 @@
       document.querySelectorAll('.mpn-option').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       mpnFrecuencia = val;
-      document.getElementById('mpn-btn-1').disabled = false;
+      // Si es primera vez, enviar directo sin más pasos
+      if (val === 'primera') {
+        setTimeout(() => mpnEnviarPrimerVez(), 300);
+      } else {
+        document.getElementById('mpn-btn-1').disabled = false;
+      }
+    }
+
+    async function mpnEnviarPrimerVez() {
+      try {
+        await fetch(`/api/tickets/${mpnTicketId}/cuestionario-portal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ frecuencia: 'primera', acceso: null, descripcion: null, linkPortal: null, campos: [] })
+        });
+      } catch {}
+      mpnMostrarPaso('ok');
     }
 
     function mpnSeleccionarAcceso(btn, val) {
