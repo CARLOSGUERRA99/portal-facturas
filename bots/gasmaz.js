@@ -153,12 +153,32 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
 
     // ── PASO 5 — Click en Facturar ────────────────────────────────────────
     console.log("🧾 Haciendo click en Facturar...");
-    await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
-        .find(b => /facturar/i.test(b.textContent || b.value));
-      if (btn) btn.click();
+
+    // Manejar alert/dialog del portal antes del click
+    page.on("dialog", async dialog => {
+      console.log("🔔 Dialog del portal:", dialog.message());
+      await dialog.accept();
     });
-    await page.waitForTimeout(2000);
+
+    // evaluateHandle devuelve un ElementHandle real — evita "Target closed" con page.evaluate
+    const facturarBtn = await page.evaluateHandle(() =>
+      [...document.querySelectorAll("button")].find(b => b.textContent.trim() === "Facturar")
+    );
+    const btnEl = facturarBtn.asElement();
+    if (!btnEl) throw new Error("No se encontró el botón 'Facturar'");
+    await btnEl.click();
+    console.log("✅ Click en Facturar");
+
+    // Esperar navegación O pantalla de confirmación, lo que ocurra primero
+    await Promise.race([
+      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }),
+      page.waitForSelector("#divFiles",                    { visible: true, timeout: 20000 }),
+      page.waitForSelector("#divDocumentsDownload",        { visible: true, timeout: 20000 }),
+      page.waitForSelector(".alert-success, #pConfirmationMessage", { visible: true, timeout: 20000 }),
+    ]).catch(() => console.log("⚠️ Sin navegación/confirmación detectada, continuando..."));
+
+    await page.waitForTimeout(3000);
+    await screenshot("paso5_post_facturar");
 
     // Esperar pantalla de descarga
     console.log("⏳ Esperando pantalla de descarga...");
