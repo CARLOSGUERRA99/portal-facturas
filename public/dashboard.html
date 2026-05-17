@@ -193,12 +193,16 @@
           <div class="card-title">Subir ticket</div>
         </div>
 
+        <div style="background:#FFF7ED;border:1px solid #F97316;border-radius:10px;padding:9px 13px;font-size:0.78rem;color:#c2410c;margin-bottom:10px;">
+          ⚠️ Solo se acepta <strong>1 ticket a la vez</strong> — la carga masiva no está habilitada por el momento.
+        </div>
+
         <div class="upload-zone" id="upload-zone" onclick="document.getElementById('ticketFile').click()">
           <div class="upload-icon">📷</div>
           <div class="upload-text">Selecciona o arrastra tu ticket</div>
-          <div class="upload-sub">JPG, PNG, HEIC — foto del ticket de OXXO</div>
+          <div class="upload-sub">JPG, PNG, HEIC, PDF — foto o imagen del ticket</div>
         </div>
-        <input type="file" id="ticketFile" accept="image/*" style="display:none" onchange="onFileSelected()">
+        <input type="file" id="ticketFile" accept="image/*,application/pdf" style="display:none" onchange="onFileSelected()">
 
         <img class="preview-img" id="preview-img">
 
@@ -565,6 +569,15 @@
       });
     }
 
+    function limpiarUpload() {
+      document.getElementById('ticketFile').value = '';
+      const img = document.getElementById('preview-img');
+      img.src = '';
+      img.style.display = 'none';
+      document.getElementById('upload-actions').style.display = 'none';
+      document.getElementById('upload-alert').style.display = 'none';
+    }
+
     function onFileSelected() {
       const file = document.getElementById('ticketFile').files[0];
       if (!file) return;
@@ -621,9 +634,11 @@
         const data = await res.json();
 
         if (data.ok && data.sinPortal) {
+          limpiarUpload();
           abrirModalPortalNuevo(data.ticketId, data.comercio, data.urlQR);
           cargarDatos();
         } else if (data.ok) {
+          limpiarUpload();
           abrirModalConfirmacion(data.ticketId, data.datos, data.campos);
           cargarDatos();
         } else {
