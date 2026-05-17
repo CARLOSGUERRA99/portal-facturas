@@ -140,13 +140,6 @@ async function descargarArchivos(page, browser, ticketId) {
 
   return { xmlUrl, pdfUrl };
 }
-        console.log("✅ PDF subido (fetch):", pdfUrl);
-      }
-    }
-  }
-
-  return { xmlUrl, pdfUrl };
-}
 
 // ── Bot principal ─────────────────────────────────────────────────────────
 
