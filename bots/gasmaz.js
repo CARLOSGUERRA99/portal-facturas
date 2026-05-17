@@ -34,8 +34,8 @@ async function selectByText(page, selector, keywords) {
 }
 
 // Descarga XML y PDF desde #divFiles.
-// Los links usan javascript:DownloadInvoice(...) — se intercepta la respuesta de red
-// o se captura la nueva pestaña que abre la función, según cómo opere el portal.
+// Los links usan javascript:DownloadInvoice/ShowInvoiceReport — se intercepta
+// directamente en el contexto del browser sobreescribiendo fetch y XHR.
 async function descargarArchivos(page, browser, ticketId) {
   const ts = ticketId || Date.now();
   let xmlUrl = null, pdfUrl = null;
@@ -45,73 +45,98 @@ async function descargarArchivos(page, browser, ticketId) {
   );
   console.log("🔗 Links en #divFiles:", JSON.stringify(links));
 
-  // Activar interceptación de red (ignora si ya estaba activa)
-  await page.setRequestInterception(true).catch(() => {});
-  page.on("request", req => req.continue().catch(() => {}));
+  // Loggear el código fuente de las funciones JS para entender qué endpoint usan
+  const fnSources = await page.evaluate(() => {
+    const fns = ["DownloadInvoice", "ShowInvoiceReport"];
+    return Object.fromEntries(fns.map(n => [n, window[n]?.toString().substring(0, 400) || null]));
+  });
+  console.log("🔍 Funciones JS:", JSON.stringify(fnSources));
 
-  // Captura un archivo haciendo click en el link y esperando la respuesta
-  // por dos canales: respuesta en la misma página O nueva pestaña.
-  async function clickYCapturar(texto) {
-    const bufPromisePagina = new Promise(resolve => {
-      const onResp = async (response) => {
+  // Inyectar interceptor en el contexto del browser ANTES de hacer click:
+  // sobreescribe fetch y XMLHttpRequest para capturar respuestas binarias.
+  await page.evaluate(() => {
+    window.__gmCaptures = [];
+
+    const origFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const resp = await origFetch.apply(this, args);
+      try {
+        const clone = resp.clone();
+        const buf = await clone.arrayBuffer();
+        if (buf.byteLength > 200) {
+          window.__gmCaptures.push({
+            url: resp.url,
+            ct: resp.headers.get("content-type") || "",
+            bytes: Array.from(new Uint8Array(buf)),
+          });
+        }
+      } catch {}
+      return resp;
+    };
+
+    const origOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      this._gmUrl = url;
+      this.responseType = "arraybuffer"; // forzar binario para capturar
+      return origOpen.apply(this, arguments);
+    };
+    const origSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function(body) {
+      this.addEventListener("load", function() {
         try {
-          const ct  = (response.headers()["content-type"] || "").toLowerCase();
-          const url = response.url().toLowerCase();
-          const esArchivo =
-            ct.includes("xml") || ct.includes("pdf") ||
-            ct.includes("octet-stream") || ct.includes("force-download") ||
-            url.includes(".xml")  || url.includes(".pdf");
-          if (!esArchivo) return;
-          const buf = await response.buffer().catch(() => null);
-          if (buf && buf.length > 500) {
-            page.off("response", onResp);
-            resolve(buf);
+          const resp = this.response;
+          if (resp instanceof ArrayBuffer && resp.byteLength > 200) {
+            window.__gmCaptures.push({
+              url: this._gmUrl || this.responseURL || "",
+              ct: this.getResponseHeader("content-type") || "",
+              bytes: Array.from(new Uint8Array(resp)),
+            });
           }
         } catch {}
-      };
-      page.on("response", onResp);
-      setTimeout(() => { page.off("response", onResp); resolve(null); }, 12000);
-    });
+      });
+      return origSend.apply(this, arguments);
+    };
+  });
 
-    const bufPromisePestana = new Promise(resolve => {
-      const onTarget = async (target) => {
-        try {
-          const newPage = await target.page();
-          if (!newPage) return resolve(null);
-          await newPage.waitForTimeout(2000);
-          const r = await newPage.waitForResponse(r => r.status() === 200, { timeout: 10000 }).catch(() => null);
-          const buf = r ? await r.buffer().catch(() => null) : null;
-          await newPage.close().catch(() => {});
-          resolve(buf && buf.length > 500 ? buf : null);
-        } catch { resolve(null); }
-      };
-      browser.once("targetcreated", onTarget);
-      setTimeout(() => resolve(null), 12000);
-    });
+  // Click XML
+  await page.evaluate(() => {
+    const link = [...document.querySelectorAll("#divFiles a")]
+      .find(l => l.textContent.trim().toUpperCase().includes("XML"));
+    if (link) link.click();
+  });
+  await page.waitForTimeout(6000);
 
-    await page.evaluate((txt) => {
-      const link = [...document.querySelectorAll("#divFiles a")]
-        .find(l => l.textContent.trim().toUpperCase().includes(txt));
-      if (link) link.click();
-    }, texto);
+  // Click PDF
+  await page.evaluate(() => {
+    const link = [...document.querySelectorAll("#divFiles a")]
+      .find(l => l.textContent.trim().toUpperCase().includes("PDF"));
+    if (link) link.click();
+  });
+  await page.waitForTimeout(6000);
 
-    return Promise.race([bufPromisePagina, bufPromisePestana]);
+  // Recuperar capturas del contexto del browser
+  const captures = await page.evaluate(() => window.__gmCaptures || []);
+  console.log(`📥 Capturas en browser context: ${captures.length}`);
+
+  for (const c of captures) {
+    const buf = Buffer.from(c.bytes);
+    const preview = buf.toString("utf8", 0, 10);
+    const isXml = c.ct.includes("xml") || c.url.includes(".xml") || preview.startsWith("<?xml") || preview.startsWith("<cfdi");
+    const isPdf = c.ct.includes("pdf") || c.url.includes(".pdf") || buf.slice(0, 4).toString() === "%PDF";
+    console.log(`   url: ${c.url} | ct: ${c.ct} | size: ${buf.length} | isXml: ${isXml} | isPdf: ${isPdf}`);
+
+    if (isXml && !xmlUrl) {
+      xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.xml`, "application/xml");
+      console.log("✅ XML subido:", xmlUrl);
+    } else if (isPdf && !pdfUrl) {
+      pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
+      console.log("✅ PDF subido:", pdfUrl);
+    }
   }
 
-  const xmlBuf = await clickYCapturar("XML");
-  if (xmlBuf) {
-    xmlUrl = await subirArchivoR2(xmlBuf, `facturas/gasmaz_${ts}.xml`, "application/xml");
-    console.log("✅ XML subido:", xmlUrl);
-  } else {
-    console.log("⚠️ No se capturó XML por red");
-  }
-
-  const pdfBuf = await clickYCapturar("PDF");
-  if (pdfBuf) {
-    pdfUrl = await subirArchivoR2(pdfBuf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
-    console.log("✅ PDF subido:", pdfUrl);
-  } else {
-    console.log("⚠️ No se capturó PDF por red");
+  // Fallback: Puppeteer targetcreated (si el portal abrió nueva pestaña)
+  if (!xmlUrl && !pdfUrl) {
+    console.log("⚠️ Sin capturas — sin archivos disponibles en este intento");
   }
 
   // Fallback: fetch con cookies para links con URL directa (no javascript:)
