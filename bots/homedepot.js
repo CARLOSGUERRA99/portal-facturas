@@ -190,9 +190,8 @@ async function facturarHomeDepotMexico({
     } catch {}
   }
 
-  // Estrategia: interceptar window.onloadTurnstileCallback que Angular ASIGNA para saber
-  // cuándo Cloudflare termina de cargar. En ese momento envolvemos turnstile.render()
-  // justo antes de que Angular lo llame — así capturamos el callback de éxito.
+  // NO interceptamos window.turnstile (causaba que Angular viera null y nunca llamara render()).
+  // En su lugar usamos rAF para envolver turnstile.render() tan pronto como esté disponible.
   await page.evaluateOnNewDocument(() => {
     window.__turnstileCallbacks = [];
     window.__turnstileLastParams = null;
@@ -204,7 +203,7 @@ async function facturarHomeDepotMexico({
 
     function wrapTurnstileRender() {
       const ts = window.turnstile;
-      if (!ts || typeof ts.render !== "function" || ts.__hd_wrapped) return;
+      if (!ts || typeof ts.render !== "function" || ts.__hd_wrapped) return false;
       const orig = ts.render.bind(ts);
       ts.render = function(container, params) {
         try {
@@ -215,43 +214,23 @@ async function facturarHomeDepotMexico({
           });
           if (params?.sitekey) window.__turnstileSitekey = params.sitekey;
           const cb = params?.callback;
-          if (typeof cb === "function") {
-            window.__turnstileCallbacks.push(cb);
-          } else if (typeof cb === "string" && typeof window[cb] === "function") {
+          if (typeof cb === "function") window.__turnstileCallbacks.push(cb);
+          else if (typeof cb === "string" && typeof window[cb] === "function")
             window.__turnstileCallbacks.push(window[cb]);
-          }
         } catch {}
         return orig(container, params);
       };
       ts.__hd_wrapped = true;
+      return true;
     }
 
-    // Interceptar la asignación de window.onloadTurnstileCallback:
-    // Angular lo asigna para recibir el aviso de que Cloudflare está listo.
-    // Lo envolvemos para también envolver turnstile.render() en ese momento.
-    let _angularOnload = null;
-    Object.defineProperty(window, "onloadTurnstileCallback", {
-      configurable: true,
-      enumerable: true,
-      get() { return _angularOnload; },
-      set(fn) {
-        _angularOnload = function() {
-          wrapTurnstileRender(); // envolver render ANTES de que Angular lo llame
-          return typeof fn === "function" ? fn.apply(this, arguments) : undefined;
-        };
-      },
-    });
+    // Usar rAF para envolver render() lo más pronto posible (antes de que Angular llame a ngAfterViewInit)
+    function rafWrap() {
+      if (!wrapTurnstileRender()) requestAnimationFrame(rafWrap);
+    }
+    requestAnimationFrame(rafWrap);
 
-    // Respaldo: interceptar asignación directa de window.turnstile
-    let _ts;
-    Object.defineProperty(window, "turnstile", {
-      configurable: true,
-      enumerable: true,
-      get() { return _ts; },
-      set(val) { _ts = val; },
-    });
-
-    // MutationObserver para iframes de Cloudflare (respaldo)
+    // MutationObserver para iframes de Cloudflare (respaldo sitekey)
     const obs = new MutationObserver(() => {
       if (window.__turnstileSitekey) return;
       const iframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]');
@@ -358,8 +337,7 @@ async function facturarHomeDepotMexico({
     } else if (capsolverKey) {
       const capToken = await resolverTurnstile(page, capsolverKey, capturedSitekey) || "";
       if (capToken) {
-        // Llamar directamente el callback de Angular que registró ngx-turnstile
-        // Esto actualiza el reactive form sin necesitar el iframe ni el input hidden
+        // Método 1: callbacks capturados por nuestro wrapper de render()
         const callbacksLlamados = await page.evaluate((token) => {
           if (typeof window.__injectTurnstileToken === "function") {
             window.__injectTurnstileToken(token);
@@ -367,9 +345,42 @@ async function facturarHomeDepotMexico({
           }
           return 0;
         }, capToken);
-        console.log(`✅ Token CapSolver inyectado via callback Angular (${callbacksLlamados} callbacks, ${capToken.length} chars)`);
+        console.log(`🔑 Callbacks render(): ${callbacksLlamados} | render params: ${await page.evaluate(() => window.__turnstileLastParams || "nunca llamado").catch(() => "?")}`);
 
-        // También intentar el input hidden por si acaso existe
+        // Método 2: inyección directa via __ngContext__ de Angular Ivy (ControlValueAccessor.onChange)
+        const ngResult = await page.evaluate((token) => {
+          const log = [];
+          const elems = [
+            document.querySelector("ngx-turnstile"),
+            ...Array.from(document.querySelectorAll("*")).filter(e => e.__ngContext__ && e.tagName && e.tagName.includes("-")),
+          ].filter(Boolean);
+          for (const el of elems) {
+            const ctx = el.__ngContext__;
+            const arr = Array.isArray(ctx) ? ctx : [];
+            for (let i = 0; i < arr.length; i++) {
+              const item = arr[i];
+              if (!item || typeof item !== "object") continue;
+              if (typeof item.onChange === "function") {
+                try { item.onChange(token); log.push("onChange@" + el.tagName + "[" + i + "]"); } catch(e) { log.push("ERR:" + e.message); }
+              }
+              if (item.resolved && typeof item.resolved.emit === "function") {
+                try { item.resolved.emit(token); log.push("emit@" + el.tagName + "[" + i + "]"); } catch {}
+              }
+            }
+            // window.ng (Angular dev mode)
+            if (window.ng) {
+              const comp = window.ng.getComponent?.(el);
+              if (comp) {
+                if (typeof comp.onChange === "function") { comp.onChange(token); log.push("ng.onChange"); }
+                if (comp.resolved?.emit) { comp.resolved.emit(token); log.push("ng.emit"); }
+              }
+            }
+          }
+          return log.join(" | ") || "no componentes encontrados";
+        }, capToken);
+        console.log(`🔑 Angular __ngContext__ injection: ${ngResult}`);
+
+        // Método 3: input hidden por si existe
         await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
           const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
           if (setter) setter.call(el, t); else el.value = t;
@@ -377,7 +388,7 @@ async function facturarHomeDepotMexico({
           el.dispatchEvent(new Event("change", { bubbles: true }));
         }, capToken).catch(() => {});
 
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(800);
       }
     } else {
       console.log("⚠️ CAPSOLVER_API_KEY no configurada — intentando sin resolver captcha");
