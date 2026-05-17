@@ -52,7 +52,7 @@ async function extraerAdjuntos(parsed) {
 }
 
 // Busca en el inbox correos CFDI sin leer desde los últimos 60 minutos
-// ticketCode se acepta para futuro uso (matching por referencia interna)
+// Retorna { xmlBuffer, pdfBuffer, subject } para que el caller pueda extraer el UUID/folio del subject
 async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     const imap = new Imap({
@@ -106,11 +106,12 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
 async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject) {
   console.log(`📨 Correos sin leer encontrados: ${uids.length} (UIDs: ${uids.join(', ')})`);
 
+  // seqno → número de secuencia del mensaje para poder marcar como leído
   const fetch = imap.fetch(uids, { bodies: '' });
   const resultados = [];
   let pendientes = uids.length;
 
-  fetch.on('message', (msg) => {
+  fetch.on('message', (msg, seqno) => {
     msg.on('body', (stream) => {
       simpleParser(stream, async (err, parsed) => {
         pendientes--;
@@ -139,7 +140,14 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject) {
 
         if (xmlBuffer || pdfBuffer) {
           console.log(`   ↳ ✅ Archivos extraídos — XML: ${!!xmlBuffer} | PDF: ${!!pdfBuffer}`);
-          resultados.push({ xmlBuffer, pdfBuffer });
+
+          // Marcar el correo como leído para que futuras búsquedas no lo reprocesen
+          imap.addFlags(seqno, ['\\Seen'], (flagErr) => {
+            if (flagErr) console.log(`⚠️ No se pudo marcar como leído (seqno ${seqno}):`, flagErr.message);
+            else console.log(`📭 Correo marcado como leído (seqno: ${seqno})`);
+          });
+
+          resultados.push({ xmlBuffer, pdfBuffer, subject });
         } else {
           console.log(`   ↳ ⚠️ Correo CFDI sin adjuntos XML/PDF`);
         }

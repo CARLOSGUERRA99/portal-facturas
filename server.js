@@ -1502,17 +1502,21 @@ async function procesarTicketsPorCorreo() {
     console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo...`);
 
     try {
-      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000);
+      const { xmlBuffer, pdfBuffer, subject: mailSubject } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000);
 
-      const ts = Date.now();
+      // Extraer UUID del subject del correo (ej: "...HOME DEPOT MEXICO - 571319ce-fddd-...")
+      const uuidMatch = (mailSubject || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+      const fileId = uuidMatch ? uuidMatch[0] : String(Date.now());
+      const comercioSlug = (ticket.comercio || 'factura').toLowerCase().replace(/\s+/g, '_');
+      console.log(`📄 Nombre de archivos: ${comercioSlug}_${fileId}`);
+
+      const { subirArchivoR2 } = require("./storage/r2");
       let xmlUrl = null, pdfUrl = null;
       if (xmlBuffer) {
-        const { subirArchivoR2 } = require("./storage/r2");
-        xmlUrl = await subirArchivoR2(xmlBuffer, `facturas/imap_${ts}.xml`, "application/xml");
+        xmlUrl = await subirArchivoR2(xmlBuffer, `facturas/${comercioSlug}_${fileId}.xml`, "application/xml");
       }
       if (pdfBuffer) {
-        const { subirArchivoR2 } = require("./storage/r2");
-        pdfUrl = await subirArchivoR2(pdfBuffer, `facturas/imap_${ts}.pdf`, "application/pdf");
+        pdfUrl = await subirArchivoR2(pdfBuffer, `facturas/${comercioSlug}_${fileId}.pdf`, "application/pdf");
       }
 
       await db.query(
