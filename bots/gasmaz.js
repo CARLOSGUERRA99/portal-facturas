@@ -1,195 +1,202 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
-async function facturarGasmaz({ referencia, folio, total, rfc, email, ticketId, portalUrl }) {
-  console.log("🤖 Iniciando bot Gasmaz/NexusFuel...");
+// ── Helpers reutilizables ──────────────────────────────────────────────────
 
-  const url = (portalUrl && portalUrl.includes('nexusfuel')) ? portalUrl : 'https://gasmazfactura.nexusfuel.mx/';
+async function fillInput(page, selector, value) {
+  await page.click(selector);
+  await page.waitForTimeout(150);
+  await page.keyboard.down("Control");
+  await page.keyboard.press("a");
+  await page.keyboard.up("Control");
+  await page.keyboard.press("Delete");
+  await page.waitForTimeout(80);
+  await page.keyboard.type(String(value), { delay: 60 });
+  await page.waitForTimeout(150);
+  const actual = await page.$eval(selector, el => el.value).catch(() => "?");
+  console.log(`📝 ${selector}: "${actual}"`);
+}
+
+// Selecciona la primera opción cuyo texto contiene alguna de las keywords (case-insensitive)
+async function selectByText(page, selector, keywords) {
+  const found = await page.$eval(selector, (el, kws) => {
+    const opt = Array.from(el.options).find(o =>
+      kws.some(k => o.text.toLowerCase().includes(k.toLowerCase()))
+    );
+    if (!opt) return null;
+    el.value = opt.value;
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("input",  { bubbles: true }));
+    return opt.text;
+  }, keywords);
+  console.log(`📝 ${selector}: "${found || 'NO ENCONTRADO'}"`);
+  return !!found;
+}
+
+// ── Bot principal ─────────────────────────────────────────────────────────
+
+async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regimenFiscal, usoCfdi, ticketId, portalUrl }) {
+  console.log("🤖 Iniciando bot Gasmaz/NexusFuel...");
+  console.log(`   Referencia: ${referencia} | Folio: ${folio} | Total: ${total} | RFC: ${rfc}`);
+
+  const url = (portalUrl && portalUrl.startsWith("http")) ? portalUrl : "https://redmaxfactura.nexusfuel.mx/";
   console.log("🌐 URL portal:", url);
 
-  const _gmToken = process.env.BROWSERLESS_TOKEN;
-  if (!_gmToken) throw new Error('BROWSERLESS_TOKEN no definido');
+  const token = process.env.BROWSERLESS_TOKEN;
+  if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
+
   const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${_gmToken}`
+    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true`
   });
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
-  await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+  );
+  await page.setExtraHTTPHeaders({
+    "Accept-Language": "es-MX,es;q=0.9,en;q=0.8",
+  });
+
+  async function screenshot(label) {
+    try {
+      const buf = await page.screenshot({ fullPage: false });
+      const u = await subirArchivoR2(buf, `debug/gasmaz_${label}_${Date.now()}.png`, "image/png");
+      console.log(`📸 [${label}]: ${u}`);
+    } catch {}
+  }
 
   try {
+    // ── PASO 1 — Cargar portal ────────────────────────────────────────────
+    console.log("🌐 Cargando portal...");
     await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 });
-    await page.waitForTimeout(2000);
+    await page.waitForSelector("#txtReferencia", { timeout: 15000 });
+    await screenshot("paso1_cargado");
+    console.log("✅ Portal cargado");
 
-    // ── PASO 1 — Llenar campos del ticket ──
+    // ── PASO 2 — Llenar campos del paso 1 ────────────────────────────────
     console.log("📋 Llenando campos del ticket...");
-    await page.waitForSelector('input', { timeout: 10000 });
+    await fillInput(page, "#txtReferencia", referencia);
+    await fillInput(page, "#txtFolio",      folio);
+    await fillInput(page, "#txtAmount",     parseFloat(total).toFixed(2));
+    await fillInput(page, "#txtRFC",        rfc);
+    await screenshot("paso2_campos_ticket");
 
-    const inputs = await page.$$('input[type="text"], input:not([type])');
-    if (inputs[0]) { await inputs[0].click({ clickCount: 3 }); await inputs[0].type(String(referencia), { delay: 80 }); }
-    if (inputs[1]) { await inputs[1].click({ clickCount: 3 }); await inputs[1].type(String(folio), { delay: 80 }); }
-    if (inputs[2]) { await inputs[2].click({ clickCount: 3 }); await inputs[2].type(parseFloat(total).toFixed(2), { delay: 80 }); }
-    console.log(`✅ Referencia: ${referencia}, Folio: ${folio}, Total: ${parseFloat(total).toFixed(2)}`);
-
-    // RFC — verificar y corregir si es necesario
-    const rfcInput = await page.$('input[value*="GPR"], input#rfc, input[placeholder*="RFC"]');
-    if (rfcInput) {
-      const rfcVal = await rfcInput.evaluate(el => el.value);
-      if (rfcVal !== rfc) {
-        console.log(`⚠️ RFC en campo: "${rfcVal}", reemplazando con: "${rfc}"`);
-        await rfcInput.click({ clickCount: 3 });
-        await rfcInput.type(rfc, { delay: 80 });
-      } else {
-        console.log("✅ RFC correcto:", rfcVal);
-      }
-    }
+    // ── PASO 3 — Click en Buscar ──────────────────────────────────────────
+    console.log("🔍 Haciendo click en Buscar...");
+    await page.click("#btnNext");
     await page.waitForTimeout(500);
 
-    // ── PASO 2 — Verificar selects ──
-    console.log("📋 Configurando selects...");
-    await page.evaluate(() => {
-      const selects = Array.from(document.querySelectorAll('select'));
+    // Esperar a que el paso 2 aparezca (display:none → visible)
+    console.log("⏳ Esperando campos del paso 2...");
+    await page.waitForSelector("#txtName", { visible: true, timeout: 15000 });
+    await screenshot("paso3_paso2_visible");
+    console.log("✅ Paso 2 visible");
 
-      // Régimen fiscal — 601 General de Ley
-      const regimen = selects.find(s =>
-        Array.from(s.options).some(o => o.text.includes('601') || o.text.includes('General de Ley'))
-      );
-      if (regimen) {
-        const opt = Array.from(regimen.options)
-          .find(o => o.text.includes('601') || o.text.includes('General de Ley'));
-        if (opt) regimen.value = opt.value;
-      }
+    // ── PASO 4 — Llenar datos de facturación ─────────────────────────────
+    console.log("📋 Llenando datos de facturación...");
 
-      // Uso CFDI — Gastos en general
-      const cfdi = selects.find(s =>
-        Array.from(s.options).some(o => o.text.toLowerCase().includes('gasto'))
-      );
-      if (cfdi) {
-        const opt = Array.from(cfdi.options)
-          .find(o => o.text.toLowerCase().includes('gasto'));
-        if (opt) cfdi.value = opt.value;
-      }
-
-      // Forma de pago — Tarjeta de débito
-      const pago = selects.find(s =>
-        Array.from(s.options).some(o => o.text.toLowerCase().includes('débito') || o.text.toLowerCase().includes('debito'))
-      );
-      if (pago) {
-        const opt = Array.from(pago.options)
-          .find(o => o.text.toLowerCase().includes('débito') || o.text.toLowerCase().includes('debito'));
-        if (opt) pago.value = opt.value;
-      }
-    });
-    await page.waitForTimeout(500);
-
-    // ── PASO 3 — Correo de captura IMAP ──
-    const correoInput = await page.$('input[placeholder*="orreo"], input[type="email"]');
-    if (correoInput) {
-      await correoInput.click({ clickCount: 3 });
-      await correoInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
-      console.log("📧 Correo de captura ingresado");
+    if (razonSocial) {
+      await fillInput(page, "#txtName", razonSocial);
     }
-    await page.waitForTimeout(300);
 
-    const ss1 = await page.screenshot({ encoding: "base64" });
-    console.log("📸 Screenshot antes de facturar");
+    await fillInput(page, "#txtEmail", "buzonfacturas@serviciosga.site");
 
-    // ── PASO 4 — Click Facturar ──
+    // Régimen fiscal
+    const regimenKeywords = regimenFiscal
+      ? [String(regimenFiscal)]
+      : ["601", "General de Ley Personas Morales", "General de Ley"];
+    await selectByText(page, "#cmbRegimen", regimenKeywords);
+
+    // Uso CFDI
+    const cfdiKeywords = usoCfdi
+      ? [String(usoCfdi)]
+      : ["G03", "Gastos en general", "Gastos"];
+    await selectByText(page, "#cmbUsoCFDI", cfdiKeywords);
+
+    // Forma de pago — tarjeta de débito por defecto
+    await selectByText(page, "#cmbFormaPago", ["débito", "debito", "Tarjeta de déb"]);
+
+    await screenshot("paso4_datos_facturacion");
+    console.log("✅ Datos de facturación completos");
+
+    // ── PASO 5 — Click en Facturar ────────────────────────────────────────
     console.log("🧾 Haciendo click en Facturar...");
     await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, input[type="submit"]'));
-      const btn = btns.find(b => b.textContent?.includes('Facturar') || b.value?.includes('Facturar'));
+      const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
+        .find(b => /facturar/i.test(b.textContent || b.value));
       if (btn) btn.click();
     });
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(2000);
 
-    // ── PASO 5 — Esperar pantalla de descarga y capturar archivos ──
-    await page.waitForFunction(() => {
-      const body = document.body.innerText;
-      return body.includes('PDF') && body.includes('XML');
-    }, { timeout: 15000 });
-    console.log("✅ Pantalla de descarga detectada");
+    // Esperar pantalla de descarga
+    console.log("⏳ Esperando pantalla de descarga...");
+    await page.waitForSelector("#divFiles", { visible: true, timeout: 20000 });
+    await screenshot("paso5_descarga");
+    console.log("✅ Pantalla de descarga lista");
 
-    let pdfUrl = null;
-    let xmlUrl = null;
+    // ── PASO 6 — Descargar PDF y XML desde #divFiles ──────────────────────
+    let pdfUrl = null, xmlUrl = null;
 
-    // PDF
-    const newPagePdfPromise = new Promise(resolve =>
-      browser.once('targetcreated', t => resolve(t.page()))
-    );
-    const pdfClicked = await page.evaluate(() => {
-      const links = Array.from(document.querySelectorAll('a, button'));
-      const btn = links.find(b => b.textContent?.includes('PDF') || b.href?.includes('.pdf'));
-      if (btn) { btn.click(); return true; }
-      return false;
-    });
-    if (pdfClicked) {
+    async function interceptarDescarga(clickFn) {
+      const newPagePromise = new Promise(resolve =>
+        browser.once("targetcreated", t => resolve(t.page()))
+      );
+      await clickFn();
       const newPage = await Promise.race([
-        newPagePdfPromise,
-        new Promise((_, r) => setTimeout(() => r(), 8000))
+        newPagePromise,
+        new Promise((_, r) => setTimeout(r, 10000)),
       ]).catch(() => null);
-      if (newPage) {
-        await newPage.waitForTimeout(2000);
-        const response = await newPage.waitForResponse(
-          r => r.status() === 200, { timeout: 10000 }
-        ).catch(() => null);
-        if (response) {
-          const buf = await response.buffer().catch(() => null);
-          if (buf) {
-            pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${Date.now()}.pdf`, 'application/pdf');
-            console.log('✅ PDF subido a R2:', pdfUrl);
-          }
-        }
-        await newPage.close().catch(() => {});
-      }
+      if (!newPage) return null;
+      await newPage.waitForTimeout(2000);
+      const response = await newPage.waitForResponse(r => r.status() === 200, { timeout: 10000 }).catch(() => null);
+      const buf = response ? await response.buffer().catch(() => null) : null;
+      await newPage.close().catch(() => {});
+      return buf;
     }
 
-    // XML
-    const newPageXmlPromise = new Promise(resolve =>
-      browser.once('targetcreated', t => resolve(t.page()))
-    );
-    const xmlClicked = await page.evaluate(() => {
-      const links = Array.from(document.querySelectorAll('a, button'));
-      const btn = links.find(b => b.textContent?.includes('XML') || b.href?.includes('.xml'));
-      if (btn) { btn.click(); return true; }
-      return false;
-    });
-    if (xmlClicked) {
-      const newPage = await Promise.race([
-        newPageXmlPromise,
-        new Promise((_, r) => setTimeout(() => r(), 8000))
-      ]).catch(() => null);
-      if (newPage) {
-        await newPage.waitForTimeout(2000);
-        const response = await newPage.waitForResponse(
-          r => r.status() === 200, { timeout: 10000 }
-        ).catch(() => null);
-        if (response) {
-          const buf = await response.buffer().catch(() => null);
-          if (buf) {
-            xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${Date.now()}.xml`, 'application/xml');
-            console.log('✅ XML subido a R2:', xmlUrl);
-          }
-        }
-        await newPage.close().catch(() => {});
-      }
-    }
+    const pdfBuf = await interceptarDescarga(() =>
+      page.$eval("#divFiles", container => {
+        const el = Array.from(container.querySelectorAll("a, button")).find(
+          b => /pdf/i.test(b.textContent) || /\.pdf/i.test(b.href || "")
+        );
+        if (el) el.click();
+      })
+    ).catch(() => null);
+
+    const xmlBuf = await interceptarDescarga(() =>
+      page.$eval("#divFiles", container => {
+        const el = Array.from(container.querySelectorAll("a, button")).find(
+          b => /xml/i.test(b.textContent) || /\.xml/i.test(b.href || "")
+        );
+        if (el) el.click();
+      })
+    ).catch(() => null);
 
     await browser.close();
 
-    if (!xmlUrl && !pdfUrl) {
-      console.log('⚠️ Sin archivos directos, IMAP recogerá del correo');
+    if (pdfBuf && pdfBuf.length > 100) {
+      pdfUrl = await subirArchivoR2(pdfBuf, `facturas/gasmaz_${ticketId || Date.now()}.pdf`, "application/pdf");
+      console.log("✅ PDF subido:", pdfUrl);
+    }
+    if (xmlBuf && xmlBuf.length > 100) {
+      xmlUrl = await subirArchivoR2(xmlBuf, `facturas/gasmaz_${ticketId || Date.now()}.xml`, "application/xml");
+      console.log("✅ XML subido:", xmlUrl);
+    }
+
+    if (!pdfUrl && !xmlUrl) {
+      console.log("⚠️ Sin archivos directos — IMAP recogerá del correo");
       return { ok: true, procesandoCorreo: true };
     }
 
+    console.log(`✅ Gasmaz OK — PDF: ${pdfUrl} | XML: ${xmlUrl}`);
     return { ok: true, xmlUrl, pdfUrl };
 
   } catch (err) {
     console.error("❌ Error en bot Gasmaz:", err.message);
-    let screenshot = null;
-    try { screenshot = await page.screenshot({ encoding: "base64" }); } catch {}
-    await browser.close();
-    return { ok: false, msg: err.message, screenshot };
+    await screenshot("error").catch(() => {});
+    try { await browser.close(); } catch {}
+    return { ok: false, msg: err.message };
   }
 }
 
