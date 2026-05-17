@@ -123,7 +123,7 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
 
     const cfdiKeywords = usoCfdi
       ? [String(usoCfdi)]
-      : ["gastos en general", "gasto general", "gasto"];
+      : ["Gastos en general"];
     await selectByText(page, "#selVoucherUse", cfdiKeywords);
 
     // Validar que el CFDI quedó seleccionado
