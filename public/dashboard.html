@@ -289,15 +289,16 @@
             <span>Facturo seguido aquí</span>
           </button>
         </div>
-        <div style="margin-top:20px;display:flex;justify-content:flex-end;">
-          <button class="btn btn-primary btn-sm" id="mpn-btn-1" onclick="mpnSiguiente(2)" disabled>Siguiente →</button>
+        <div style="margin-top:20px;display:flex;align-items:center;justify-content:space-between;">
+          <button class="btn btn-ghost btn-sm" onclick="mpnEnviarSinInfo()" style="color:var(--text-muted);font-size:0.8rem;">No conozco el proceso →</button>
+          <button class="btn btn-primary btn-sm" id="mpn-btn-1" onclick="mpnPaso1Siguiente()" disabled>Siguiente →</button>
         </div>
       </div>
 
       <!-- Paso 2 -->
       <div id="mpn-paso-2" style="padding:24px 26px;display:none;">
         <div style="font-size:0.93rem;font-weight:700;color:var(--text);margin-bottom:6px;">¿Cómo facturas normalmente aquí?</div>
-        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">Cuéntanos el proceso paso a paso, con el mayor detalle posible.</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">Cuéntanos el proceso. Si no recuerdas, puedes saltarte este paso.</div>
         <div style="margin-bottom:14px;">
           <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:8px;">¿Cómo accedes al portal?</div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -307,25 +308,27 @@
           </div>
         </div>
         <div>
-          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:6px;">Describe el proceso que sigues:</div>
-          <textarea id="mpn-descripcion" placeholder='Ej: "Entro a la página, pongo el número del ticket, luego mi RFC, selecciono G03 Gastos en general y descargo el PDF..."' style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 14px;font-size:0.83rem;font-family:inherit;color:var(--text);background:#fafcf8;resize:vertical;min-height:90px;outline:none;box-sizing:border-box;line-height:1.5;" oninput="mpnValidarPaso2()"></textarea>
+          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:6px;">Describe el proceso (opcional):</div>
+          <textarea id="mpn-descripcion" placeholder='Ej: "Entro a la página, pongo el número del ticket, luego mi RFC, selecciono G03 Gastos en general y descargo el PDF..."' style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 14px;font-size:0.83rem;font-family:inherit;color:var(--text);background:#fafcf8;resize:vertical;min-height:80px;outline:none;box-sizing:border-box;line-height:1.5;"></textarea>
         </div>
         <div style="margin-top:16px;display:flex;gap:10px;justify-content:space-between;">
           <button class="btn btn-ghost btn-sm" onclick="mpnSiguiente(1)">← Atrás</button>
-          <button class="btn btn-primary btn-sm" id="mpn-btn-2" onclick="mpnSiguiente(3)" disabled>Siguiente →</button>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-ghost btn-sm" onclick="mpnSiguiente(3)" style="color:var(--text-muted);font-size:0.8rem;">Saltar →</button>
+            <button class="btn btn-primary btn-sm" onclick="mpnSiguiente(3)">Siguiente →</button>
+          </div>
         </div>
       </div>
 
       <!-- Paso 3 -->
       <div id="mpn-paso-3" style="padding:24px 26px;display:none;">
-        <div style="font-size:0.93rem;font-weight:700;color:var(--text);margin-bottom:6px;">Un poco más de detalle</div>
-        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">Opcional pero muy útil para configurarlo más rápido.</div>
+        <div style="font-size:0.93rem;font-weight:700;color:var(--text);margin-bottom:4px;">Link del portal de facturación</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">Si no lo tienes, no hay problema — intentaremos encontrarlo automáticamente.</div>
         <div style="margin-bottom:16px;">
-          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:6px;">Link del portal (si lo tienes)</div>
           <input id="mpn-link" type="url" placeholder="https://..." style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:10px 14px;font-size:0.84rem;font-family:inherit;background:#fafcf8;outline:none;box-sizing:border-box;">
         </div>
         <div>
-          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:10px;">¿Qué datos te piden en el portal?</div>
+          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:10px;">¿Qué datos te piden? (opcional)</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             <label class="mpn-check"><input type="checkbox" value="folio"> Número de ticket / folio</label>
             <label class="mpn-check"><input type="checkbox" value="fecha"> Fecha de compra</label>
@@ -339,7 +342,7 @@
         </div>
         <div style="margin-top:20px;display:flex;gap:10px;justify-content:space-between;">
           <button class="btn btn-ghost btn-sm" onclick="mpnSiguiente(2)">← Atrás</button>
-          <button class="btn btn-primary btn-sm" id="mpn-btn-3" onclick="mpnEnviar()">Enviar reporte</button>
+          <button class="btn btn-primary btn-sm" id="mpn-btn-3" onclick="mpnEnviar()">Listo, enviar →</button>
         </div>
       </div>
 
@@ -896,36 +899,28 @@
       document.querySelectorAll('.mpn-option').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       mpnFrecuencia = val;
-      // Si es primera vez, enviar directo sin más pasos
-      if (val === 'primera') {
-        setTimeout(() => mpnEnviarPrimerVez(), 300);
-      } else {
-        document.getElementById('mpn-btn-1').disabled = false;
-      }
+      document.getElementById('mpn-btn-1').disabled = false;
     }
 
-    async function mpnEnviarPrimerVez() {
-      try {
-        await fetch(`/api/tickets/${mpnTicketId}/cuestionario-portal`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ frecuencia: 'primera', acceso: null, descripcion: null, linkPortal: null, campos: [] })
-        });
-      } catch {}
-      mpnMostrarPaso('ok');
+    function mpnPaso1Siguiente() {
+      // Primera vez → saltar al paso 3 (no conocen el proceso)
+      // Ocasional / frecuente → paso 2 (conocen el proceso)
+      mpnSiguiente(mpnFrecuencia === 'primera' ? 3 : 2);
+    }
+
+    // Residente no conoce nada — ir directo al paso final sin forzar info
+    function mpnEnviarSinInfo() {
+      mpnFrecuencia = mpnFrecuencia || 'desconocido';
+      mpnSiguiente(3);
     }
 
     function mpnSeleccionarAcceso(btn, val) {
       document.querySelectorAll('.mpn-chip').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
       mpnAcceso = val;
-      mpnValidarPaso2();
     }
 
-    function mpnValidarPaso2() {
-      const desc = document.getElementById('mpn-descripcion').value.trim();
-      document.getElementById('mpn-btn-2').disabled = desc.length < 10;
-    }
+    function mpnValidarPaso2() { /* descripción ahora es opcional */ }
 
     function mpnSiguiente(paso) {
       mpnMostrarPaso(paso);
