@@ -1039,6 +1039,41 @@ app.post("/api/portales-pendientes", auth, requireAdmin, async (req, res) => {
   }
 });
 
+// ── CUESTIONARIO PORTAL NUEVO (usuario reporta cómo factura) ──
+app.post("/api/tickets/:id/cuestionario-portal", auth, async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const { frecuencia, acceso, descripcion, linkPortal, campos } = req.body;
+
+    const [[ticket]] = await db.query(
+      "SELECT id, comercio, user_id FROM tickets WHERE id = ? AND user_id = ?",
+      [ticketId, req.session.userId]
+    );
+    if (!ticket) return res.json({ ok: false, msg: "Ticket no encontrado" });
+
+    const notas = JSON.stringify({ frecuencia, acceso, descripcion, linkPortal, campos });
+
+    await db.query(
+      "INSERT INTO portales_pendientes (nombre, url, notas, registrado_por) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE notas = VALUES(notas)",
+      [ticket.comercio, linkPortal || "sin-url", notas, req.session.userId]
+    );
+
+    // Notificar al admin
+    const [admins] = await db.query("SELECT id FROM users WHERE rol = 'admin'");
+    for (const admin of admins) {
+      await crearNotificacion(
+        admin.id,
+        "portal_pendiente",
+        `Nuevo portal: "${ticket.comercio}" — el usuario explicó cómo factura. Revisa Portales Pendientes.`
+      );
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 // ── DEBUG SCREENSHOT ──
 app.get("/debug-screenshot", auth, async (req, res) => {
   const resultado = await detectarYFacturar({

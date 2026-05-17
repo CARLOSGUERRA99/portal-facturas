@@ -48,6 +48,38 @@
 
     .chart-wrap { position: relative; height: 200px; }
 
+    @keyframes slideUp {
+      from { opacity:0; transform:translateY(20px); }
+      to   { opacity:1; transform:translateY(0); }
+    }
+    .mpn-step-dot {
+      width:10px;height:10px;border-radius:50%;
+      background:rgba(255,255,255,0.3);flex-shrink:0;transition:background 0.2s;
+    }
+    .mpn-step-dot.active { background:white; }
+    .mpn-option {
+      display:flex;align-items:center;gap:12px;padding:13px 16px;
+      border:1.5px solid var(--border);border-radius:13px;background:white;
+      font-family:inherit;font-size:0.875rem;color:var(--text);cursor:pointer;
+      text-align:left;transition:all 0.15s;font-weight:500;
+    }
+    .mpn-option:hover { border-color:var(--green);background:var(--green-light); }
+    .mpn-option.selected { border-color:var(--green);background:var(--green-light);color:var(--green);font-weight:600; }
+    .mpn-chip {
+      padding:7px 14px;border:1.5px solid var(--border);border-radius:20px;
+      background:white;font-family:inherit;font-size:0.8rem;color:var(--text-muted);
+      cursor:pointer;transition:all 0.15s;font-weight:500;
+    }
+    .mpn-chip:hover { border-color:var(--green);color:var(--green);background:var(--green-light); }
+    .mpn-chip.selected { border-color:var(--green);background:var(--green);color:white; }
+    .mpn-check {
+      display:flex;align-items:center;gap:8px;padding:8px 12px;
+      border:1.5px solid var(--border);border-radius:10px;cursor:pointer;
+      font-size:0.8rem;color:var(--text);background:white;transition:all 0.15s;
+    }
+    .mpn-check:hover { border-color:var(--green);background:var(--green-light); }
+    .mpn-check input { accent-color:var(--green);width:15px;height:15px;cursor:pointer; }
+
     @media (max-width: 700px) {
       .two-col { grid-template-columns: 1fr; }
       .greeting-card { flex-direction: column; align-items: flex-start; gap: 12px; }
@@ -208,6 +240,113 @@
 
     </div>
 
+  </div>
+
+  <!-- ── MODAL PORTAL NUEVO ── -->
+  <div id="modal-portal-nuevo" style="display:none;position:fixed;inset:0;background:rgba(10,20,6,0.55);z-index:2000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px);">
+    <div style="background:white;border-radius:22px;width:100%;max-width:460px;box-shadow:0 20px 60px rgba(0,0,0,0.22);overflow:hidden;animation:slideUp 0.25s ease;">
+      <!-- Header -->
+      <div style="background:var(--green);padding:22px 26px 18px;position:relative;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+          <div style="width:36px;height:36px;background:rgba(255,255,255,0.18);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;">🏪</div>
+          <div>
+            <div style="color:white;font-weight:700;font-size:1rem;line-height:1.2;">Comercio nuevo detectado</div>
+            <div id="mpn-comercio-nombre" style="color:rgba(255,255,255,0.72);font-size:0.78rem;"></div>
+          </div>
+        </div>
+        <div style="color:rgba(255,255,255,0.65);font-size:0.8rem;line-height:1.45;">
+          Ayúdanos a configurar este portal y lo tendremos listo en 24–48 hrs.
+        </div>
+        <!-- Steps -->
+        <div style="display:flex;align-items:center;gap:6px;margin-top:16px;">
+          <div class="mpn-step-dot active" id="mpn-dot-1"></div>
+          <div style="flex:1;height:2px;background:rgba(255,255,255,0.25);border-radius:2px;"><div id="mpn-line-1" style="height:100%;background:white;border-radius:2px;width:0;transition:width 0.3s;"></div></div>
+          <div class="mpn-step-dot" id="mpn-dot-2"></div>
+          <div style="flex:1;height:2px;background:rgba(255,255,255,0.25);border-radius:2px;"><div id="mpn-line-2" style="height:100%;background:white;border-radius:2px;width:0;transition:width 0.3s;"></div></div>
+          <div class="mpn-step-dot" id="mpn-dot-3"></div>
+        </div>
+      </div>
+
+      <!-- Paso 1 -->
+      <div id="mpn-paso-1" style="padding:24px 26px;">
+        <div style="font-size:0.93rem;font-weight:700;color:var(--text);margin-bottom:6px;">¿Con qué frecuencia facturas aquí?</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:18px;">Esto nos ayuda a priorizar la configuración.</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <button class="mpn-option" onclick="mpnSeleccionarFrecuencia(this,'primera')" data-val="primera">
+            <span style="font-size:1.1rem;">🆕</span>
+            <span>Es la primera vez que facturo aquí</span>
+          </button>
+          <button class="mpn-option" onclick="mpnSeleccionarFrecuencia(this,'ocasional')" data-val="ocasional">
+            <span style="font-size:1.1rem;">🕐</span>
+            <span>Ya facturé antes, pero ocasionalmente</span>
+          </button>
+          <button class="mpn-option" onclick="mpnSeleccionarFrecuencia(this,'frecuente')" data-val="frecuente">
+            <span style="font-size:1.1rem;">⚡</span>
+            <span>Facturo seguido aquí</span>
+          </button>
+        </div>
+        <div style="margin-top:20px;display:flex;justify-content:flex-end;">
+          <button class="btn btn-primary btn-sm" id="mpn-btn-1" onclick="mpnSiguiente(2)" disabled>Siguiente →</button>
+        </div>
+      </div>
+
+      <!-- Paso 2 -->
+      <div id="mpn-paso-2" style="padding:24px 26px;display:none;">
+        <div style="font-size:0.93rem;font-weight:700;color:var(--text);margin-bottom:6px;">¿Cómo facturas normalmente aquí?</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">Cuéntanos el proceso paso a paso, con el mayor detalle posible.</div>
+        <div style="margin-bottom:14px;">
+          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:8px;">¿Cómo accedes al portal?</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <button class="mpn-chip" onclick="mpnSeleccionarAcceso(this,'qr')" data-val="qr">📲 QR del ticket</button>
+            <button class="mpn-chip" onclick="mpnSeleccionarAcceso(this,'web')" data-val="web">🌐 Página web directa</button>
+            <button class="mpn-chip" onclick="mpnSeleccionarAcceso(this,'app')" data-val="app">📱 App / otro</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:6px;">Describe el proceso que sigues:</div>
+          <textarea id="mpn-descripcion" placeholder='Ej: "Entro a la página, pongo el número del ticket, luego mi RFC, selecciono G03 Gastos en general y descargo el PDF..."' style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 14px;font-size:0.83rem;font-family:inherit;color:var(--text);background:#fafcf8;resize:vertical;min-height:90px;outline:none;box-sizing:border-box;line-height:1.5;" oninput="mpnValidarPaso2()"></textarea>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;justify-content:space-between;">
+          <button class="btn btn-ghost btn-sm" onclick="mpnSiguiente(1)">← Atrás</button>
+          <button class="btn btn-primary btn-sm" id="mpn-btn-2" onclick="mpnSiguiente(3)" disabled>Siguiente →</button>
+        </div>
+      </div>
+
+      <!-- Paso 3 -->
+      <div id="mpn-paso-3" style="padding:24px 26px;display:none;">
+        <div style="font-size:0.93rem;font-weight:700;color:var(--text);margin-bottom:6px;">Un poco más de detalle</div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">Opcional pero muy útil para configurarlo más rápido.</div>
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:6px;">Link del portal (si lo tienes)</div>
+          <input id="mpn-link" type="url" placeholder="https://..." style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:10px 14px;font-size:0.84rem;font-family:inherit;background:#fafcf8;outline:none;box-sizing:border-box;">
+        </div>
+        <div>
+          <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:10px;">¿Qué datos te piden en el portal?</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <label class="mpn-check"><input type="checkbox" value="folio"> Número de ticket / folio</label>
+            <label class="mpn-check"><input type="checkbox" value="fecha"> Fecha de compra</label>
+            <label class="mpn-check"><input type="checkbox" value="total"> Total / importe</label>
+            <label class="mpn-check"><input type="checkbox" value="barcode"> Código de barras</label>
+            <label class="mpn-check"><input type="checkbox" value="rfc"> RFC</label>
+            <label class="mpn-check"><input type="checkbox" value="razonSocial"> Razón social</label>
+            <label class="mpn-check"><input type="checkbox" value="cp"> Código postal</label>
+            <label class="mpn-check"><input type="checkbox" value="correo"> Correo electrónico</label>
+          </div>
+        </div>
+        <div style="margin-top:20px;display:flex;gap:10px;justify-content:space-between;">
+          <button class="btn btn-ghost btn-sm" onclick="mpnSiguiente(2)">← Atrás</button>
+          <button class="btn btn-primary btn-sm" id="mpn-btn-3" onclick="mpnEnviar()">Enviar reporte</button>
+        </div>
+      </div>
+
+      <!-- Confirmación -->
+      <div id="mpn-paso-ok" style="padding:32px 26px;text-align:center;display:none;">
+        <div style="font-size:48px;margin-bottom:14px;">✅</div>
+        <div style="font-weight:700;font-size:1.05rem;color:var(--text);margin-bottom:8px;">¡Gracias por tu ayuda!</div>
+        <div style="font-size:0.84rem;color:var(--text-muted);line-height:1.55;margin-bottom:24px;">Revisaremos la información y configuraremos el portal de <strong id="mpn-ok-comercio"></strong> en las próximas 24–48 horas.</div>
+        <button class="btn btn-primary btn-sm" onclick="cerrarModalPortalNuevo()">Entendido</button>
+      </div>
+    </div>
   </div>
 
   <!-- ── MODAL CONFIRMACIÓN OCR ── -->
@@ -482,10 +621,7 @@
         const data = await res.json();
 
         if (data.ok && data.sinPortal) {
-          alert.className = 'alert alert-warning';
-          const urlMsg = data.urlQR ? ` Puedes intentar manualmente en: ${data.urlQR}` : '';
-          alert.innerHTML = `⚠️ "${data.comercio}" no está configurado aún. El administrador fue notificado y lo configuraremos pronto.${urlMsg}`;
-          alert.style.display = 'block';
+          abrirModalPortalNuevo(data.ticketId, data.comercio, data.urlQR);
           cargarDatos();
         } else if (data.ok) {
           abrirModalConfirmacion(data.ticketId, data.datos, data.campos);
@@ -693,6 +829,107 @@
     // Cerrar modal al hacer click fuera
     document.getElementById('modal-confirmacion').addEventListener('click', function(e) {
       if (e.target === this) cerrarModal();
+    });
+
+    // ── MODAL PORTAL NUEVO ──
+    let mpnTicketId = null;
+    let mpnFrecuencia = null;
+    let mpnAcceso = null;
+
+    function abrirModalPortalNuevo(ticketId, comercio, urlQR) {
+      mpnTicketId = ticketId;
+      mpnFrecuencia = null;
+      mpnAcceso = null;
+      document.getElementById('mpn-comercio-nombre').textContent = comercio || 'Portal desconocido';
+      document.getElementById('mpn-ok-comercio').textContent = comercio || 'este portal';
+      if (urlQR) document.getElementById('mpn-link').value = urlQR;
+      document.querySelectorAll('.mpn-option').forEach(b => b.classList.remove('selected'));
+      document.querySelectorAll('.mpn-chip').forEach(b => b.classList.remove('selected'));
+      document.getElementById('mpn-descripcion').value = '';
+      document.querySelectorAll('.mpn-check input').forEach(cb => cb.checked = false);
+      document.getElementById('mpn-btn-1').disabled = true;
+      document.getElementById('mpn-btn-2').disabled = true;
+      mpnMostrarPaso(1);
+      document.getElementById('modal-portal-nuevo').style.display = 'flex';
+    }
+
+    function cerrarModalPortalNuevo() {
+      document.getElementById('modal-portal-nuevo').style.display = 'none';
+    }
+
+    function mpnMostrarPaso(n) {
+      [1,2,3,'ok'].forEach(p => {
+        const el = document.getElementById(`mpn-paso-${p}`);
+        if (el) el.style.display = 'none';
+      });
+      document.getElementById(`mpn-paso-${n}`).style.display = 'block';
+      // progress
+      [1,2,3].forEach(i => {
+        document.getElementById(`mpn-dot-${i}`).classList.toggle('active', i <= n);
+        const line = document.getElementById(`mpn-line-${i}`);
+        if (line) line.style.width = i < n ? '100%' : '0';
+      });
+    }
+
+    function mpnSeleccionarFrecuencia(btn, val) {
+      document.querySelectorAll('.mpn-option').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      mpnFrecuencia = val;
+      document.getElementById('mpn-btn-1').disabled = false;
+    }
+
+    function mpnSeleccionarAcceso(btn, val) {
+      document.querySelectorAll('.mpn-chip').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      mpnAcceso = val;
+      mpnValidarPaso2();
+    }
+
+    function mpnValidarPaso2() {
+      const desc = document.getElementById('mpn-descripcion').value.trim();
+      document.getElementById('mpn-btn-2').disabled = desc.length < 10;
+    }
+
+    function mpnSiguiente(paso) {
+      mpnMostrarPaso(paso);
+    }
+
+    async function mpnEnviar() {
+      const btn = document.getElementById('mpn-btn-3');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>';
+
+      const campos = Array.from(document.querySelectorAll('.mpn-check input:checked')).map(cb => cb.value);
+
+      try {
+        const res = await fetch(`/api/tickets/${mpnTicketId}/cuestionario-portal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            frecuencia: mpnFrecuencia,
+            acceso: mpnAcceso,
+            descripcion: document.getElementById('mpn-descripcion').value.trim(),
+            linkPortal: document.getElementById('mpn-link').value.trim() || null,
+            campos
+          })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          mpnMostrarPaso('ok');
+        } else {
+          btn.disabled = false;
+          btn.textContent = 'Enviar reporte';
+          alert('Error al enviar: ' + data.msg);
+        }
+      } catch {
+        btn.disabled = false;
+        btn.textContent = 'Enviar reporte';
+        alert('Error de conexión');
+      }
+    }
+
+    document.getElementById('modal-portal-nuevo').addEventListener('click', function(e) {
+      if (e.target === this) cerrarModalPortalNuevo();
     });
 
     cargarDatos();
