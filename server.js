@@ -401,7 +401,29 @@ function resumenAgente(resultado, comercioNombre) {
 async function manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl) {
   console.log(`🤖 [Agente] Iniciando para "${comercioNombre}" — ticket #${ticketId}`);
   try {
-    const resultado = await orquestar({ db, ticketId, portalUrl, comercioNombre });
+    // Releer el ticket por si el cuestionario actualizó el portalUrl o agregó instrucciones
+    const [[t]] = await db.query("SELECT portal_url, ocr_json FROM tickets WHERE id = ?", [ticketId]);
+    const ocr = JSON.parse(t?.ocr_json || '{}');
+    const urlFinal = ocr.portalUrl || t?.portal_url || portalUrl || '';
+
+    // Leer instrucciones del residente desde portales_pendientes
+    const [[pendiente]] = await db.query(
+      "SELECT notas FROM portales_pendientes WHERE nombre = ? ORDER BY id DESC LIMIT 1",
+      [comercioNombre]
+    ).catch(() => [[null]]);
+    let instrucciones = '';
+    if (pendiente?.notas) {
+      try {
+        const n = JSON.parse(pendiente.notas);
+        instrucciones = [
+          n.acceso ? `Acceso: ${n.acceso}` : '',
+          n.descripcion ? `Proceso según residente: ${n.descripcion}` : '',
+          n.campos?.length ? `Campos del portal: ${n.campos.join(', ')}` : '',
+        ].filter(Boolean).join('\n');
+      } catch {}
+    }
+
+    const resultado = await orquestar({ db, ticketId, portalUrl: urlFinal, comercioNombre, instrucciones });
     const resumen = resumenAgente(resultado, comercioNombre);
     console.log(`🤖 [Agente] Terminó — ticket #${ticketId}: ${resumen.corto}`);
 
@@ -1090,11 +1112,13 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
     );
     const ticketId = insertResult.insertId;
 
-    setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
-
     if (portalDetectado === 'desconocido') {
+      // Los agentes arrancan DESPUÉS de que el residente llene el cuestionario (tiene el link del portal)
       return res.json({ ok: true, agenteActivado: true, comercio: datosOCR.comercio || 'este comercio', urlQR: datosOCR.portalUrl || null, ticketId });
     }
+
+    // Portal conocido: auto-facturar en background inmediatamente
+    setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
     res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
   } catch (err) {
     console.error("❌ Error:", err.message);
@@ -1392,13 +1416,34 @@ app.post("/api/tickets/:id/cuestionario-portal", auth, async (req, res) => {
       [ticket.comercio, linkPortal || "sin-url", notas, req.session.userId]
     );
 
+    // Si el residente dio el link, guardarlo en el ticket para que el agente lo use
+    if (linkPortal) {
+      const [[t]] = await db.query("SELECT ocr_json FROM tickets WHERE id = ?", [ticketId]);
+      const ocr = JSON.parse(t?.ocr_json || '{}');
+      ocr.portalUrl = linkPortal;
+      await db.query(
+        "UPDATE tickets SET portal_url = ?, ocr_json = ? WHERE id = ?",
+        [linkPortal, JSON.stringify(ocr), ticketId]
+      );
+    }
+
+    // Guardar descripción del proceso como instrucciones para el agente
+    const instrucciones = [
+      acceso ? `Acceso: ${acceso}` : '',
+      descripcion ? `Proceso: ${descripcion}` : '',
+      campos?.length ? `Campos del portal: ${campos.join(', ')}` : '',
+    ].filter(Boolean).join('\n');
+
+    // Disparar agentes ahora que tenemos el contexto del residente
+    setImmediate(() => autoFacturar(ticketId, ticket.user_id).catch(console.error));
+
     // Notificar al admin
     const [admins] = await db.query("SELECT id FROM users WHERE rol = 'admin'");
     for (const admin of admins) {
       await crearNotificacion(
         admin.id,
         "portal_pendiente",
-        `Nuevo portal: "${ticket.comercio}" — el usuario explicó cómo factura. Revisa Portales Pendientes.`
+        `Agentes iniciados para "${ticket.comercio}" (ticket #${ticketId}). Info del residente: ${instrucciones || 'sin detalle'}.`
       );
     }
 
