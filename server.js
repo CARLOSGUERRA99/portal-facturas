@@ -991,13 +991,16 @@ app.get("/api/portales-pendientes", auth, requireAdmin, async (req, res) => {
   try {
     const [grupos] = await db.query(`
       SELECT
-        comercio,
+        t.comercio,
         COUNT(*) AS total_tickets,
-        MAX(creado) AS ultimo_ticket
-      FROM tickets
-      WHERE portal_url = 'desconocido'
-        AND status = 'error'
-      GROUP BY comercio
+        MAX(t.creado) AS ultimo_ticket,
+        pp.url,
+        pp.notas
+      FROM tickets t
+      LEFT JOIN portales_pendientes pp ON pp.nombre LIKE CONCAT('%', t.comercio, '%')
+      WHERE t.portal_url = 'desconocido'
+        AND t.status = 'error'
+      GROUP BY t.comercio, pp.url, pp.notas
       ORDER BY ultimo_ticket DESC
     `);
     res.json({ ok: true, grupos });

@@ -554,16 +554,36 @@
         </table>`;
     }
 
+    function parsearNotas(notas) {
+      if (!notas) return null;
+      try {
+        const p = JSON.parse(notas);
+        const partes = [];
+        if (p.descripcion)  partes.push('Cómo factura: ' + p.descripcion);
+        if (p.linkPortal && p.linkPortal !== 'sin-url') partes.push('Link del portal: ' + p.linkPortal);
+        if (p.acceso)       partes.push('Acceso: ' + p.acceso);
+        if (p.frecuencia)   partes.push('Frecuencia: ' + p.frecuencia);
+        if (p.campos && p.campos.length) partes.push('Campos que piden: ' + p.campos.join(', '));
+        return partes.length ? partes.join('\n') : null;
+      } catch {
+        return notas;
+      }
+    }
+
     function abrirPrompt(comercio, url, notas) {
       document.getElementById('prompt-comercio-label').textContent = comercio;
       document.getElementById('modal-prompt').classList.add('open');
+
+      const notasTexto = parsearNotas(notas) || 'Sin notas adicionales';
+      const urlTexto   = (url && url !== 'sin-url') ? url : 'No disponible';
 
       const prompt = `Analiza el portal de facturación del comercio "${comercio}" y genera el bot Puppeteer completo.
 
 Datos del portal reportados por el usuario:
 - Comercio: ${comercio}
-- URL del portal: ${url || 'No disponible — buscar en el ticket del usuario'}
-- Notas del usuario: ${notas || 'Sin notas adicionales'}
+- URL del portal: ${urlTexto}
+- Notas del usuario:
+${notasTexto}
 
 Antes de escribir código:
 1. Lee bots/gasmaz.js como referencia de estructura
