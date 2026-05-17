@@ -207,6 +207,101 @@
       </div>
     </div>
 
+    <!-- Generar Bot con IA -->
+    <div style="margin-top:32px;" id="seccion-agentes">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div class="card-title" style="font-size:1rem;font-weight:700;">Generar Bot con IA</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Analiza un portal nuevo y genera su bot Puppeteer automáticamente</div>
+        </div>
+      </div>
+
+      <!-- Paso 1: Datos del portal -->
+      <div class="card" style="margin-bottom:16px;" id="agente-paso1">
+        <div class="card-header">
+          <div class="card-title" style="font-size:0.9rem;">Paso 1 — Datos del portal</div>
+        </div>
+        <div style="padding:0 20px 20px;">
+          <div class="form-group" style="margin-top:16px;">
+            <label class="label">Nombre del portal <span style="color:var(--error)">*</span></label>
+            <input type="text" id="ag-nombre" class="input" placeholder="Ej. Walmart, Costco, Sanborns">
+          </div>
+          <div class="form-group">
+            <label class="label">URL del portal</label>
+            <input type="url" id="ag-url" class="input" placeholder="https://facturacion.ejemplo.com">
+          </div>
+          <div class="form-group">
+            <label class="label">Screenshot del portal (PNG/JPG)</label>
+            <input type="file" id="ag-screenshot" class="input" accept="image/*" style="padding:8px;">
+          </div>
+          <div class="form-group">
+            <label class="label">Notas adicionales</label>
+            <textarea id="ag-notas" class="input" rows="3" placeholder="Ej. Después de ingresar el RFC, aparece un dropdown de régimen que tarda 2 segundos en cargar..." style="resize:vertical;"></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="ejecutarAgente('analizar')" id="ag-btn-analizar">
+            🔍 Analizar portal
+          </button>
+        </div>
+      </div>
+
+      <!-- Resultado del análisis -->
+      <div id="agente-resultado-analisis" style="display:none;margin-bottom:16px;">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title" style="font-size:0.9rem;">Paso 2 — Análisis del portal</div>
+            <span id="ag-tecnologia-badge" class="badge badge-processing" style="font-size:0.78rem;"></span>
+          </div>
+          <div style="padding:0 20px 20px;">
+            <pre id="ag-analisis-json" style="background:var(--bg);border-radius:10px;padding:16px;font-size:0.78rem;overflow:auto;max-height:300px;white-space:pre-wrap;"></pre>
+            <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;">
+              <button class="btn btn-primary" onclick="ejecutarAgente('generar')" id="ag-btn-generar">
+                ⚙️ Generar bot
+              </button>
+              <button class="btn btn-outline" onclick="ejecutarAgente('analizar')">
+                ↺ Re-analizar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Código generado -->
+      <div id="agente-resultado-codigo" style="display:none;margin-bottom:16px;">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title" style="font-size:0.9rem;">Paso 3 — Bot generado</div>
+            <span id="ag-validacion-badge" class="badge" style="font-size:0.78rem;"></span>
+          </div>
+          <div style="padding:0 20px 20px;">
+            <div id="ag-validacion-info" style="margin-top:16px;padding:12px 16px;border-radius:10px;background:var(--bg);font-size:0.82rem;"></div>
+            <pre id="ag-codigo-js" style="background:#1a1a2e;color:#e2e8f0;border-radius:10px;padding:16px;font-size:0.72rem;overflow:auto;max-height:400px;white-space:pre-wrap;margin-top:16px;"></pre>
+            <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;">
+              <button class="btn btn-primary" onclick="aprobarBot()" id="ag-btn-aprobar" style="background:#27500A;">
+                ✅ Aprobar y desplegar
+              </button>
+              <button class="btn btn-outline" onclick="ejecutarAgente('generar')">
+                ↺ Re-generar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resultado del despliegue -->
+      <div id="agente-resultado-deploy" style="display:none;">
+        <div class="card" style="border:2px solid #4CAF50;">
+          <div style="padding:24px;text-align:center;">
+            <div style="font-size:40px;margin-bottom:12px;">🚀</div>
+            <div style="font-weight:700;font-size:1rem;color:var(--text);margin-bottom:8px;">Bot desplegado a producción</div>
+            <div id="ag-deploy-msg" style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px;"></div>
+            <div id="ag-deploy-archivos" style="font-size:0.8rem;background:var(--bg);border-radius:8px;padding:12px;text-align:left;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="ag-alert" class="alert" style="margin-top:16px;display:none;"></div>
+    </div>
+
   </div>
 
   <!-- ── Modal: Registrar portal ── -->
@@ -743,6 +838,175 @@ D) La entrada completa para portales/portales.json`;
 
     init();
     initNotificaciones();
+
+    // ── AGENTES ────────────────────────────────────────────────────────────────
+
+    function abrirAgenteConNombre(comercio) {
+      document.getElementById('ag-nombre').value = comercio;
+      document.getElementById('seccion-agentes').scrollIntoView({ behavior: 'smooth' });
+    }
+    let agState = { analisis: null, codigo: null, nombreArchivo: null, nombreFuncion: null };
+
+    function agAlert(msg, tipo = 'error') {
+      const el = document.getElementById('ag-alert');
+      el.className = `alert alert-${tipo}`;
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 5000);
+    }
+
+    function agSetLoading(btnId, loading, texto) {
+      const btn = document.getElementById(btnId);
+      if (!btn) return;
+      btn.disabled = loading;
+      btn.innerHTML = loading ? '<span class="spinner"></span> ' + texto : btn.dataset.original || texto;
+    }
+
+    async function imageToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve({ data: e.target.result.split(',')[1], mime: file.type });
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function ejecutarAgente(paso) {
+      const nombre = document.getElementById('ag-nombre').value.trim();
+      const url = document.getElementById('ag-url').value.trim();
+      const notas = document.getElementById('ag-notas').value.trim();
+      const fileInput = document.getElementById('ag-screenshot');
+
+      if (paso === 'analizar') {
+        if (!nombre) return agAlert('Ingresa el nombre del portal');
+        if (!fileInput.files[0] && !url) return agAlert('Sube un screenshot o ingresa la URL del portal');
+
+        agSetLoading('ag-btn-analizar', true, 'Analizando...');
+        try {
+          const body = { notas };
+          if (url) body.url = url;
+          if (fileInput.files[0]) {
+            const { data, mime } = await imageToBase64(fileInput.files[0]);
+            body.screenshotBase64 = data;
+            body.mimeType = mime;
+          }
+
+          const res = await fetch('/api/admin/agente/analizar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (!data.ok) return agAlert(data.msg || 'Error al analizar');
+
+          agState.analisis = data.analisis;
+          document.getElementById('ag-analisis-json').textContent = JSON.stringify(data.analisis, null, 2);
+          document.getElementById('ag-tecnologia-badge').textContent = data.analisis.tecnologia || 'desconocida';
+          document.getElementById('agente-resultado-analisis').style.display = 'block';
+          document.getElementById('agente-resultado-codigo').style.display = 'none';
+          document.getElementById('agente-resultado-deploy').style.display = 'none';
+          agAlert('Análisis completado', 'success');
+        } catch (e) {
+          agAlert('Error: ' + e.message);
+        } finally {
+          const btn = document.getElementById('ag-btn-analizar');
+          btn.disabled = false;
+          btn.innerHTML = '🔍 Analizar portal';
+        }
+
+      } else if (paso === 'generar') {
+        if (!agState.analisis) return agAlert('Primero analiza el portal');
+        if (!nombre) return agAlert('Ingresa el nombre del portal');
+
+        agSetLoading('ag-btn-generar', true, 'Generando bot...');
+        try {
+          const res = await fetch('/api/admin/agente/generar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ analisisJson: agState.analisis, nombrePortal: nombre }),
+          });
+          const data = await res.json();
+          if (!data.ok) return agAlert(data.msg || 'Error al generar');
+
+          agState.codigo = data.codigo;
+          agState.nombreArchivo = data.nombreArchivo;
+          agState.nombreFuncion = data.nombreFuncion;
+
+          // Validar
+          const resVal = await fetch('/api/admin/agente/validar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codigo: data.codigo, nombrePortal: nombre }),
+          });
+          const valData = await resVal.json();
+          const val = valData.validacion || {};
+
+          const badge = document.getElementById('ag-validacion-badge');
+          badge.textContent = val.ok ? '✅ Listo para desplegar' : '⚠️ Con advertencias';
+          badge.className = 'badge ' + (val.ok ? 'badge-success' : 'badge-error');
+
+          const infoEl = document.getElementById('ag-validacion-info');
+          const errHtml = val.errores?.length
+            ? `<div style="color:var(--error);margin-bottom:6px;"><strong>Errores:</strong> ${val.errores.join(' · ')}</div>` : '';
+          const advHtml = val.advertencias?.length
+            ? `<div style="color:#b45309;"><strong>Advertencias:</strong> ${val.advertencias.join(' · ')}</div>` : '';
+          infoEl.innerHTML = (errHtml + advHtml) || '<div style="color:green;">✅ Sin errores ni advertencias</div>';
+          infoEl.innerHTML += `<div style="color:var(--text-muted);margin-top:6px;font-size:0.78rem;">Pasos detectados: ${val.pasos_detectados} · Archivo: ${data.nombreArchivo}</div>`;
+
+          document.getElementById('ag-codigo-js').textContent = data.codigo;
+          document.getElementById('agente-resultado-codigo').style.display = 'block';
+
+          const btnAprobar = document.getElementById('ag-btn-aprobar');
+          btnAprobar.disabled = !val.puede_desplegar && val.errores?.length > 0;
+
+          agAlert('Bot generado y validado', 'success');
+        } catch (e) {
+          agAlert('Error: ' + e.message);
+        } finally {
+          const btn = document.getElementById('ag-btn-generar');
+          btn.disabled = false;
+          btn.innerHTML = '⚙️ Generar bot';
+        }
+      }
+    }
+
+    async function aprobarBot() {
+      if (!agState.codigo) return agAlert('Genera el bot primero');
+      const nombre = document.getElementById('ag-nombre').value.trim();
+
+      const btn = document.getElementById('ag-btn-aprobar');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Desplegando...';
+
+      try {
+        const res = await fetch('/api/admin/agente/aprobar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            codigo: agState.codigo,
+            nombreArchivo: agState.nombreArchivo,
+            nombreFuncion: agState.nombreFuncion,
+            analisis: agState.analisis,
+            nombrePortal: nombre,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) return agAlert(data.msg || 'Error al desplegar');
+
+        document.getElementById('ag-deploy-msg').textContent = data.msg;
+        const gitLine = data.git ? `<div style="margin-top:8px;font-size:0.8rem;color:${data.git.includes('falló') ? '#b45309' : 'green'};">🔀 ${data.git}</div>` : '';
+        document.getElementById('ag-deploy-archivos').innerHTML =
+          '<strong>Archivos actualizados:</strong><br>' +
+          (data.archivos || []).map(a => `• ${a}`).join('<br>') + gitLine;
+        document.getElementById('agente-resultado-deploy').style.display = 'block';
+        agAlert('Bot desplegado exitosamente', 'success');
+      } catch (e) {
+        agAlert('Error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '✅ Aprobar y desplegar';
+      }
+    }
   </script>
 </body>
 </html>

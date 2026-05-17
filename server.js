@@ -6,6 +6,7 @@ const mysql = require("mysql2/promise");
 const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
+const { execSync } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk");
 const nodemailer = require("nodemailer");
 const { detectarYFacturar } = require("./bots/index");
@@ -1147,6 +1148,208 @@ async function limpiarFacturasVencidas() {
 }
 limpiarFacturasVencidas();
 setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
+
+// ── AGENTES — Generar bot nuevo ──────────────────────────────────────────────
+
+const { analizarPortal } = require("./agentes/analizador");
+const { generarBot }     = require("./agentes/generador");
+const { validarBot }     = require("./agentes/validador");
+const { orquestarPortal } = require("./agentes/orquestador");
+
+// POST /api/admin/agente/analizar
+app.post("/api/admin/agente/analizar", auth, requireAdmin, async (req, res) => {
+  try {
+    const { screenshotBase64, mimeType, url, notas } = req.body;
+    if (!screenshotBase64 && !url)
+      return res.json({ ok: false, msg: "Envía screenshotBase64 o url" });
+
+    console.log("🔍 Agente Analizador iniciado");
+    const analisis = await analizarPortal({ screenshotBase64, mimeType, url, notas });
+    res.json({ ok: true, analisis });
+  } catch (err) {
+    console.error("❌ Agente Analizador:", err.message);
+    res.json({ ok: false, msg: err.message });
+  }
+});
+
+// POST /api/admin/agente/generar
+app.post("/api/admin/agente/generar", auth, requireAdmin, async (req, res) => {
+  try {
+    const { analisisJson, nombrePortal } = req.body;
+    if (!analisisJson || !nombrePortal)
+      return res.json({ ok: false, msg: "Faltan analisisJson o nombrePortal" });
+
+    console.log(`⚙️ Agente Generador iniciado para: ${nombrePortal}`);
+    const resultado = await generarBot({ analisisJson, nombrePortal });
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    console.error("❌ Agente Generador:", err.message);
+    res.json({ ok: false, msg: err.message });
+  }
+});
+
+// POST /api/admin/agente/validar
+app.post("/api/admin/agente/validar", auth, requireAdmin, async (req, res) => {
+  try {
+    const { codigo, nombrePortal, datosTest } = req.body;
+    if (!codigo || !nombrePortal)
+      return res.json({ ok: false, msg: "Faltan codigo o nombrePortal" });
+
+    console.log(`🔬 Agente Validador iniciado para: ${nombrePortal}`);
+    const validacion = await validarBot({ codigo, nombrePortal, datosTest });
+    res.json({ ok: true, validacion });
+  } catch (err) {
+    console.error("❌ Agente Validador:", err.message);
+    res.json({ ok: false, msg: err.message });
+  }
+});
+
+// POST /api/admin/agente/orquestar
+app.post("/api/admin/agente/orquestar", auth, requireAdmin, async (req, res) => {
+  try {
+    const { screenshotBase64, mimeType, url, notas, nombrePortal, datosTest } = req.body;
+    if (!nombrePortal)
+      return res.json({ ok: false, msg: "Falta nombrePortal" });
+    if (!screenshotBase64 && !url)
+      return res.json({ ok: false, msg: "Envía screenshotBase64 o url" });
+
+    console.log(`🎭 Orquestador iniciado para: ${nombrePortal}`);
+    const resultado = await orquestarPortal({
+      screenshotBase64, mimeType, url, notas, nombrePortal, datosTest,
+    });
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    console.error("❌ Orquestador:", err.message);
+    res.json({ ok: false, msg: err.message });
+  }
+});
+
+// POST /api/admin/agente/aprobar  — escribe archivos a producción
+app.post("/api/admin/agente/aprobar", auth, requireAdmin, async (req, res) => {
+  try {
+    const { codigo, nombreArchivo, nombreFuncion, analisis, nombrePortal } = req.body;
+    if (!codigo || !nombreArchivo || !nombreFuncion)
+      return res.json({ ok: false, msg: "Faltan codigo, nombreArchivo o nombreFuncion" });
+
+    const archivos = [];
+
+    // 1) Escribir bots/{nombreArchivo}
+    const botPath = path.join(__dirname, "bots", nombreArchivo);
+    fs.writeFileSync(botPath, codigo, "utf8");
+    archivos.push(`bots/${nombreArchivo}`);
+    console.log(`📝 Bot escrito: ${botPath}`);
+
+    // 2) Actualizar bots/index.js
+    const indexPath = path.join(__dirname, "bots", "index.js");
+    let indexJs = fs.readFileSync(indexPath, "utf8");
+
+    const requireLine = `const { ${nombreFuncion} } = require('./${nombreArchivo}');`;
+    if (!indexJs.includes(requireLine)) {
+      // Insertar después del último require existente
+      indexJs = indexJs.replace(
+        /(const \{[^}]+\} = require\('[^']+'\);)\s*\n(?!const)/,
+        (match) => match + `\n${requireLine}\n`
+      );
+      archivos.push("bots/index.js (require)");
+    }
+
+    const claveDeteccion = nombrePortal.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const ifBlock = `
+  if (
+    portal === '${claveDeteccion}' ||
+    comercio.includes('${claveDeteccion}') ||
+    texto.includes('${claveDeteccion}')
+  ) {
+    console.log('🎯 Portal detectado: ${nombrePortal}');
+    return await ${nombreFuncion}(datos);
+  }
+`;
+    if (!indexJs.includes(nombreFuncion + "(datos)")) {
+      // Insertar antes del log de "Portal no reconocido"
+      indexJs = indexJs.replace(
+        "console.log('⚠️ Portal no reconocido:",
+        ifBlock + "  console.log('⚠️ Portal no reconocido:"
+      );
+      archivos.push("bots/index.js (detección)");
+    }
+
+    fs.writeFileSync(indexPath, indexJs, "utf8");
+    console.log(`📝 index.js actualizado`);
+
+    // 3) Actualizar portales/portales.json
+    const portalesPath = path.join(__dirname, "portales", "portales.json");
+    const portalesJson = JSON.parse(fs.readFileSync(portalesPath, "utf8"));
+
+    if (!portalesJson.portales[claveDeteccion]) {
+      portalesJson.portales[claveDeteccion] = {
+        nombre: analisis?.nombre || nombrePortal,
+        bot: `bots/${nombreArchivo}`,
+        estado: "en_desarrollo",
+        url_base: analisis?.url_base || "",
+        tecnologia: analisis?.tecnologia || "desconocida",
+        stealth: true,
+        comercios: [nombrePortal],
+        deteccion: {
+          por_portal_field: claveDeteccion,
+          por_texto_ocr: [claveDeteccion],
+          por_comercio: [claveDeteccion],
+          por_url_qr: [],
+        },
+        campos_ticket: (analisis?.campos || [])
+          .filter((c) => c.requerido)
+          .map((c) => c.nombre),
+        campos_fiscales: ["rfc", "razonSocial", "regimenFiscal", "usoCfdi"],
+        flujo: analisis?.pasos || [],
+        comportamientos_especiales: analisis?.casos_especiales || [],
+        notas_desarrollo: "Bot generado por IA — pendiente validar caso de éxito",
+      };
+      portalesJson.actualizado = new Date().toISOString().split("T")[0];
+      fs.writeFileSync(portalesPath, JSON.stringify(portalesJson, null, 2), "utf8");
+      archivos.push("portales/portales.json");
+      console.log(`📝 portales.json actualizado con: ${claveDeteccion}`);
+    }
+
+    // 4) Git commit + push (requiere GIT_TOKEN en Railway env vars)
+    let gitMsg = null;
+    try {
+      const cwd = __dirname;
+      const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+
+      // Configurar identidad git si no está
+      try { execSync('git config user.email "bot@portal-facturas.com"', { cwd, env: gitEnv }); } catch {}
+      try { execSync('git config user.name "Portal Facturas Bot"', { cwd, env: gitEnv }); } catch {}
+
+      // Configurar remote con token si existe
+      if (process.env.GIT_TOKEN) {
+        const remoteUrl = execSync("git remote get-url origin", { cwd, env: gitEnv })
+          .toString().trim();
+        const tokenUrl = remoteUrl.replace("https://", `https://${process.env.GIT_TOKEN}@`);
+        execSync(`git remote set-url origin "${tokenUrl}"`, { cwd, env: gitEnv });
+      }
+
+      execSync(`git add "${botPath}" "${indexPath}" "${portalesPath}"`, { cwd, env: gitEnv });
+      execSync(`git commit -m "feat: bot ${nombreArchivo} generado por IA [auto]"`, { cwd, env: gitEnv });
+      execSync("git push origin main", { cwd, env: gitEnv, timeout: 30000 });
+
+      gitMsg = "Commit y push a main exitoso — Railway redesplegando...";
+      archivos.push("git: commit + push a main");
+      console.log(`✅ Git push exitoso: ${nombreArchivo}`);
+    } catch (gitErr) {
+      gitMsg = `Archivos escritos OK, pero git push falló: ${gitErr.message.split("\n")[0]}. Haz push manual.`;
+      console.warn("⚠️ Git push falló (archivos escritos correctamente):", gitErr.message);
+    }
+
+    res.json({
+      ok: true,
+      msg: `Bot desplegado en ${archivos.length} archivo(s)`,
+      archivos,
+      git: gitMsg,
+    });
+  } catch (err) {
+    console.error("❌ Aprobar bot:", err.message);
+    res.json({ ok: false, msg: err.message });
+  }
+});
 
 // ── ENDPOINT ADMIN: forzar reproceso IMAP de un ticket atascado ──
 // ── ENDPOINT ADMIN: tickets en error ──
