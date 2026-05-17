@@ -18,7 +18,7 @@ async function resolverTurnstile(page, apiKey, capturedSitekey) {
         return m ? m[1] : null;
       } catch { return null; }
     }).catch(() => null);
-    if (sitekey) console.log(`🔑 Sitekey extraído de main.js: ${sitekey}`);
+    if (sitekey) console.log(`🔑 Sitekey extraído de script: ${sitekey}`);
   }
 
   // Método 2: window.turnstile widgets activos
@@ -39,22 +39,30 @@ async function resolverTurnstile(page, apiKey, capturedSitekey) {
     }).catch(() => null);
   }
 
-  // Método 3: iframe URL
+  // Método 3: iframe URL — regex directa sobre la URL completa del frame
   if (!sitekey) {
     for (const f of page.frames()) {
       if (!f.url().includes("challenges.cloudflare.com")) continue;
+      const m = f.url().match(/0x[0-9a-zA-Z]{8,}/);
+      if (m) { sitekey = m[0]; break; }
+    }
+  }
+
+  // Método 4: fetch de chunks lazy de Angular (el sitekey vive en el chunk de PortalwebComponent)
+  if (!sitekey) {
+    sitekey = await page.evaluate(async () => {
       try {
-        const u = new URL(f.url());
-        const k = u.searchParams.get("k") || u.searchParams.get("sitekey");
-        if (k) { sitekey = k; break; }
-        // Buscar en path segments (formato /h/b/turnstile/f/{version}/{sitekey})
-        const parts = u.pathname.split("/").filter(Boolean);
-        const idx = parts.indexOf("f");
-        if (idx >= 0 && parts[idx + 2] && /^0x/.test(parts[idx + 2])) {
-          sitekey = parts[idx + 2]; break;
+        const scripts = Array.from(document.querySelectorAll("script[src]"))
+          .filter(s => /\.\w{8,}\.js$/.test(s.src) && !s.src.includes("main."));
+        for (const script of scripts) {
+          const text = await fetch(script.src).then(r => r.text()).catch(() => "");
+          const m = text.match(/["'`](0x[0-9a-zA-Z]{8,})["'`]/);
+          if (m) return m[1];
         }
       } catch {}
-    }
+      return null;
+    }).catch(() => null);
+    if (sitekey) console.log(`🔑 Sitekey extraído de chunk lazy: ${sitekey}`);
   }
 
   if (!sitekey) {
@@ -178,28 +186,55 @@ async function facturarHomeDepotMexico({
     } catch {}
   }
 
-  // Interceptar window.turnstile.render() ANTES de que Angular lo llame
-  // Es la única forma confiable de capturar el sitekey
+  // Interceptar window.turnstile.render() ANTES de que Angular lo llame.
+  // También instala un MutationObserver para capturar el sitekey del src del iframe de Cloudflare.
   await page.evaluateOnNewDocument(() => {
+    let _ts;
     Object.defineProperty(window, "turnstile", {
       configurable: true,
-      get() { return this._turnstileReal; },
+      enumerable: true,
+      get() { return _ts; },
       set(val) {
         if (val && typeof val.render === "function") {
-          const orig = val.render.bind(val);
+          const orig = val.render;
           val.render = function(container, params) {
-            if (params && params.sitekey) {
-              window.__turnstileSitekey = params.sitekey;
-            }
-            return orig(container, params);
+            try {
+              if (params && params.sitekey) window.__turnstileSitekey = params.sitekey;
+            } catch {}
+            return orig.apply(this, arguments);
           };
         }
-        this._turnstileReal = val;
+        _ts = val;
       },
+    });
+
+    // Detectar iframe de Cloudflare vía MutationObserver como respaldo
+    const obs = new MutationObserver(() => {
+      if (window.__turnstileSitekey) return;
+      const iframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]');
+      for (const f of iframes) {
+        const m = (f.src || "").match(/0x[0-9a-zA-Z]{8,}/);
+        if (m) { window.__turnstileSitekey = m[0]; break; }
+      }
+    });
+    obs.observe(document.documentElement, {
+      childList: true, subtree: true,
+      attributes: true, attributeFilter: ["src"],
     });
   });
 
+  // Capturar sitekey también vía network interception (request URL de Cloudflare)
   let capturedSitekey = null;
+  page.on("request", (req) => {
+    if (capturedSitekey) return;
+    const u = req.url();
+    if (!u.includes("challenges.cloudflare.com")) return;
+    const m = u.match(/0x[0-9a-zA-Z]{8,}/);
+    if (m) {
+      capturedSitekey = m[0];
+      console.log(`🔑 Sitekey capturado via network: ${capturedSitekey}`);
+    }
+  });
 
   try {
     // ── PASO 1 — Cargar portal ────────────────────────────────────────────────
@@ -209,10 +244,26 @@ async function facturarHomeDepotMexico({
       { waitUntil: "networkidle0", timeout: 40000 }
     );
     console.log(`📍 URL final: ${page.url()}`);
-    // Leer sitekey capturado por el interceptor
-    capturedSitekey = await page.evaluate(() => window.__turnstileSitekey || null).catch(() => null);
-    console.log(`🔑 Sitekey interceptado: ${capturedSitekey || "NO CAPTURADO"}`);
     await screenshot("paso1_cargado");
+
+    // Esperar hasta 15 s a que el componente Angular cargue y Turnstile se renderice
+    console.log("⏳ Esperando que Turnstile inicialice...");
+    for (let i = 0; i < 30 && !capturedSitekey; i++) {
+      await page.waitForTimeout(500);
+      if (!capturedSitekey) {
+        capturedSitekey = await page.evaluate(() => window.__turnstileSitekey || null).catch(() => null);
+      }
+      // También revisar frames activos
+      if (!capturedSitekey) {
+        for (const f of page.frames()) {
+          if (!f.url().includes("challenges.cloudflare.com")) continue;
+          const m = f.url().match(/0x[0-9a-zA-Z]{8,}/);
+          if (m) { capturedSitekey = m[0]; break; }
+        }
+      }
+      if (capturedSitekey) break;
+    }
+    console.log(`🔑 Sitekey interceptado: ${capturedSitekey || "NO CAPTURADO"}`);
 
     // ── PASO 2 — Llenar RFC + Ticket ─────────────────────────────────────────
     console.log("📋 PASO 2 — Llenando RFC y No. de Ticket...");
