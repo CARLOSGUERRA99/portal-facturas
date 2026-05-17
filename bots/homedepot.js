@@ -1,6 +1,94 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
+// ── CapSolver: resuelve Cloudflare Turnstile vía API ─────────────────────────
+async function resolverTurnstile(page, apiKey) {
+  // Extraer sitekey del portal (varios métodos)
+  let sitekey = null;
+
+  // Método 1: atributo reflejado en ngx-turnstile (Angular reflection)
+  sitekey = await page.evaluate(() => {
+    const el = document.querySelector("ngx-turnstile");
+    if (!el) return null;
+    return el.getAttribute("ng-reflect-site-key") ||
+           el.getAttribute("sitekey") ||
+           el.getAttribute("data-sitekey") ||
+           el.getAttribute("site-key");
+  }).catch(() => null);
+
+  // Método 2: buscar patrón 0x... en el HTML de la página
+  if (!sitekey) {
+    sitekey = await page.evaluate(() => {
+      const match = document.documentElement.innerHTML.match(/["']?(0x[0-9a-fA-F]{16,})["']?/);
+      return match ? match[1] : null;
+    }).catch(() => null);
+  }
+
+  // Método 3: leer desde el src del iframe de Cloudflare
+  if (!sitekey) {
+    const cfFrame = page.frames().find(f => f.url().includes("challenges.cloudflare.com"));
+    if (cfFrame) {
+      try {
+        const url = new URL(cfFrame.url());
+        sitekey = url.searchParams.get("k") || url.searchParams.get("sitekey");
+      } catch {}
+    }
+  }
+
+  if (!sitekey) {
+    console.log("❌ CapSolver: no se pudo extraer sitekey");
+    return null;
+  }
+  console.log(`🔑 Sitekey: ${sitekey}`);
+
+  const pageUrl = page.url();
+
+  // Crear tarea en CapSolver
+  const createRes = await fetch("https://api.capsolver.com/createTask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clientKey: apiKey,
+      task: {
+        type: "AntiTurnstileTaskProxyLess",
+        websiteURL: pageUrl,
+        websiteKey: sitekey,
+      },
+    }),
+  }).then(r => r.json()).catch(e => ({ errorId: 1, errorDescription: e.message }));
+
+  if (createRes.errorId > 0) {
+    console.log("❌ CapSolver createTask error:", createRes.errorDescription);
+    return null;
+  }
+
+  const taskId = createRes.taskId;
+  console.log(`🔑 CapSolver taskId: ${taskId} — esperando solución...`);
+
+  // Polling hasta 60s
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const result = await fetch("https://api.capsolver.com/getTaskResult", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientKey: apiKey, taskId }),
+    }).then(r => r.json()).catch(() => ({}));
+
+    if (result.status === "ready") {
+      const token = result.solution?.token;
+      console.log(`✅ CapSolver resolvió Turnstile (${token?.length} chars)`);
+      return token;
+    }
+    if (result.errorId > 0) {
+      console.log("❌ CapSolver polling error:", result.errorDescription);
+      return null;
+    }
+  }
+
+  console.log("❌ CapSolver: timeout 60s sin solución");
+  return null;
+}
+
 // Llena un input Angular usando el setter nativo (evita caracteres extra o desordenados)
 async function fillInput(page, selector, value) {
   await page.$eval(selector, (el, v) => {
@@ -86,63 +174,29 @@ async function facturarHomeDepotMexico({
     await fillInput(page, "#ticket", noTicket);
     await screenshot("paso2_rfc_ticket");
 
-    // ── PASO 3 — Click en el checkbox de Cloudflare Turnstile ───────────────────
-    console.log("🔒 PASO 3 — Haciendo click en checkbox Turnstile...");
+    // ── PASO 3 — Resolver Turnstile con CapSolver ────────────────────────────
+    console.log("🔒 PASO 3 — Resolviendo Cloudflare Turnstile...");
 
-    // El checkbox vive dentro de un iframe de challenges.cloudflare.com
-    const intentarClickTurnstile = async () => {
-      // Opción A: acceder al frame CF y hacer click en el checkbox
-      const frames = page.frames();
-      console.log(`   Frames disponibles: ${frames.map(f => f.url().substring(0, 60)).join(" | ")}`);
-      const cfFrame = frames.find(f =>
-        f.url().includes("challenges.cloudflare.com") || f.url().includes("turnstile")
-      );
-      if (cfFrame) {
-        console.log(`🔒 Frame CF encontrado: ${cfFrame.url().substring(0, 80)}`);
-        const cb = await cfFrame.$("input[type='checkbox']").catch(() => null);
-        if (cb) { await cb.click(); console.log("🔒 Click en checkbox dentro del frame"); return true; }
-        // Si no hay checkbox explícito, click en el body del frame
-        await cfFrame.click("body").catch(() => {});
-        console.log("🔒 Click en body del frame CF");
-        return true;
+    const capsolverKey = process.env.CAPSOLVER_API_KEY;
+    let token = "";
+
+    if (capsolverKey) {
+      token = await resolverTurnstile(page, capsolverKey) || "";
+      if (token) {
+        // Inyectar token en el hidden input de Turnstile
+        await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+          if (setter) setter.call(el, t); else el.value = t;
+          el.dispatchEvent(new Event("input",  { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }, token);
+        console.log("✅ Token Turnstile inyectado en el formulario");
       }
-
-      // Opción B: click por coordenadas sobre el widget ngx-turnstile
-      const widget = await page.$("ngx-turnstile, .turnstile-container").catch(() => null);
-      if (widget) {
-        const box = await widget.boundingBox().catch(() => null);
-        if (box) {
-          await page.mouse.click(box.x + 25, box.y + box.height / 2);
-          console.log(`🔒 Click por coordenadas en Turnstile (${box.x + 25}, ${box.y + box.height / 2})`);
-          return true;
-        }
-      }
-      console.log("⚠️ No se encontró el widget Turnstile");
-      return false;
-    };
-
-    await intentarClickTurnstile();
-
-    // Esperar hasta 25s a que el click resuelva el token
-    console.log("🔒 Esperando token tras click (25s)...");
-    await page.waitForFunction(
-      () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
-      { timeout: 25000 }
-    ).catch(() => null);
-
-    let token = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
-
-    if (token.length < 50) {
-      console.log("⚠️ Token ausente — segundo intento de click + 25s...");
-      await intentarClickTurnstile();
-      await page.waitForFunction(
-        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
-        { timeout: 25000 }
-      ).catch(() => null);
-      token = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
+    } else {
+      console.log("⚠️ CAPSOLVER_API_KEY no configurada — intentando sin resolver captcha");
     }
 
-    console.log(`🔒 Turnstile: ${token.length > 50 ? "RESUELTO (" + token.length + " chars)" : "NO RESUELTO — intentando click de todos modos"}`);
+    console.log(`🔒 Turnstile: ${token.length > 50 ? "RESUELTO (" + token.length + " chars)" : "NO RESUELTO"}`);
 
     // Esperar que Angular habilite el botón (campos válidos)
     await page.waitForFunction(
