@@ -5,37 +5,41 @@ const { subirArchivoR2 } = require("../storage/r2");
 async function resolverTurnstile(page, apiKey, capturedSitekey) {
   let sitekey = capturedSitekey || null;
 
-  // Método 1: window.turnstile._widgets (Cloudflare guarda widgets activos)
+  // Método 1: leer main.js (mismo origen) y buscar el sitekey compilado
+  if (!sitekey) {
+    sitekey = await page.evaluate(async () => {
+      try {
+        const scripts = Array.from(document.querySelectorAll("script[src]"));
+        const mainScript = scripts.find(s => s.src.includes("main."));
+        if (!mainScript) return null;
+        const text = await fetch(mainScript.src).then(r => r.text());
+        // Sitekey Turnstile: empieza con 0x seguido de 8+ chars hex/alfanum
+        const m = text.match(/["'`](0x[0-9a-zA-Z]{8,})["'`]/);
+        return m ? m[1] : null;
+      } catch { return null; }
+    }).catch(() => null);
+    if (sitekey) console.log(`🔑 Sitekey extraído de main.js: ${sitekey}`);
+  }
+
+  // Método 2: window.turnstile widgets activos
   if (!sitekey) {
     sitekey = await page.evaluate(() => {
       try {
         const w = window.turnstile;
         if (!w) return null;
-        // Intentar leer sitekey de widgets internos
-        const widgets = w._widgets || w.widgets || {};
-        for (const id of Object.keys(widgets)) {
-          const sk = widgets[id]?.sitekey || widgets[id]?.params?.sitekey;
-          if (sk) return sk;
+        for (const key of Object.keys(w)) {
+          const val = w[key];
+          if (val && typeof val === "object") {
+            const sk = val.sitekey || val.params?.sitekey;
+            if (sk) return sk;
+          }
         }
       } catch {}
       return null;
     }).catch(() => null);
   }
 
-  // Método 2: atributos del elemento ngx-turnstile
-  if (!sitekey) {
-    sitekey = await page.evaluate(() => {
-      const el = document.querySelector("ngx-turnstile");
-      if (!el) return null;
-      for (const attr of el.getAttributeNames()) {
-        const v = el.getAttribute(attr);
-        if (v && /^0x[0-9a-fA-F]{8,}/.test(v)) return v;
-      }
-      return null;
-    }).catch(() => null);
-  }
-
-  // Método 3: iframe URL query params
+  // Método 3: iframe URL
   if (!sitekey) {
     for (const f of page.frames()) {
       if (!f.url().includes("challenges.cloudflare.com")) continue;
@@ -43,12 +47,18 @@ async function resolverTurnstile(page, apiKey, capturedSitekey) {
         const u = new URL(f.url());
         const k = u.searchParams.get("k") || u.searchParams.get("sitekey");
         if (k) { sitekey = k; break; }
+        // Buscar en path segments (formato /h/b/turnstile/f/{version}/{sitekey})
+        const parts = u.pathname.split("/").filter(Boolean);
+        const idx = parts.indexOf("f");
+        if (idx >= 0 && parts[idx + 2] && /^0x/.test(parts[idx + 2])) {
+          sitekey = parts[idx + 2]; break;
+        }
       } catch {}
     }
   }
 
   if (!sitekey) {
-    console.log("❌ CapSolver: sitekey no encontrado — revisa los logs de requests");
+    console.log("❌ CapSolver: sitekey no encontrado en main.js, turnstile ni iframe");
     return null;
   }
   console.log(`🔑 Sitekey: ${sitekey}`);
