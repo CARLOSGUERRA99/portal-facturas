@@ -2,41 +2,53 @@ const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
 // ── CapSolver: resuelve Cloudflare Turnstile vía API ─────────────────────────
-async function resolverTurnstile(page, apiKey) {
-  // Extraer sitekey del portal (varios métodos)
-  let sitekey = null;
+async function resolverTurnstile(page, apiKey, capturedSitekey) {
+  let sitekey = capturedSitekey || null;
 
-  // Método 1: atributo reflejado en ngx-turnstile (Angular reflection)
-  sitekey = await page.evaluate(() => {
-    const el = document.querySelector("ngx-turnstile");
-    if (!el) return null;
-    return el.getAttribute("ng-reflect-site-key") ||
-           el.getAttribute("sitekey") ||
-           el.getAttribute("data-sitekey") ||
-           el.getAttribute("site-key");
-  }).catch(() => null);
-
-  // Método 2: buscar patrón 0x... en el HTML de la página
+  // Método 1: window.turnstile._widgets (Cloudflare guarda widgets activos)
   if (!sitekey) {
     sitekey = await page.evaluate(() => {
-      const match = document.documentElement.innerHTML.match(/["']?(0x[0-9a-fA-F]{16,})["']?/);
-      return match ? match[1] : null;
+      try {
+        const w = window.turnstile;
+        if (!w) return null;
+        // Intentar leer sitekey de widgets internos
+        const widgets = w._widgets || w.widgets || {};
+        for (const id of Object.keys(widgets)) {
+          const sk = widgets[id]?.sitekey || widgets[id]?.params?.sitekey;
+          if (sk) return sk;
+        }
+      } catch {}
+      return null;
     }).catch(() => null);
   }
 
-  // Método 3: leer desde el src del iframe de Cloudflare
+  // Método 2: atributos del elemento ngx-turnstile
   if (!sitekey) {
-    const cfFrame = page.frames().find(f => f.url().includes("challenges.cloudflare.com"));
-    if (cfFrame) {
+    sitekey = await page.evaluate(() => {
+      const el = document.querySelector("ngx-turnstile");
+      if (!el) return null;
+      for (const attr of el.getAttributeNames()) {
+        const v = el.getAttribute(attr);
+        if (v && /^0x[0-9a-fA-F]{8,}/.test(v)) return v;
+      }
+      return null;
+    }).catch(() => null);
+  }
+
+  // Método 3: iframe URL query params
+  if (!sitekey) {
+    for (const f of page.frames()) {
+      if (!f.url().includes("challenges.cloudflare.com")) continue;
       try {
-        const url = new URL(cfFrame.url());
-        sitekey = url.searchParams.get("k") || url.searchParams.get("sitekey");
+        const u = new URL(f.url());
+        const k = u.searchParams.get("k") || u.searchParams.get("sitekey");
+        if (k) { sitekey = k; break; }
       } catch {}
     }
   }
 
   if (!sitekey) {
-    console.log("❌ CapSolver: no se pudo extraer sitekey");
+    console.log("❌ CapSolver: sitekey no encontrado — revisa los logs de requests");
     return null;
   }
   console.log(`🔑 Sitekey: ${sitekey}`);
@@ -156,6 +168,19 @@ async function facturarHomeDepotMexico({
     } catch {}
   }
 
+  // Capturar sitekey interceptando requests de red (antes de navegar)
+  let capturedSitekey = null;
+  page.on("request", req => {
+    const url = req.url();
+    if (!url.includes("challenges.cloudflare.com")) return;
+    console.log(`🌐 CF request: ${url.substring(0, 120)}`);
+    try {
+      const u = new URL(url);
+      const k = u.searchParams.get("k") || u.searchParams.get("sitekey");
+      if (k && k.length > 8) { capturedSitekey = k; console.log(`🔑 Sitekey capturado de red: ${k}`); }
+    } catch {}
+  });
+
   try {
     // ── PASO 1 — Cargar portal ────────────────────────────────────────────────
     console.log("🌐 PASO 1 — Cargando portal...");
@@ -181,7 +206,7 @@ async function facturarHomeDepotMexico({
     let token = "";
 
     if (capsolverKey) {
-      token = await resolverTurnstile(page, capsolverKey) || "";
+      token = await resolverTurnstile(page, capsolverKey, capturedSitekey) || "";
       if (token) {
         // Inyectar token en el hidden input de Turnstile
         await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
