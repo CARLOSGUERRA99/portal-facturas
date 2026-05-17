@@ -2,12 +2,23 @@ const { facturarOXXO } = require('./oxxo');
 const { facturarBuzonFacturas } = require('./buzonfacturas');
 const { facturarGasmaz } = require('./gasmaz');
 const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
+const { facturarHomeDepotMexico } = require('./homedepotmexico');
 
 async function detectarYFacturar(datos) {
   const texto = (datos.ocr_text || '').toLowerCase();
   const comercio = (datos.comercio || '').toLowerCase();
   const portalUrl = (datos.portalUrl || '').toLowerCase();
   const portal = (datos.portal || '').toLowerCase();
+
+  if (
+    portal === 'homedepotmexico' ||
+    texto.includes('home depot') ||
+    comercio.includes('home depot') ||
+    portalUrl.includes('homedepot.com.mx')
+  ) {
+    console.log('🎯 Portal detectado: Home Depot Mexico');
+    return await facturarHomeDepotMexico(datos);
+  }
 
   if (
     portal === 'farmaciaguadalajara' ||

@@ -208,6 +208,46 @@
       }
     },
 
+    "homedepotmexico": {
+      "nombre": "Home Depot Mexico",
+      "bot": "bots/homedepotmexico.js",
+      "estado": "produccion",
+      "url_base": "https://facturacion.homedepot.com.mx:2053/FacturacionWeb/#/portalweb",
+      "tecnologia": "Angular SPA (puerto 2053, HTTPS propio)",
+      "stealth": true,
+      "comercios": ["Home Depot (cualquier sucursal en México)"],
+      "deteccion": {
+        "por_portal_field": "homedepotmexico",
+        "por_texto_ocr": ["home depot"],
+        "por_comercio": ["home depot"],
+        "por_url_qr": ["homedepot.com.mx"]
+      },
+      "campos_ticket": ["barcode"],
+      "campos_fiscales": ["rfc", "razonSocial", "regimenFiscal", "usoCfdi", "codigoPostal"],
+      "flujo": [
+        "Paso 1: Cargar portal Angular en puerto 2053 (ignoreHTTPSErrors: true)",
+        "Paso 2: Llenar barcode (folio) en input:nth-of-type(1) y RFC en input:nth-of-type(2)",
+        "Paso 3: Click 'Facturar/Buscar/Validar' — detectar ya_facturado o folio inválido",
+        "Paso 4: Llenar razón social, código postal, uso CFDI, correo",
+        "Paso 5: Click 'Facturar/Generar' — esperar confirmación",
+        "Paso 6: Interceptar descarga XML y PDF (targetcreated)"
+      ],
+      "comportamientos_especiales": [
+        "Puerto 2053 requiere ignoreHTTPSErrors: true",
+        "Angular SPA — campos sin IDs fijos, usar nth-of-type o buscar por label",
+        "Flujo de 2 pasos: primero validar barcode+RFC, luego llenar datos fiscales",
+        "Descarga via targetcreated (nueva pestaña al hacer click en XML/PDF)"
+      ],
+      "casos_especiales": {
+        "ya_facturado": "Detectar texto 'ya fue facturado' → intentar recuperar archivos",
+        "folio_invalido": "Detectar 'folio inválido' / 'no encontrado' → return ok:false"
+      },
+      "datos_fijos": {
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+
     "farmaciaguadalajara": {
       "nombre": "Farmacias Guadalajara",
       "bot": "bots/farmaciaguadalajara.js",
