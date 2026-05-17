@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "railway-mysql": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-mysql",
+        "mysql://REEMPLAZA_DB_USER:REEMPLAZA_DB_PASSWORD@REEMPLAZA_DB_HOST:REEMPLAZA_DB_PORT/REEMPLAZA_DB_DATABASE"
+      ]
+    }
+  }
+}
