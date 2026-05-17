@@ -34,8 +34,9 @@ async function selectByText(page, selector, keywords) {
 }
 
 // Descarga XML y PDF desde #divFiles.
-// Los links usan javascript:DownloadInvoice/ShowInvoiceReport — se intercepta
-// directamente en el contexto del browser sobreescribiendo fetch y XHR.
+// DownloadInvoice abre ../DownloadInvoice.aspx en un iframe oculto ('hiddenExportFrame').
+// ShowInvoiceReport abre ../Report/ReportViewer.aspx (visor HTML).
+// Construimos las URLs directamente desde los parámetros del href y fetcheamos con cookies.
 async function descargarArchivos(page, browser, ticketId) {
   const ts = ticketId || Date.now();
   let xmlUrl = null, pdfUrl = null;
@@ -45,124 +46,107 @@ async function descargarArchivos(page, browser, ticketId) {
   );
   console.log("🔗 Links en #divFiles:", JSON.stringify(links));
 
-  // Loggear el código fuente de las funciones JS para entender qué endpoint usan
-  const fnSources = await page.evaluate(() => {
-    const fns = ["DownloadInvoice", "ShowInvoiceReport"];
-    return Object.fromEntries(fns.map(n => [n, window[n]?.toString().substring(0, 400) || null]));
-  });
-  console.log("🔍 Funciones JS:", JSON.stringify(fnSources));
+  // URL base del portal (un nivel arriba de la página actual, igual que '../')
+  const pageUrl = page.url();
+  const baseUrl = new URL("../", pageUrl).href;
+  console.log(`🌐 Base URL: ${baseUrl} (página actual: ${pageUrl})`);
 
-  // Inyectar interceptor en el contexto del browser ANTES de hacer click:
-  // sobreescribe fetch y XMLHttpRequest para capturar respuestas binarias.
-  await page.evaluate(() => {
-    window.__gmCaptures = [];
+  const cookies   = await page.cookies();
+  const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join("; ");
 
-    const origFetch = window.fetch;
-    window.fetch = async function(...args) {
-      const resp = await origFetch.apply(this, args);
+  // Helper: fetch con cookies en el contexto del browser, devuelve Buffer o null
+  async function fetchConCookies(url) {
+    const data = await page.evaluate(async (u, ck) => {
       try {
-        const clone = resp.clone();
-        const buf = await clone.arrayBuffer();
-        if (buf.byteLength > 200) {
-          window.__gmCaptures.push({
-            url: resp.url,
-            ct: resp.headers.get("content-type") || "",
-            bytes: Array.from(new Uint8Array(buf)),
-          });
-        }
-      } catch {}
-      return resp;
-    };
-
-    const origOpen = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function(method, url) {
-      this._gmUrl = url;
-      this.responseType = "arraybuffer"; // forzar binario para capturar
-      return origOpen.apply(this, arguments);
-    };
-    const origSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.send = function(body) {
-      this.addEventListener("load", function() {
-        try {
-          const resp = this.response;
-          if (resp instanceof ArrayBuffer && resp.byteLength > 200) {
-            window.__gmCaptures.push({
-              url: this._gmUrl || this.responseURL || "",
-              ct: this.getResponseHeader("content-type") || "",
-              bytes: Array.from(new Uint8Array(resp)),
-            });
-          }
-        } catch {}
-      });
-      return origSend.apply(this, arguments);
-    };
-  });
-
-  // Click XML
-  await page.evaluate(() => {
-    const link = [...document.querySelectorAll("#divFiles a")]
-      .find(l => l.textContent.trim().toUpperCase().includes("XML"));
-    if (link) link.click();
-  });
-  await page.waitForTimeout(6000);
-
-  // Click PDF
-  await page.evaluate(() => {
-    const link = [...document.querySelectorAll("#divFiles a")]
-      .find(l => l.textContent.trim().toUpperCase().includes("PDF"));
-    if (link) link.click();
-  });
-  await page.waitForTimeout(6000);
-
-  // Recuperar capturas del contexto del browser
-  const captures = await page.evaluate(() => window.__gmCaptures || []);
-  console.log(`📥 Capturas en browser context: ${captures.length}`);
-
-  for (const c of captures) {
-    const buf = Buffer.from(c.bytes);
-    const preview = buf.toString("utf8", 0, 10);
-    const isXml = c.ct.includes("xml") || c.url.includes(".xml") || preview.startsWith("<?xml") || preview.startsWith("<cfdi");
-    const isPdf = c.ct.includes("pdf") || c.url.includes(".pdf") || buf.slice(0, 4).toString() === "%PDF";
-    console.log(`   url: ${c.url} | ct: ${c.ct} | size: ${buf.length} | isXml: ${isXml} | isPdf: ${isPdf}`);
-
-    if (isXml && !xmlUrl) {
-      xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.xml`, "application/xml");
-      console.log("✅ XML subido:", xmlUrl);
-    } else if (isPdf && !pdfUrl) {
-      pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
-      console.log("✅ PDF subido:", pdfUrl);
-    }
-  }
-
-  // Fallback: Puppeteer targetcreated (si el portal abrió nueva pestaña)
-  if (!xmlUrl && !pdfUrl) {
-    console.log("⚠️ Sin capturas — sin archivos disponibles en este intento");
-  }
-
-  // Fallback: fetch con cookies para links con URL directa (no javascript:)
-  if (!xmlUrl || !pdfUrl) {
-    console.log("⚠️ Intentando fallback fetch con cookies...");
-    const cookies   = await page.cookies();
-    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join("; ");
-    for (const { text, href } of links) {
-      if (!href || href.startsWith("javascript:")) continue;
-      const bytes = await page.evaluate(async (url, cookie) => {
-        const r   = await fetch(url, { headers: { Cookie: cookie } });
+        const r = await fetch(u, { headers: { Cookie: ck }, credentials: "include" });
         const arr = await r.arrayBuffer();
-        return Array.from(new Uint8Array(arr));
-      }, href, cookieStr).catch(() => null);
-      if (!bytes || bytes.length < 100) continue;
-      const buf = Buffer.from(bytes);
-      if (text.includes("XML") && !xmlUrl) {
-        xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.xml`, "application/xml");
-        console.log("✅ XML subido (fetch):", xmlUrl);
-      } else if (text.includes("PDF") && !pdfUrl) {
-        pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
-        console.log("✅ PDF subido (fetch):", pdfUrl);
+        return { ct: r.headers.get("content-type") || "", bytes: Array.from(new Uint8Array(arr)), ok: r.ok };
+      } catch (e) { return { error: e.message }; }
+    }, url, cookieStr).catch(() => null);
+    if (!data || data.error || !data.bytes) { console.log(`⚠️ fetch error para ${url}:`, data?.error); return null; }
+    const buf = Buffer.from(data.bytes);
+    console.log(`📄 ${url} → ct: ${data.ct} | size: ${buf.length} | preview: ${buf.toString("latin1", 0, 5)}`);
+    return buf;
+  }
+
+  // ── XML: DownloadInvoice('FILENAME.xml', stationId) ──────────────────────
+  const xmlLink = links.find(l => l.text.includes("XML"));
+  if (xmlLink) {
+    const m = xmlLink.href.match(/DownloadInvoice\('([^']+)',\s*(\d+)\)/);
+    if (m) {
+      const fileName    = m[1];
+      const stationId   = m[2];
+      const fiscalFolioId = fileName.split("_")[3]?.replace(".xml", "");
+      const xmlDlUrl = `${baseUrl}DownloadInvoice.aspx?fiscalFolioId=${fiscalFolioId}&stationId=${stationId}`;
+      console.log("🔗 URL XML:", xmlDlUrl);
+      const buf = await fetchConCookies(xmlDlUrl);
+      if (buf && buf.length > 200) {
+        const preview = buf.toString("utf8", 0, 10);
+        if (preview.includes("<?") || preview.includes("<cfdi") || preview.includes("<Comprobante")) {
+          xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.xml`, "application/xml");
+          console.log("✅ XML subido:", xmlUrl);
+        } else {
+          console.log("⚠️ Respuesta no parece XML — preview:", preview);
+        }
       }
     }
   }
 
+  // ── PDF: ShowInvoiceReport abre ReportViewer HTML que internamente carga el PDF
+  //   Estrategia: abrir la URL en una nueva página, interceptar respuestas PDF.
+  const pdfLink = links.find(l => l.text.includes("PDF"));
+  if (pdfLink) {
+    const m = pdfLink.href.match(/ShowInvoiceReport\('([^']+)',\s*(\d+),\s*(true|false)\)/);
+    if (m) {
+      const fileName      = m[1];
+      const stationId     = m[2];
+      const isStationNum  = m[3] === "true";
+      const fiscalFolioId = fileName.split("_")[3]?.replace(".xml", "");
+      let pdfViewUrl = `${baseUrl}Report/ReportViewer.aspx?rptId=DigitalInvoiceReport&fiscalFolioId=${fiscalFolioId}`;
+      pdfViewUrl += isStationNum ? `&stationNumber=${stationId}` : `&stationId=${stationId}`;
+      console.log("🔗 URL PDF (viewer):", pdfViewUrl);
+
+      // Intentar fetch directo primero (a veces devuelve %PDF)
+      const directBuf = await fetchConCookies(pdfViewUrl);
+      if (directBuf && directBuf.toString("latin1", 0, 4) === "%PDF") {
+        pdfUrl = await subirArchivoR2(directBuf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
+        console.log("✅ PDF directo subido:", pdfUrl);
+      } else {
+        // Abrir en nueva página e interceptar respuestas con content-type PDF
+        console.log("ℹ️ ReportViewer es HTML — abriendo nueva pestaña para interceptar PDF...");
+        const pdfPage = await browser.newPage();
+        let pdfBuffer = null;
+
+        await pdfPage.setRequestInterception(true);
+        pdfPage.on("request", req => req.continue());
+        pdfPage.on("response", async resp => {
+          try {
+            const ct = resp.headers()["content-type"] || "";
+            if (ct.includes("pdf") || ct.includes("octet-stream")) {
+              const b = await resp.buffer().catch(() => null);
+              if (b && b.length > 500 && !pdfBuffer) {
+                pdfBuffer = b;
+                console.log(`📄 PDF interceptado: ${b.length} bytes`);
+              }
+            }
+          } catch {}
+        });
+
+        await pdfPage.goto(pdfViewUrl, { waitUntil: "networkidle2", timeout: 20000 }).catch(() => {});
+        await pdfPage.waitForTimeout(3000);
+
+        if (pdfBuffer) {
+          pdfUrl = await subirArchivoR2(pdfBuffer, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
+          console.log("✅ PDF (interceptado) subido:", pdfUrl);
+        } else {
+          console.log("ℹ️ PDF no interceptado en ReportViewer — se procesará por IMAP");
+        }
+        await pdfPage.close().catch(() => {});
+      }
+    }
+  }
+
+  console.log(`📊 Descarga directa — XML: ${!!xmlUrl} | PDF: ${!!pdfUrl}`);
   return { xmlUrl, pdfUrl };
 }
 
