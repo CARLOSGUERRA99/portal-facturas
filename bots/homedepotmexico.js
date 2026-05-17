@@ -1,18 +1,18 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
-// ── Helpers reutilizables (copiados de gasmaz.js) ─────────────────────────────
+// ── Helpers reutilizables ─────────────────────────────────────────────────────
 
 async function fillInput(page, selector, value) {
   await page.click(selector);
-  await page.waitForTimeout(150);
-  await page.keyboard.down("Control");
-  await page.keyboard.press("a");
-  await page.keyboard.up("Control");
-  await page.keyboard.press("Delete");
+  await page.waitForTimeout(200);
+  // Triple-click selecciona todo el texto en el campo
+  await page.click(selector, { clickCount: 3 });
+  await page.waitForTimeout(100);
+  await page.keyboard.press("Backspace");
   await page.waitForTimeout(80);
-  await page.keyboard.type(String(value), { delay: 60 });
-  await page.waitForTimeout(150);
+  await page.keyboard.type(String(value), { delay: 80 });
+  await page.waitForTimeout(200);
   const actual = await page.$eval(selector, el => el.value).catch(() => "?");
   console.log(`📝 ${selector}: "${actual}"`);
 }
@@ -68,78 +68,174 @@ async function facturarHomeDepotMexico({
     // ── PASO 1 — Cargar portal ────────────────────────────────────────────────
     console.log("🌐 PASO 1 — Cargando portal...");
     await page.goto(
-      "https://facturacion.homedepot.com.mx:2053/FacturacionWeb/#/portalweb",
-      { waitUntil: "networkidle2", timeout: 30000 }
+      "https://facturacion.homedepot.com.mx/",
+      { waitUntil: "networkidle2", timeout: 40000 }
     );
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
     await screenshot("paso1_cargado");
-    console.log("✅ Portal cargado");
 
-    // ── PASO 2 — Llenar folio y RFC ───────────────────────────────────────────
-    console.log("📋 PASO 2 — Llenando folio y RFC...");
+    // Loguear URL actual y título para diagnóstico
+    const urlActual = page.url();
+    const titulo = await page.title();
+    console.log(`📍 URL: ${urlActual} | Título: ${titulo}`);
 
-    // Angular SPA: esperar que los campos estén disponibles
-    await page.waitForSelector("input", { timeout: 15000 });
+    // ── PASO 2 — Inspeccionar campos ──────────────────────────────────────────
+    console.log("📋 PASO 2 — Inspeccionando campos del formulario...");
+    await page.waitForSelector("input", { timeout: 20000 });
 
-    // El portal usa campos sin IDs fijos — buscamos por placeholder o posición
-    const inputs = await page.$$("input:not([type='hidden'])");
-    console.log(`📊 Inputs encontrados: ${inputs.length}`);
+    // Loguear todos los inputs visibles para diagnóstico
+    const inputsInfo = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("input:not([type='hidden'])")).map(el => ({
+        id: el.id,
+        name: el.name,
+        placeholder: el.placeholder,
+        type: el.type,
+        value: el.value,
+      }))
+    );
+    console.log("📊 Inputs encontrados:", JSON.stringify(inputsInfo));
 
-    // Folio / barcode — primer input visible
-    await fillInput(page, "input:nth-of-type(1)", barcode);
-    await page.waitForTimeout(300);
+    // ── PASO 3 — Llenar RFC (primer campo) ────────────────────────────────────
+    // El portal muestra: RFC primero, luego No. de Ticket
+    console.log("📋 PASO 3 — Llenando RFC y No. de Ticket...");
 
-    // RFC — segundo input visible
-    await fillInput(page, "input:nth-of-type(2)", rfc);
-    await page.waitForTimeout(300);
+    // Buscar campo RFC por placeholder, id, o name
+    const rfcSelector = await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll("input:not([type='hidden'])"));
+      for (const el of all) {
+        const hint = `${el.id} ${el.name} ${el.placeholder}`.toLowerCase();
+        if (hint.includes("rfc")) {
+          if (el.id) return `#${el.id}`;
+          if (el.name) return `input[name="${el.name}"]`;
+        }
+      }
+      // Fallback: primer input visible
+      const first = all.find(el => el.offsetParent !== null);
+      if (first) {
+        if (first.id) return `#${first.id}`;
+        if (first.name) return `input[name="${first.name}"]`;
+      }
+      return "input:not([type='hidden'])";
+    });
+    console.log(`🔍 Selector RFC: ${rfcSelector}`);
+    await fillInput(page, rfcSelector, rfc);
+    await page.waitForTimeout(400);
 
-    await screenshot("paso2_folio_rfc");
-
-    // ── PASO 3 — Click en Facturar (primer paso) ──────────────────────────────
-    console.log("🔍 PASO 3 — Validando folio...");
-
-    const clickedFacturar1 = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button, input[type='submit'], a"))
-        .find(el => /facturar|buscar|validar|siguiente|continuar/i.test(el.textContent || el.value || ""));
-      if (btn) { btn.scrollIntoView(); btn.click(); return btn.textContent?.trim() || "btn"; }
+    // Buscar campo de ticket/folio/barcode
+    const ticketSelector = await page.evaluate(() => {
+      const all = Array.from(document.querySelectorAll("input:not([type='hidden'])"));
+      for (const el of all) {
+        const hint = `${el.id} ${el.name} ${el.placeholder}`.toLowerCase();
+        if (hint.includes("ticket") || hint.includes("folio") || hint.includes("barcode") || hint.includes("no.")) {
+          if (el.id) return `#${el.id}`;
+          if (el.name) return `input[name="${el.name}"]`;
+        }
+      }
+      // Fallback: segundo input visible
+      const visible = all.filter(el => el.offsetParent !== null);
+      if (visible[1]) {
+        if (visible[1].id) return `#${visible[1].id}`;
+        if (visible[1].name) return `input[name="${visible[1].name}"]`;
+      }
       return null;
     });
-    console.log(`✅ Click en: "${clickedFacturar1}"`);
-    await page.waitForTimeout(2000);
-    await screenshot("paso3_post_validar");
+    console.log(`🔍 Selector Ticket: ${ticketSelector}`);
+    if (ticketSelector) {
+      await fillInput(page, ticketSelector, barcode);
+      await page.waitForTimeout(400);
+    }
 
-    // Detectar casos: ya facturado, error, o continúa al paso 2
+    await screenshot("paso3_rfc_ticket");
+
+    // ── PASO 4 — Cloudflare Turnstile ─────────────────────────────────────────
+    console.log("🔒 PASO 4 — Manejando Cloudflare CAPTCHA...");
+    // Intentar hacer click en el checkbox del CAPTCHA
+    const captchaClickado = await page.evaluate(() => {
+      // Buscar iframe de Cloudflare Turnstile
+      const iframes = Array.from(document.querySelectorAll("iframe"));
+      const cfIframe = iframes.find(f =>
+        (f.src || "").includes("cloudflare") ||
+        (f.src || "").includes("challenges") ||
+        (f.title || "").toLowerCase().includes("cloudflare") ||
+        (f.title || "").toLowerCase().includes("challenge")
+      );
+      if (cfIframe) {
+        console.log("🔒 iframe Cloudflare encontrado:", cfIframe.src);
+        return "iframe_encontrado";
+      }
+      // Buscar checkbox directo
+      const cb = document.querySelector("input[type='checkbox']");
+      if (cb) { cb.click(); return "checkbox_clickado"; }
+      return "no_captcha";
+    });
+    console.log(`🔒 CAPTCHA estado: ${captchaClickado}`);
+
+    if (captchaClickado === "iframe_encontrado") {
+      // Esperar a que stealth mode resuelva el CAPTCHA automáticamente
+      console.log("⏳ Esperando resolución automática de CAPTCHA (stealth)...");
+      await page.waitForTimeout(6000);
+      await screenshot("paso4_post_captcha");
+    }
+
+    // ── PASO 5 — Click en Continuar ───────────────────────────────────────────
+    console.log("🔍 PASO 5 — Haciendo click en Continuar...");
+    const clickedContinuar = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll("button, input[type='submit'], a"))
+        .find(el => /continuar|siguiente|validar|buscar|facturar/i.test(el.textContent || el.value || ""));
+      if (btn) { btn.scrollIntoView(); btn.click(); return btn.textContent?.trim() || btn.value || "btn"; }
+      return null;
+    });
+    console.log(`✅ Click en: "${clickedContinuar}"`);
+    await page.waitForTimeout(3000);
+    await screenshot("paso5_post_continuar");
+
+    // Detectar resultado del paso 1
     const textoActual = await page.evaluate(() => document.body.innerText.toLowerCase());
 
     if (/ya\s*(fue\s*)?facturad|previously\s*invoiced/i.test(textoActual)) {
       console.log("♻️ Folio ya facturado — intentando recuperar...");
       await screenshot("ya_facturado");
-      // Buscar links de descarga
       const { xmlUrl, pdfUrl } = await intentarDescarga(page, browser, ticketId);
       await browser.close();
       if (xmlUrl || pdfUrl) return { ok: true, xmlUrl, pdfUrl, yaExistia: true };
       return { ok: true, procesandoCorreo: true };
     }
 
-    if (/folio\s*inv[aá]lido|no\s*(se\s*)?encontr|ticket\s*no\s*v[aá]lid|vencid|expirad/i.test(textoActual)) {
+    if (/folio\s*inv[aá]lido|no\s*(se\s*)?encontr|ticket\s*no\s*v[aá]lid|vencid|expirad|no\s*existe/i.test(textoActual)) {
       const msg = await page.evaluate(() => {
-        const alertas = document.querySelectorAll(".alert, .error, [class*='error'], [class*='alert']");
-        return alertas.length ? alertas[0].innerText.trim() : "Folio o RFC inválido";
+        const alertas = document.querySelectorAll(".alert, .error, [class*='error'], [class*='alert'], p");
+        for (const a of alertas) {
+          const t = a.innerText?.trim();
+          if (t && t.length > 5) return t;
+        }
+        return "Folio o RFC inválido";
       });
       await browser.close();
       return { ok: false, msg: `Home Depot rechazó el folio: ${msg}` };
     }
 
-    // ── PASO 4 — Llenar datos fiscales ────────────────────────────────────────
-    console.log("📋 PASO 4 — Llenando datos fiscales...");
-    await page.waitForTimeout(1500);
+    // ── PASO 6 — Llenar datos fiscales (paso 2 del portal) ───────────────────
+    console.log("📋 PASO 6 — Llenando datos fiscales...");
+    await page.waitForTimeout(2000);
+
+    // Loguear inputs del paso 2
+    const inputs2 = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("input:not([type='hidden']), select")).map(el => ({
+        tag: el.tagName,
+        id: el.id,
+        name: el.name,
+        placeholder: el.placeholder,
+        type: el.type,
+      }))
+    );
+    console.log("📊 Inputs paso 2:", JSON.stringify(inputs2));
 
     // Razón social
-    const rsSelector = await encontrarInputPorLabel(page, ["razón social", "razon social", "nombre", "empresa"]);
+    const rsSelector = await encontrarInputPorLabel(page, ["razón social", "razon social", "nombre", "empresa", "name"]);
     if (rsSelector) await fillInput(page, rsSelector, razonSocial);
 
     // Código postal
-    const cpSelector = await encontrarInputPorLabel(page, ["código postal", "codigo postal", "c.p.", "cp"]);
+    const cpSelector = await encontrarInputPorLabel(page, ["código postal", "codigo postal", "c.p.", "cp", "postal"]);
     if (cpSelector) {
       await fillInput(page, cpSelector, String(codigoPostal || ""));
       await page.waitForTimeout(800);
@@ -148,49 +244,47 @@ async function facturarHomeDepotMexico({
     // Uso CFDI — select
     const cfdiOk = await selectByText(page, "select", ["gastos en general", "G03"]).catch(() => false);
     if (!cfdiOk) {
-      // Intentar con ng-select o mat-select de Angular
-      await page.evaluate((uso) => {
-        const selects = document.querySelectorAll("select, ng-select, mat-select");
+      await page.evaluate(() => {
+        const selects = document.querySelectorAll("select");
         selects.forEach(s => {
           const opt = Array.from(s.options || []).find(o =>
             o.text.toLowerCase().includes("gastos en general")
           );
           if (opt) { s.value = opt.value; s.dispatchEvent(new Event("change", { bubbles: true })); }
         });
-      }, usoCfdi);
+      });
     }
     await page.waitForTimeout(300);
 
-    // Correo de captura
-    const emailSelector = await encontrarInputPorLabel(page, ["correo", "email", "e-mail"]);
+    // Correo
+    const emailSelector = await encontrarInputPorLabel(page, ["correo", "email", "e-mail", "mail"]);
     if (emailSelector) await fillInput(page, emailSelector, "buzonfacturas@serviciosga.site");
 
-    await screenshot("paso4_datos_fiscales");
-    console.log("✅ Datos fiscales completos");
+    await screenshot("paso6_datos_fiscales");
 
-    // ── PASO 5 — Click en Facturar (segundo paso) ─────────────────────────────
-    console.log("🧾 PASO 5 — Generando factura...");
+    // ── PASO 7 — Generar factura ──────────────────────────────────────────────
+    console.log("🧾 PASO 7 — Generando factura...");
     await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
-        .find(el => /facturar|generar|emitir/i.test(el.textContent || el.value || ""));
+        .find(el => /facturar|generar|emitir|continuar/i.test(el.textContent || el.value || ""));
       if (btn) { btn.scrollIntoView(); btn.click(); }
     });
 
-    await page.waitForTimeout(5000);
-    await screenshot("paso5_post_facturar");
+    await page.waitForTimeout(6000);
+    await screenshot("paso7_post_facturar");
 
     const textoFinal = await page.evaluate(() => document.body.innerText.toLowerCase());
     if (/error|inv[aá]lid|rechazad/i.test(textoFinal) && !/descarg|xml|pdf/i.test(textoFinal)) {
       const msgErr = await page.evaluate(() => {
-        const el = document.querySelector(".alert, .error, [class*='error']");
+        const el = document.querySelector(".alert, .error, [class*='error'], p");
         return el ? el.innerText.trim() : "Error al generar factura";
       });
       await browser.close();
       return { ok: false, msg: msgErr };
     }
 
-    // ── PASO 6 — Descargar XML y PDF ──────────────────────────────────────────
-    console.log("📥 PASO 6 — Descargando archivos...");
+    // ── PASO 8 — Descargar XML y PDF ──────────────────────────────────────────
+    console.log("📥 PASO 8 — Descargando archivos...");
     const { xmlUrl, pdfUrl } = await intentarDescarga(page, browser, ticketId);
     await browser.close();
 
@@ -214,8 +308,7 @@ async function facturarHomeDepotMexico({
 
 async function encontrarInputPorLabel(page, keywords) {
   return await page.evaluate((kws) => {
-    // Buscar label que contenga la keyword y obtener el input asociado
-    const labels = Array.from(document.querySelectorAll("label, .label, mat-label, [class*='label']"));
+    const labels = Array.from(document.querySelectorAll("label, .label, [class*='label']"));
     for (const label of labels) {
       const texto = label.innerText?.toLowerCase() || "";
       if (kws.some(k => texto.includes(k))) {
@@ -224,8 +317,7 @@ async function encontrarInputPorLabel(page, keywords) {
           const input = document.getElementById(forAttr);
           if (input) return `#${forAttr}`;
         }
-        // Buscar input hermano o dentro del mismo contenedor
-        const parent = label.closest(".form-group, .field, mat-form-field, [class*='form']");
+        const parent = label.closest(".form-group, .field, [class*='form']");
         if (parent) {
           const input = parent.querySelector("input, textarea");
           if (input) {
@@ -244,7 +336,6 @@ async function intentarDescarga(page, browser, ticketId) {
   let xmlUrl = null, pdfUrl = null;
 
   try {
-    // Buscar links/botones de descarga en la página actual
     const links = await page.evaluate(() =>
       Array.from(document.querySelectorAll("a, button"))
         .filter(el => /xml|pdf|descarg|factura/i.test(el.textContent || el.href || ""))
@@ -252,7 +343,6 @@ async function intentarDescarga(page, browser, ticketId) {
     );
     console.log("🔗 Links de descarga encontrados:", JSON.stringify(links));
 
-    // Interceptar nueva pestaña al hacer click en XML/PDF
     async function interceptarClick(keyword) {
       const newPagePromise = new Promise(resolve =>
         browser.once("targetcreated", t => resolve(t.page()))
