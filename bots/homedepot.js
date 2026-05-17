@@ -569,33 +569,46 @@ async function facturarHomeDepotMexico({
 
     await page.click("button.btn-primary");
     console.log("✅ Click en Facturar");
-    await page.waitForTimeout(2000);
 
-    // Modal de confirmación: "Iniciando timbrado de comprobante / ¿Toda la información es correcta?"
-    // Aparece con botones "Regresar" y "Continuar" — hay que hacer click en "Continuar"
-    const modalTitulo = await page.evaluate(() => {
-      const modal = document.querySelector("app-modal-alert");
-      if (!modal) return null;
-      return modal.innerText?.trim().slice(0, 80) || "modal-sin-texto";
-    }).catch(() => null);
+    // Esperar hasta 5s a que aparezca el modal (botón "Continuar" visible)
+    // Angular renderiza el modal en un overlay fuera de app-modal-alert —
+    // buscamos "Continuar" en TODOS los botones visibles de la página.
+    const modalApareció = await page.waitForFunction(() => {
+      const btns = Array.from(document.querySelectorAll("button"));
+      return btns.some(b => /continuar/i.test(b.textContent) && b.offsetParent !== null && !b.disabled);
+    }, { timeout: 5000 }).catch(() => false);
 
-    if (modalTitulo) {
-      console.log(`📋 Modal detectado: "${modalTitulo}" — haciendo click en Continuar...`);
-      await page.evaluate(() => {
-        // Buscar el botón "Continuar" (no "Regresar") dentro del modal
-        const btns = Array.from(document.querySelectorAll("app-modal-alert button, .modal button"));
-        const continuar = btns.find(b => /continuar/i.test(b.textContent));
-        if (continuar) { continuar.scrollIntoView(); continuar.click(); }
-        else {
-          // Fallback: cualquier btn-primary dentro del modal
-          const primary = document.querySelector("app-modal-alert .btn-primary, app-modal-alert button:last-child");
-          if (primary) primary.click();
-        }
+    if (modalApareció) {
+      const modalTexto = await page.evaluate(() => {
+        // Capturar todo el texto visible en la página para diagnóstico
+        const modal = document.querySelector("app-modal-alert") || document.body;
+        return modal.innerText?.trim().slice(0, 120) || "sin-texto";
+      }).catch(() => "?");
+      console.log(`📋 Modal detectado: "${modalTexto}" — buscando botón Continuar...`);
+
+      const clicked = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        // Primer "Continuar" visible y habilitado
+        const continuar = btns.find(b =>
+          /continuar/i.test(b.textContent) && b.offsetParent !== null && !b.disabled
+        );
+        if (continuar) { continuar.scrollIntoView(); continuar.click(); return continuar.textContent.trim(); }
+        return null;
       });
-      console.log("✅ Click en Continuar del modal");
-      await page.waitForTimeout(8000); // esperar timbrado SAT
+      console.log(`✅ Click en botón: "${clicked || "no encontrado"}"`);
+
+      // Esperar que la página cambie: URL nueva, o aparezca XML/PDF/descarga, o pasen 40s
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: "networkidle0", timeout: 40000 }).catch(() => null),
+        page.waitForFunction(
+          () => /xml|pdf|descarg|factura\s*(generada|exitosa|list)/i.test(document.body.innerText),
+          { timeout: 40000 }
+        ).catch(() => null),
+        page.waitForTimeout(35000),
+      ]);
     } else {
-      await page.waitForTimeout(5000);
+      console.log("⚠️ Modal de confirmación no apareció — esperando carga directa...");
+      await page.waitForTimeout(10000);
     }
 
     await screenshot("paso5_post_facturar");
