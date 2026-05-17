@@ -268,14 +268,17 @@ async function ejecutarFacturacion(ticketId, userId) {
     const botNombre = datos.portal || ticket.comercio || 'desconocido';
 
     if (resultado.sinPortal) {
-      await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]);
-      await registrarIntento(ticketId, botNombre, 'error', 'Portal no reconocido', duracionMs);
+      const comercioNombre = ticket.comercio || datos.comercio || 'desconocido';
+      const portalUrl = datos.portalUrl || ticket.portal_url || '';
+      await registrarIntento(ticketId, botNombre, 'agente', 'Portal nuevo — iniciando agente', duracionMs);
+      await db.query(
+        "UPDATE tickets SET status = 'procesando', error_msg = 'Agente analizando portal nuevo...' WHERE id = ?",
+        [ticketId]
+      );
       await crearNotificacion(userId, 'portal_desconocido',
-        `Tu ticket de ${ticket.comercio || 'este comercio'} necesita revisión — aún no tenemos su portal. El administrador fue notificado.`);
-      const [adminRows] = await db.query('SELECT id FROM users WHERE email = ?', [ADMIN_EMAIL]);
-      if (adminRows.length) await crearNotificacion(adminRows[0].id, 'portal_pendiente',
-        `Nuevo portal en ticket #${ticketId}: "${ticket.comercio}". Revisa Portales Pendientes.`);
-      return { ok: false, sinPortal: true };
+        `⚙️ Tu ticket de ${comercioNombre} es un portal nuevo. Nuestros agentes ya lo están analizando para configurarlo automáticamente.`);
+      setImmediate(() => manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl).catch(console.error));
+      return { ok: true, agente: true };
     }
 
     if (resultado.ok && resultado.procesandoCorreo) {
@@ -362,6 +365,60 @@ async function ejecutarFacturacion(ticketId, userId) {
     console.error(`❌ ejecutarFacturacion #${ticketId}:`, err.message);
     await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]).catch(() => {});
     return { ok: false, msg: err.message };
+  }
+}
+
+// ── AGENTE: analizar portal nuevo y notificar resultado ──────────────────────
+function resumenAgente(resultado, comercioNombre) {
+  if (!resultado.ok) {
+    const etapa = resultado.etapa || 'desconocida';
+    return {
+      corto: `Agente falló en "${etapa}": ${resultado.msg || 'error desconocido'}`,
+      usuario: `No pudimos configurar ${comercioNombre} automáticamente. El equipo lo revisará manualmente en 24-48 h.`,
+      admin: `❌ Agente falló en etapa "${etapa}" para ${comercioNombre}. Error: ${resultado.msg}. Requiere configuración manual.`,
+    };
+  }
+  const val = resultado.validacion || {};
+  const errores = val.errores || [];
+  const advertencias = val.advertencias || [];
+  const archivo = resultado.nombreArchivo || 'bot.js';
+
+  if (errores.length === 0) {
+    return {
+      corto: `Bot generado (${archivo}) — pendiente aprobación.`,
+      usuario: `Configuramos ${comercioNombre} automáticamente. En breve podrás reintentar tu ticket.`,
+      admin: `✅ Bot listo sin errores: ${archivo}. ${advertencias.length} advertencia(s). Aprueba en Portales Pendientes → el ticket se reintentará solo.`,
+    };
+  }
+  const listaErrores = errores.slice(0, 3).join(' | ');
+  return {
+    corto: `Bot con ${errores.length} error(es): ${listaErrores}`,
+    usuario: `Analizamos ${comercioNombre} pero el portal necesita ajuste. El equipo lo resolverá pronto.`,
+    admin: `⚠️ Bot generado con ${errores.length} error(es): ${listaErrores}. ${advertencias.length} advertencia(s). Revisa y corrige en Portales Pendientes.`,
+  };
+}
+
+async function manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl) {
+  console.log(`🤖 [Agente] Iniciando para "${comercioNombre}" — ticket #${ticketId}`);
+  try {
+    const resultado = await orquestar({ db, ticketId, portalUrl, comercioNombre });
+    const resumen = resumenAgente(resultado, comercioNombre);
+    console.log(`🤖 [Agente] Terminó — ticket #${ticketId}: ${resumen.corto}`);
+
+    await db.query(
+      "UPDATE tickets SET status = 'error', error_msg = ? WHERE id = ?",
+      [resumen.corto, ticketId]
+    );
+    await crearNotificacion(userId, 'factura_error', resumen.usuario);
+
+    const [adminRows] = await db.query('SELECT id FROM users WHERE email = ?', [ADMIN_EMAIL]);
+    if (adminRows.length) await crearNotificacion(adminRows[0].id, 'portal_pendiente', resumen.admin);
+  } catch (err) {
+    console.error(`❌ [Agente] manejarNuevoPortal #${ticketId}:`, err.message);
+    await db.query(
+      "UPDATE tickets SET status = 'error', error_msg = ? WHERE id = ?",
+      [`Error del agente: ${err.message}`, ticketId]
+    );
   }
 }
 
@@ -1027,33 +1084,14 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
 
-    const ticketStatus = portalDetectado === "desconocido" ? "error" : "pendiente_confirmacion";
-    const ticketPortalUrl = portalDetectado === "desconocido" ? "desconocido" : portalUrl;
-
     const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", ticketStatus, residente_id, ticketPortalUrl]
+      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, datosOCR.portalUrl || portalUrl || null]
     );
     const ticketId = insertResult.insertId;
 
-    if (portalDetectado === "desconocido") {
-      await crearNotificacion(
-        req.session.userId,
-        "portal_desconocido",
-        `No reconocemos el portal de facturación de "${datosOCR.comercio || 'este comercio'}". El administrador fue notificado y lo configuraremos pronto.`
-      );
-      const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
-      if (adminRows.length > 0) {
-        await crearNotificacion(
-          adminRows[0].id,
-          "portal_pendiente",
-          `Nuevo portal detectado en ticket #${ticketId} de "${datosOCR.comercio || 'comercio desconocido'}". Revisa la sección Portales Pendientes.`
-        );
-      }
-      return res.json({ ok: true, sinPortal: true, comercio: datosOCR.comercio || "desconocido", urlQR: datosOCR.portalUrl || null, datos: datosOCR, ticketId, campos });
-    }
-
-    // Auto-facturar en background — no bloquea la respuesta
+    // Auto-facturar en background para TODOS los portales (conocidos y desconocidos).
+    // Si es desconocido, ejecutarFacturacion detecta sinPortal y dispara los agentes.
     setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
     res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
   } catch (err) {
