@@ -219,6 +219,186 @@ function proximaMedianoche() {
 
 const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara'];
 
+// ── LÓGICA COMPARTIDA DE FACTURACIÓN (usada por auto-facturar y endpoint manual) ──
+async function ejecutarFacturacion(ticketId, userId) {
+  try {
+    const [[ticket]] = await db.query(
+      `SELECT t.*, u.rfc, u.razon_social, u.calle, u.num_ext, u.num_int, u.colonia,
+              u.municipio, u.estado, u.codigo_postal, u.regimen_fiscal, u.uso_cfdi, u.email,
+              u.nombre AS user_nombre
+       FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ?`,
+      [ticketId]
+    );
+    if (!ticket) return;
+    if (!ticket.rfc) {
+      await crearNotificacion(userId, 'factura_error', 'Completa tu perfil fiscal para facturar automáticamente.');
+      return;
+    }
+
+    const datos = JSON.parse(ticket.ocr_json || '{}');
+    if (datos.portal === 'oxxo' || (ticket.comercio || '').toLowerCase().includes('oxxo')) {
+      datos.folio = corregirFolioOxxo(datos.folio);
+      datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
+    }
+
+    const inicioMs = Date.now();
+    await db.query("UPDATE tickets SET status = 'procesando', reintento_programado = NULL WHERE id = ?", [ticketId]);
+
+    const resultado = await detectarYFacturar({
+      ...datos,
+      rfc: ticket.rfc,
+      razonSocial: ticket.razon_social,
+      calle: ticket.calle,
+      ext: ticket.num_ext,
+      int: ticket.num_int,
+      colonia: ticket.colonia,
+      municipio: ticket.municipio,
+      estado: ticket.estado,
+      codigoPostal: ticket.codigo_postal,
+      regimenFiscal: ticket.regimen_fiscal,
+      usoCfdi: ticket.uso_cfdi || 'G03',
+      email: ticket.email,
+      ticketId,
+      ocr_text: ticket.ocr_text,
+      portalUrl: datos.portalUrl || ticket.portal_url || null,
+      comercio: ticket.comercio,
+    }, db);
+
+    const duracionMs = Date.now() - inicioMs;
+    const botNombre = datos.portal || ticket.comercio || 'desconocido';
+
+    if (resultado.sinPortal) {
+      await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]);
+      await registrarIntento(ticketId, botNombre, 'error', 'Portal no reconocido', duracionMs);
+      await crearNotificacion(userId, 'portal_desconocido',
+        `Tu ticket de ${ticket.comercio || 'este comercio'} necesita revisión — aún no tenemos su portal. El administrador fue notificado.`);
+      const [adminRows] = await db.query('SELECT id FROM users WHERE email = ?', [ADMIN_EMAIL]);
+      if (adminRows.length) await crearNotificacion(adminRows[0].id, 'portal_pendiente',
+        `Nuevo portal en ticket #${ticketId}: "${ticket.comercio}". Revisa Portales Pendientes.`);
+      return { ok: false, sinPortal: true };
+    }
+
+    if (resultado.ok && resultado.procesandoCorreo) {
+      await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [ticketId]);
+      await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura generada — esperando correo', duracionMs);
+      return { ok: true, procesandoCorreo: true };
+    }
+
+    if (resultado.ok) {
+      let pdfUrl = resultado.pdfUrl || resultado.pdf || null;
+      let xmlUrl = resultado.xmlUrl || resultado.xml || null;
+      if (xmlUrl) {
+        const renombrado = await renombrarConUUID(xmlUrl, pdfUrl, ticket.comercio);
+        xmlUrl = renombrado.xmlUrl;
+        pdfUrl = renombrado.pdfUrl;
+      }
+      await registrarIntento(ticketId, botNombre, 'ok', `XML: ${xmlUrl || 'n/a'} | PDF: ${pdfUrl || 'n/a'}`, duracionMs);
+      await db.query("INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
+        [userId, ticketId, ticket.comercio, pdfUrl, xmlUrl, 'completado']);
+      await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticketId]);
+      try {
+        if (ticket.email) {
+          await transporter.sendMail({
+            from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
+            to: ticket.email,
+            subject: '✅ Tu factura está lista — GPN Pinturas y Recubrimientos',
+            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+              <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;">
+                <h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2>
+                <p style="color:#C0DD97;margin:4px 0 0;">Portal de Facturación Automática</p>
+              </div>
+              <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
+                <p>Hola <strong>${ticket.user_nombre || ''}</strong>,</p>
+                <p>Tu factura fue generada exitosamente.</p>
+                <div style="margin:20px 0;">
+                  ${xmlUrl ? `<a href="${xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ''}
+                  ${pdfUrl ? `<a href="${pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ''}
+                </div>
+                <a href="https://portal-facturas-production.up.railway.app/mis-facturas" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">Ver mis facturas →</a>
+              </div>
+            </div>`,
+          });
+        }
+      } catch {}
+      await crearNotificacion(userId, 'factura_lista', `✅ Tu factura de ${ticket.comercio || 'este comercio'} está lista para descargar.`);
+      return { ok: true, pdfUrl, xmlUrl };
+    }
+
+    // ── Error del bot ──
+    // Detectar folio no disponible en OXXO (escalación)
+    if (resultado.tipo === 'folio_no_disponible') {
+      const [[{ nIntentos }]] = await db.query(
+        "SELECT COUNT(*) as nIntentos FROM ticket_intentos WHERE ticket_id = ? AND mensaje LIKE '%folio_no_disponible%'",
+        [ticketId]
+      );
+      await registrarIntento(ticketId, botNombre, 'error', `folio_no_disponible|${resultado.msg}`, duracionMs);
+
+      if (nIntentos >= 1) {
+        // 2do+ intento: escalar a aclaración directa en tienda
+        await db.query("UPDATE tickets SET status = 'error', reintento_programado = NULL WHERE id = ?", [ticketId]);
+        await crearNotificacion(userId, 'factura_error',
+          `❌ Tu ticket de ${ticket.comercio} no puede facturarse. El folio no existe en el sistema después de 2 intentos. Te recomendamos levantar una aclaración directamente en tienda OXXO.`);
+      } else {
+        // 1er intento: reintento a medianoche
+        const medianoche = proximaMedianoche();
+        await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [medianoche, ticketId]);
+        await crearNotificacion(userId, 'factura_error',
+          `⚠️ Tu ticket de ${ticket.comercio} no está disponible aún — los tickets OXXO tardan hasta 24h en activarse. Lo reintentaremos esta noche a las 12:00 am. Si los datos son incorrectos, usa "Editar datos" para corregirlos.`);
+      }
+      return { ok: false, tipo: 'folio_no_disponible', msg: resultado.msg };
+    }
+
+    // Error genérico
+    const medianoche = proximaMedianoche();
+    await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [medianoche, ticketId]);
+    await registrarIntento(ticketId, botNombre, 'error', resultado.msg || 'Error desconocido', duracionMs);
+    const esPortalConocido = PORTALES_CONOCIDOS.includes((datos.portal || '').toLowerCase());
+    await crearNotificacion(userId, 'factura_error', esPortalConocido
+      ? `Tu factura de ${ticket.comercio || 'este comercio'} no pudo generarse. Reintentaremos esta noche a las 12:00 am. Si los datos son incorrectos, usa "Editar datos".`
+      : `Tu ticket de ${ticket.comercio || 'este comercio'} está en revisión. Te avisaremos en 24-48 horas.`);
+    return { ok: false, msg: resultado.msg };
+
+  } catch (err) {
+    console.error(`❌ ejecutarFacturacion #${ticketId}:`, err.message);
+    await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]).catch(() => {});
+    return { ok: false, msg: err.message };
+  }
+}
+
+// Verifica concurrencia y ejecuta (o encola si ya hay 2 procesando)
+async function autoFacturar(ticketId, userId) {
+  const [[{ procesando }]] = await db.query(
+    "SELECT COUNT(*) as procesando FROM tickets WHERE status = 'procesando'"
+  );
+  if (procesando >= 2) {
+    console.log(`⏳ Cola llena (${procesando} procesando) — ticket #${ticketId} en espera`);
+    return; // queda en pendiente_confirmacion, procesarCola lo tomará
+  }
+  await ejecutarFacturacion(ticketId, userId);
+}
+
+// Job cada 30s: procesa tickets en cola cuando hay slots disponibles
+async function procesarCola() {
+  try {
+    const [[{ procesando }]] = await db.query(
+      "SELECT COUNT(*) as procesando FROM tickets WHERE status = 'procesando'"
+    );
+    if (procesando >= 2) return;
+    const slots = 2 - procesando;
+    const [enCola] = await db.query(
+      `SELECT t.id, t.user_id FROM tickets t
+       JOIN users u ON t.user_id = u.id
+       WHERE t.status = 'pendiente_confirmacion' AND u.rfc IS NOT NULL AND u.rfc != ''
+       ORDER BY t.creado ASC LIMIT ?`,
+      [slots]
+    );
+    for (const t of enCola) {
+      ejecutarFacturacion(t.id, t.user_id).catch(console.error);
+    }
+  } catch {}
+}
+setInterval(procesarCola, 30 * 1000);
+
 function corregirIdVentaOxxo(id) {
   if (!id) return id;
   const map = { T:'1', t:'1', I:'1', i:'1', O:'0', o:'0', S:'5', s:'5' };
@@ -873,7 +1053,9 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
       return res.json({ ok: true, sinPortal: true, comercio: datosOCR.comercio || "desconocido", urlQR: datosOCR.portalUrl || null, datos: datosOCR, ticketId, campos });
     }
 
-    res.json({ ok: true, msg: "Ticket procesado", datos: datosOCR, ticketId, campos });
+    // Auto-facturar en background — no bloquea la respuesta
+    setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
+    res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
   } catch (err) {
     console.error("❌ Error:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
@@ -929,154 +1111,56 @@ app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
   }
 });
 
-// ── BOT FACTURAR ──
+// ── EDITAR DATOS OCR (ticket en error) ──
+app.put("/api/tickets/:id/datos", auth, async (req, res) => {
+  try {
+    const ticketId = req.params.id;
+    const [rows] = await db.query(
+      "SELECT id, status, ocr_json FROM tickets WHERE id = ? AND user_id = ?",
+      [ticketId, req.session.userId]
+    );
+    if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
+    const ticket = rows[0];
+
+    if (!['error', 'pendiente', 'pendiente_confirmacion'].includes(ticket.status)) {
+      return res.json({ ok: false, msg: "Solo puedes editar tickets en estado error o pendiente" });
+    }
+
+    const datosActuales = JSON.parse(ticket.ocr_json || '{}');
+    const datosNuevos = { ...datosActuales, ...req.body };
+
+    await db.query(
+      "UPDATE tickets SET ocr_json = ?, status = 'pendiente', error_msg = NULL WHERE id = ?",
+      [JSON.stringify(datosNuevos), ticketId]
+    );
+
+    res.json({ ok: true, msg: "Datos actualizados", datos: datosNuevos });
+  } catch (err) {
+    console.error("❌ Error PUT datos:", err.message);
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
+// ── BOT FACTURAR (reintento manual) ──
 app.post("/facturar/:ticketId", auth, async (req, res) => {
   try {
     const { ticketId } = req.params;
-    const [tickets] = await db.query(
-      "SELECT t.*, u.email, u.nombre AS user_nombre FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ? AND t.user_id = ?",
+    const [rows] = await db.query(
+      "SELECT id, status FROM tickets WHERE id = ? AND user_id = ?",
       [ticketId, req.session.userId]
     );
-    if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
-    const ticket = tickets[0];
-    const datos = JSON.parse(ticket.ocr_json || "{}");
-    console.log(`🎯 FACTURAR #${ticketId} — ocr_json leído de DB:`, JSON.stringify(datos));
-    if (datos.portal === "oxxo" || (ticket.comercio || "").toLowerCase().includes("oxxo")) {
-      datos.folio = corregirFolioOxxo(datos.folio);
-      datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
-    }
+    if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
+    if (rows[0].status === 'procesando') return res.json({ ok: false, msg: "Ya está procesándose" });
 
-    const [userRows] = await db.query(
-      "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
-      [req.session.userId]
-    );
-    if (userRows.length === 0) return res.json({ ok: false, msg: "Perfil fiscal no encontrado" });
-    const perfil = userRows[0];
+    // Verificar concurrencia
+    const [[{ procesando }]] = await db.query("SELECT COUNT(*) as procesando FROM tickets WHERE status = 'procesando'");
+    if (procesando >= 2) return res.json({ ok: false, enCola: true, msg: "Ya hay 2 tickets procesándose. Este se iniciará automáticamente cuando terminen." });
 
-    if (!perfil.rfc) return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
-
-    await db.query("UPDATE tickets SET status = 'procesando', reintento_programado = NULL WHERE id = ?", [ticketId]);
-
-    const _inicioMs = Date.now();
-    const resultado = await detectarYFacturar({
-      ...datos,
-      rfc: perfil.rfc,
-      razonSocial: perfil.razon_social,
-      calle: perfil.calle,
-      ext: perfil.num_ext,
-      int: perfil.num_int,
-      colonia: perfil.colonia,
-      municipio: perfil.municipio,
-      estado: perfil.estado,
-      codigoPostal: perfil.codigo_postal,
-      regimenFiscal: perfil.regimen_fiscal,
-      usoCfdi: perfil.uso_cfdi || "G03",
-      email: ticket.email,
-      ticketId,
-      ocr_text: ticket.ocr_text,
-      portalUrl: datos.portalUrl || ticket.portal_url || null,
-      comercio: ticket.comercio,
-    }, db);
-
-    const _duracionMs = Date.now() - _inicioMs;
-    const _botNombre = resultado.portal || datos.portal || ticket.comercio || 'desconocido';
-
-    if (resultado.sinPortal) {
-      await db.query("UPDATE tickets SET status = 'error', portal_url = 'desconocido' WHERE id = ?", [ticketId]);
-      await registrarIntento(ticketId, _botNombre, 'error', 'Portal no reconocido', _duracionMs);
-      await crearNotificacion(
-        req.session.userId, "portal_desconocido",
-        `Tu ticket de ${ticket.comercio || "este comercio"} necesita revisión — aún no tenemos configurado su portal. El administrador fue notificado y lo habilitará pronto.`
-      );
-      const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
-      if (adminRows.length > 0) {
-        await crearNotificacion(adminRows[0].id, "portal_pendiente",
-          `Nuevo portal detectado en ticket #${ticketId} de ${ticket.comercio || "comercio desconocido"}. Revisa la sección Portales Pendientes.`
-        );
-      }
-      return res.json({ ok: false, msg: "Portal de facturación no reconocido. El administrador ha sido notificado." });
-    }
-
-    if (resultado.ok && resultado.procesandoCorreo) {
-      await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [ticketId]);
-      await registrarIntento(ticketId, _botNombre, 'procesando_correo', 'Factura generada — esperando correo', _duracionMs);
-      return res.json({ ok: true, procesandoCorreo: true, msg: "Factura generada — esperando correo con archivos XML/PDF. Te avisaremos cuando estén listos." });
-    }
-
-    if (resultado.ok) {
-      let pdfUrl = resultado.pdfUrl || resultado.pdf || null;
-      let xmlUrl = resultado.xmlUrl || resultado.xml || null;
-
-      if (xmlUrl) {
-        const renombrado = await renombrarConUUID(xmlUrl, pdfUrl, ticket.comercio);
-        xmlUrl = renombrado.xmlUrl;
-        pdfUrl = renombrado.pdfUrl;
-      }
-
-      await registrarIntento(ticketId, _botNombre, 'ok', `XML: ${xmlUrl || 'n/a'} | PDF: ${pdfUrl || 'n/a'}`, _duracionMs);
-      await db.query(
-        "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
-        [req.session.userId, ticketId, ticket.comercio, pdfUrl, xmlUrl, "completado"]
-      );
-      await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticketId]);
-
-      // Enviar correo al usuario
-      try {
-        if (ticket.email) {
-          await transporter.sendMail({
-            from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
-            to: ticket.email,
-            subject: "✅ Tu factura está lista — GPN Pinturas y Recubrimientos",
-            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-              <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;">
-                <h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2>
-                <p style="color:#C0DD97;margin:4px 0 0;">Portal de Facturación Automática</p>
-              </div>
-              <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
-                <p>Hola <strong>${ticket.user_nombre || ""}</strong>,</p>
-                <p>Tu factura fue generada exitosamente y está lista para descargar.</p>
-                <div style="margin:20px 0;">
-                  ${xmlUrl ? `<a href="${xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ""}
-                  ${pdfUrl ? `<a href="${pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ""}
-                </div>
-                <p style="color:#555;">También puedes verla en el portal:</p>
-                <a href="https://portal-facturas-production.up.railway.app/mis-facturas" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">Ver mis facturas →</a>
-                <p style="color:#999;font-size:12px;margin-top:20px;">
-                  Los archivos estarán disponibles 60 días.<br>
-                  GPN Facturas — Sistema automático de facturación.
-                </p>
-              </div>
-            </div>`,
-          });
-          console.log("📧 Correo enviado a:", ticket.email);
-        }
-      } catch (mailErr) {
-        console.log("⚠️ Error enviando correo (no crítico):", mailErr.message);
-      }
-
-      res.json({ ok: true, pdf: pdfUrl, xml: xmlUrl });
-    } else {
-      // Error del bot — programar reintento automático a medianoche
-      const medianoche = proximaMedianoche();
-      await db.query(
-        "UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?",
-        [medianoche, ticketId]
-      );
-      await registrarIntento(ticketId, _botNombre, 'error', resultado.msg || 'Error desconocido', _duracionMs);
-
-      // Notificación con contexto: ¿portal conocido o nuevo?
-      const esPortalConocido = PORTALES_CONOCIDOS.includes((datos.portal || '').toLowerCase());
-      const mensajeUsuario = esPortalConocido
-        ? `Tu factura de ${ticket.comercio || "este comercio"} no pudo generarse en este intento. El sistema lo reintentará automáticamente esta noche a las 12:00 am. Si la necesitas antes, puedes reintentar manualmente desde Mis Tickets.`
-        : `Tu ticket de ${ticket.comercio || "este comercio"} está en proceso de revisión — es un comercio que aún estamos configurando. Te avisaremos dentro de 24 a 48 horas cuando esté listo.`;
-
-      await crearNotificacion(req.session.userId, "factura_error", mensajeUsuario);
-      res.json({ ok: false, msg: resultado.msg, reintentoEn: medianoche.toISOString() });
-    }
+    // Ejecutar en background y responder de inmediato
+    ejecutarFacturacion(parseInt(ticketId), req.session.userId).catch(console.error);
+    res.json({ ok: true, procesando: true, msg: "Facturación iniciada" });
   } catch (err) {
-    console.error("❌ Error:", err.message);
-    await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]).catch(() => {});
-    await registrarIntento(ticketId, 'sistema', 'error', err.message, Date.now() - _inicioMs).catch(() => {});
+    console.error("❌ Error /facturar:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
   }
 });

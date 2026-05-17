@@ -18,6 +18,16 @@
     .ticket-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
     .tickets-card { background: white; border-radius: var(--card-radius); box-shadow: var(--shadow); overflow: hidden; }
     .tickets-card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 16px; border-bottom: 1px solid #f0f4ec; }
+    /* Modal editar datos */
+    .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9000; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal-box { background:white; border-radius:16px; padding:28px 28px 24px; width:100%; max-width:420px; box-shadow:0 8px 40px rgba(0,0,0,0.18); }
+    .modal-title { font-weight:700; font-size:1.05rem; color:var(--text); margin-bottom:18px; }
+    .modal-field { margin-bottom:14px; }
+    .modal-field label { display:block; font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:5px; }
+    .modal-field input { width:100%; padding:9px 12px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:0.9rem; outline:none; box-sizing:border-box; }
+    .modal-field input:focus { border-color:var(--green); }
+    .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
   </style>
 </head>
 <body>
@@ -64,6 +74,18 @@
       <a href="/logout" class="nav-logout">Salir</a>
     </div>
   </nav>
+
+  <!-- Modal editar datos OCR -->
+  <div class="modal-overlay" id="modal-editar">
+    <div class="modal-box">
+      <div class="modal-title">Editar datos del ticket</div>
+      <div id="modal-fields"></div>
+      <div class="modal-actions">
+        <button class="btn btn-sm" onclick="cerrarModal()" style="background:#f3f4f6;color:#374151;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" onclick="guardarDatos()">Guardar y reintentar</button>
+      </div>
+    </div>
+  </div>
 
   <div class="container">
     <div class="page-header">
@@ -214,9 +236,11 @@
           : '';
 
         const isPendingConfirm = t.status === 'pendiente_confirmacion';
-        const canFacturar = t.status === 'pendiente';
-        const canDelete = t.status === 'error' || t.status === 'pendiente' || isPendingConfirm;
-        const btnLabel = t.status === 'procesado' ? 'Ya facturado' : t.status === 'error' ? 'Reintentar' : 'Facturar';
+        const isError = t.status === 'error';
+        const canFacturar = t.status === 'pendiente' || isError;
+        const canDelete = isError || t.status === 'pendiente' || isPendingConfirm;
+        const btnLabel = t.status === 'procesado' ? 'Facturado' : isError ? 'Reintentar' : 'Facturar';
+        const isInactive = ['procesando', 'procesando_correo', 'procesado'].includes(t.status);
 
         return `
           <div class="ticket-row" id="ticket-${t.id}">
@@ -224,18 +248,17 @@
               <div class="ticket-name">${t.comercio || 'Comercio desconocido'}</div>
               <div class="ticket-meta">${t.nombre_archivo} · ${new Date(t.creado).toLocaleDateString('es-MX', {day:'2-digit',month:'short',year:'numeric'})}</div>
               ${datosStr ? `<div class="ticket-datos">${datosStr}</div>` : ''}
+              ${isError && t.error_msg ? `<div style="font-size:0.75rem;color:#c0392b;margin-top:3px;">${t.error_msg}</div>` : ''}
             </div>
             <div class="ticket-right">
               ${badge}
               ${isPendingConfirm
                 ? `<a href="/dashboard?confirmar=${t.id}" class="btn btn-primary btn-sm">Revisar datos</a>`
-                : `<button
-                    class="btn btn-primary btn-sm"
-                    id="btn-${t.id}"
-                    ${!canFacturar && t.status !== 'error' ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}
-                    onclick="facturar(${t.id})"
-                  >${btnLabel}</button>`
+                : isInactive
+                  ? `<button class="btn btn-primary btn-sm" disabled style="opacity:0.4;cursor:not-allowed;">${btnLabel}</button>`
+                  : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>`
               }
+              ${isError ? `<button class="btn btn-sm" onclick="abrirEditar(${t.id}, ${JSON.stringify(JSON.stringify(datos))})" style="background:#f0f4ff;color:#3b5bdb;border:1.5px solid #c5d0fa;">Editar datos</button>` : ''}
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
             </div>
           </div>`;
@@ -255,8 +278,19 @@
 
         if (data.ok) {
           alertEl.className = 'alert alert-success';
-          alertEl.textContent = 'Factura generada exitosamente. Revisa "Mis Facturas" para descargarla.';
+          alertEl.textContent = data.procesando
+            ? 'Facturación iniciada en segundo plano. Te avisaremos cuando esté lista.'
+            : 'Factura generada. Revisa "Mis Facturas" para descargarla.';
           alertEl.style.display = 'block';
+          cargarTickets();
+        } else if (data.enCola) {
+          alertEl.className = 'alert';
+          alertEl.style.background = '#fff8e6';
+          alertEl.style.color = '#c97b00';
+          alertEl.style.display = 'block';
+          alertEl.textContent = data.msg || 'En cola — se procesará automáticamente.';
+          btn.disabled = false;
+          btn.textContent = 'Reintentar';
           cargarTickets();
         } else {
           alertEl.className = 'alert alert-error';
@@ -264,6 +298,7 @@
           alertEl.style.display = 'block';
           btn.disabled = false;
           btn.textContent = 'Reintentar';
+          cargarTickets();
         }
       } catch {
         alertEl.className = 'alert alert-error';
@@ -289,6 +324,75 @@
         btn.textContent = 'Eliminar';
       }
     }
+
+    let editarTicketId = null;
+
+    const CAMPOS_EDITABLES = [
+      { key: 'folio',         label: 'Folio / Ticket' },
+      { key: 'referencia',    label: 'Referencia' },
+      { key: 'idVenta',       label: 'ID de Venta' },
+      { key: 'codigoTicket',  label: 'Código de ticket' },
+      { key: 'folioFactura',  label: 'Folio de factura' },
+      { key: 'total',         label: 'Total ($)' },
+      { key: 'fecha',         label: 'Fecha' },
+      { key: 'comercio',      label: 'Comercio' },
+      { key: 'portalUrl',     label: 'URL del portal' },
+    ];
+
+    function abrirEditar(ticketId, datosJson) {
+      editarTicketId = ticketId;
+      let datos = {};
+      try { datos = JSON.parse(datosJson); } catch {}
+
+      const presentes = CAMPOS_EDITABLES.filter(c => datos[c.key] !== undefined && datos[c.key] !== null && datos[c.key] !== '');
+      const extras = CAMPOS_EDITABLES.filter(c => !presentes.find(p => p.key === c.key));
+      const campos = [...presentes, ...extras.slice(0, 2)]; // mostrar los que tienen valor + 2 vacíos extra
+
+      document.getElementById('modal-fields').innerHTML = campos.map(c => `
+        <div class="modal-field">
+          <label>${c.label}</label>
+          <input id="campo-${c.key}" type="text" value="${datos[c.key] !== undefined ? String(datos[c.key]).replace(/"/g,'&quot;') : ''}">
+        </div>`).join('');
+
+      document.getElementById('modal-editar').classList.add('open');
+    }
+
+    function cerrarModal() {
+      document.getElementById('modal-editar').classList.remove('open');
+      editarTicketId = null;
+    }
+
+    async function guardarDatos() {
+      if (!editarTicketId) return;
+      const body = {};
+      CAMPOS_EDITABLES.forEach(c => {
+        const el = document.getElementById('campo-' + c.key);
+        if (el && el.value.trim() !== '') body[c.key] = el.value.trim();
+      });
+
+      const res = await fetch(`/api/tickets/${editarTicketId}/datos`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      cerrarModal();
+
+      if (data.ok) {
+        // Lanzar reintento automático
+        await facturar(editarTicketId);
+      } else {
+        const alertEl = document.getElementById('alert-factura');
+        alertEl.className = 'alert alert-error';
+        alertEl.textContent = 'Error al guardar: ' + (data.msg || 'intenta de nuevo');
+        alertEl.style.display = 'block';
+      }
+      cargarTickets();
+    }
+
+    document.getElementById('modal-editar').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-editar')) cerrarModal();
+    });
 
     initNav();
     cargarTickets();

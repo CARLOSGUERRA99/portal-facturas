@@ -262,18 +262,31 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
       const validar = spans.find(s => s.textContent.trim() === "Validar Ticket");
       if (validar) validar.click();
     });
-    await page.waitForFunction(() => {
-      const btn = document.querySelector("#form\\:continuar");
-      return btn && !btn.disabled;
-    }, { timeout: 15000 });
 
-    const continuarHabilitado = await page.evaluate(() => {
-      const btn = document.querySelector("#form\\:continuar");
-      return btn && !btn.disabled;
-    });
-    console.log("▶️ Continuar habilitado:", continuarHabilitado);
+    // Esperar: continuar habilitado O modal de error (folio no encontrado)
+    const resultadoValidacion = await Promise.race([
+      page.waitForFunction(() => {
+        const btn = document.querySelector("#form\\:continuar");
+        return btn && !btn.disabled;
+      }, { timeout: 15000 }).then(() => 'continuar'),
+      page.waitForFunction(() => {
+        const body = document.body.innerText || '';
+        return /no tuvo éxito|no encontr|folio.*no.*valid|favor de volver/i.test(body);
+      }, { timeout: 15000 }).then(() => 'folio_no_disponible'),
+    ]).catch(() => 'timeout');
 
-    if (!continuarHabilitado) {
+    console.log("▶️ Resultado validación:", resultadoValidacion);
+
+    if (resultadoValidacion === 'folio_no_disponible') {
+      const msgPortal = await page.evaluate(() => {
+        const el = document.querySelector('.ui-messages-error, [class*="error"], .ui-dialog-content');
+        return el ? el.textContent.trim().substring(0, 200) : 'Folio no encontrado en el sistema OXXO';
+      });
+      await browser.close();
+      return { ok: false, tipo: 'folio_no_disponible', msg: `El folio no está disponible en OXXO. ${msgPortal}` };
+    }
+
+    if (resultadoValidacion === 'timeout' || resultadoValidacion !== 'continuar') {
       const mensajeError = await page.evaluate(() => {
         const msgs = document.querySelectorAll(".ui-messages-error, .ui-message-error-detail, [class*='error']");
         return Array.from(msgs).map(m => m.textContent.trim()).filter(t => t).join(" | ");
