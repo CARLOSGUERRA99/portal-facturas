@@ -204,6 +204,9 @@ async function facturarHomeDepotMexico({
           val.render = function(container, params) {
             try {
               if (params && params.sitekey) window.__turnstileSitekey = params.sitekey;
+              // Guardar callback de éxito para poder inyectar token de CapSolver
+              const cb = params && (params.callback || params["callback"]);
+              if (typeof cb === "function") window.__turnstileCallbacks.push(cb);
             } catch {}
             return orig.apply(this, arguments);
           };
@@ -225,6 +228,14 @@ async function facturarHomeDepotMexico({
       childList: true, subtree: true,
       attributes: true, attributeFilter: ["src"],
     });
+
+    // Guardar el callback de éxito de Turnstile para poder llamarlo con token de CapSolver
+    window.__turnstileCallbacks = [];
+    window.__injectTurnstileToken = function(token) {
+      for (const cb of window.__turnstileCallbacks) {
+        try { cb(token); } catch {}
+      }
+    };
   });
 
   // Capturar sitekey vía respuestas HTTP: chunks Angular + URLs de Cloudflare
@@ -319,18 +330,26 @@ async function facturarHomeDepotMexico({
     } else if (capsolverKey) {
       const capToken = await resolverTurnstile(page, capsolverKey, capturedSitekey) || "";
       if (capToken) {
-        // Intentar inyectar — si el input no existe el Turnstile es invisible y ya fue resuelto
-        try {
-          await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
-            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-            if (setter) setter.call(el, t); else el.value = t;
-            el.dispatchEvent(new Event("input",  { bubbles: true }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-          }, capToken);
-          console.log(`✅ Token CapSolver inyectado (${capToken.length} chars)`);
-        } catch {
-          console.log("⚠️ No se encontró input[name='cf-turnstile-response'] — Turnstile invisible, continuando sin inyectar");
-        }
+        // Llamar directamente el callback de Angular que registró ngx-turnstile
+        // Esto actualiza el reactive form sin necesitar el iframe ni el input hidden
+        const callbacksLlamados = await page.evaluate((token) => {
+          if (typeof window.__injectTurnstileToken === "function") {
+            window.__injectTurnstileToken(token);
+            return window.__turnstileCallbacks ? window.__turnstileCallbacks.length : 0;
+          }
+          return 0;
+        }, capToken);
+        console.log(`✅ Token CapSolver inyectado via callback Angular (${callbacksLlamados} callbacks, ${capToken.length} chars)`);
+
+        // También intentar el input hidden por si acaso existe
+        await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+          if (setter) setter.call(el, t); else el.value = t;
+          el.dispatchEvent(new Event("input",  { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }, capToken).catch(() => {});
+
+        await page.waitForTimeout(500);
       }
     } else {
       console.log("⚠️ CAPSOLVER_API_KEY no configurada — intentando sin resolver captcha");
