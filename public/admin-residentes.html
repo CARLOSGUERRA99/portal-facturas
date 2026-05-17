@@ -10,74 +10,53 @@
   <style>
     .admin-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start; }
 
-    /* Employee cards */
-    .empleado-card {
-      background: white;
-      border-radius: var(--card-radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      margin-bottom: 16px;
-    }
-    .empleado-header {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 18px 20px;
-      border-bottom: 1px solid #f0f4ec;
-    }
-    .empleado-avatar {
-      width: 44px; height: 44px;
-      background: var(--green-light);
-      border-radius: 14px;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 0.9rem; color: var(--green);
-      flex-shrink: 0;
-    }
+    .empleado-card { background: white; border-radius: var(--card-radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 16px; }
+    .empleado-header { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid #f0f4ec; }
+    .empleado-avatar { width: 44px; height: 44px; background: var(--green-light); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; color: var(--green); flex-shrink: 0; }
     .empleado-info { flex: 1; min-width: 0; }
     .empleado-name { font-weight: 700; font-size: 0.95rem; color: var(--text); }
     .empleado-email { font-size: 0.78rem; color: var(--text-muted); }
     .empleado-body { padding: 16px 20px; }
-    .empleado-residentes-title {
-      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 10px;
-    }
+    .empleado-residentes-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 10px; }
     .residentes-asignados { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; min-height: 28px; }
-    .residente-tag {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--green-light); color: var(--green);
-      padding: 5px 10px 5px 12px;
-      border-radius: 20px; font-size: 0.8rem; font-weight: 600;
-    }
-    .tag-remove {
-      width: 18px; height: 18px;
-      background: rgba(59,109,17,0.15); border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 12px; line-height: 1;
-      transition: background 0.15s; border: none; color: var(--green);
-    }
+    .residente-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--green-light); color: var(--green); padding: 5px 10px 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
+    .tag-remove { width: 18px; height: 18px; background: rgba(59,109,17,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; line-height: 1; transition: background 0.15s; border: none; color: var(--green); }
     .tag-remove:hover { background: rgba(59,109,17,0.3); }
     .no-asignados { font-size: 0.82rem; color: var(--text-muted); font-style: italic; }
-
     .assign-row { display: flex; gap: 8px; align-items: center; }
     .assign-row select { flex: 1; }
 
-    /* Resident catalog */
-    .residente-catalog-item {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px;
-      border-bottom: 1px solid #f0f4ec;
-    }
+    .residente-catalog-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f0f4ec; }
     .residente-catalog-item:last-child { border-bottom: none; }
     .rc-name { font-weight: 600; font-size: 0.875rem; }
     .rc-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
 
-    /* Create form */
     .create-form { display: none; background: var(--bg); border-radius: 12px; padding: 16px; margin-top: 16px; }
     .create-form.open { display: block; }
 
-    @media (max-width: 900px) {
-      .admin-grid { grid-template-columns: 1fr; }
-    }
+    /* Tickets fallidos */
+    .debug-btn { background: #fff3cd; color: #856404; border: 1px solid #ffc107; border-radius: 7px; padding: 5px 10px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+    .debug-btn:hover { background: #ffc107; color: white; }
+    .repro-btn { background: var(--green-light); color: var(--green); border: 1px solid var(--green); border-radius: 7px; padding: 5px 10px; font-size: 0.78rem; font-weight: 600; cursor: pointer; }
+    .repro-btn:hover { background: var(--green); color: white; }
+
+    /* Modal genérico grande */
+    .modal-lg { max-width: 760px; width: 95vw; }
+    .prompt-box { background: #1a1a2e; color: #e2e8f0; border-radius: 10px; padding: 16px; font-size: 0.8rem; font-family: monospace; line-height: 1.6; white-space: pre-wrap; max-height: 340px; overflow-y: auto; }
+    .debug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; max-height: 420px; overflow-y: auto; }
+    .debug-thumb { border-radius: 8px; overflow: hidden; border: 1.5px solid var(--border); }
+    .debug-thumb img { width: 100%; display: block; cursor: pointer; }
+    .debug-thumb-label { font-size: 0.7rem; color: var(--text-muted); padding: 4px 6px; background: var(--bg); }
+
+    /* WhatsApp bubble */
+    .wa-bubble { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .wa-btn { width: 56px; height: 56px; background: #25D366; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(37,211,102,0.45); transition: transform 0.15s, box-shadow 0.15s; }
+    .wa-btn:hover { transform: scale(1.08); box-shadow: 0 6px 20px rgba(37,211,102,0.55); }
+    .wa-btn svg { width: 30px; height: 30px; fill: white; }
+    .wa-tooltip { background: white; color: var(--text); font-size: 0.82rem; font-weight: 600; padding: 8px 13px; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.12); white-space: nowrap; opacity: 0; pointer-events: none; transform: translateX(6px); transition: opacity 0.2s, transform 0.2s; }
+    .wa-bubble:hover .wa-tooltip { opacity: 1; transform: translateX(0); }
+
+    @media (max-width: 900px) { .admin-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -118,13 +97,12 @@
   <div class="container">
     <div class="page-header">
       <div class="page-title">Panel de Administración</div>
-      <div class="page-subtitle">Gestiona empleados y asignación de residentes</div>
+      <div class="page-subtitle">Gestiona empleados, residentes y portales del sistema</div>
     </div>
 
     <div id="main-alert" class="alert"></div>
 
     <div class="admin-grid">
-
       <!-- LEFT: Empleados -->
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
@@ -143,7 +121,6 @@
             <div class="card-title">Catálogo de residentes</div>
             <button class="btn btn-primary btn-sm" onclick="toggleCreateForm()">+ Nuevo</button>
           </div>
-
           <div class="create-form" id="create-form">
             <div class="form-group">
               <label class="label">Nombre del residente</label>
@@ -155,7 +132,6 @@
             </div>
             <button class="btn btn-primary btn-sm" onclick="crearResidente()">Crear residente</button>
           </div>
-
           <div id="residentes-catalog" style="margin-top:4px;">
             <div class="empty-state" style="padding:24px;">
               <div class="empty-icon" style="font-size:28px;">⏳</div>
@@ -164,10 +140,9 @@
           </div>
         </div>
       </div>
-
     </div>
 
-    <!-- Filtrar tickets por empleado -->
+    <!-- Consultar tickets por empleado -->
     <div style="margin-top:32px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <div>
@@ -200,31 +175,46 @@
       </div>
     </div>
 
-    <!-- Portales Pendientes -->
+    <!-- ── 4B: Tickets Fallidos ── -->
     <div style="margin-top:32px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <div>
-          <div class="card-title" style="font-size:1rem;font-weight:700;">Portales Pendientes</div>
-          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Comercios cuyo portal de facturación no fue reconocido</div>
+          <div class="card-title" style="font-size:1rem;font-weight:700;text-transform:none;letter-spacing:0;">Tickets fallidos</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Tickets con error — revisa screenshots de debug y reprocesa</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="cargarErrores()">↺ Actualizar</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;" id="errores-card">
+        <div class="empty-state" style="padding:32px;">
+          <div class="empty-icon">⏳</div><div class="empty-title">Cargando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 4A: Portales Pendientes mejorado ── -->
+    <div style="margin-top:32px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div class="card-title" style="font-size:1rem;font-weight:700;text-transform:none;letter-spacing:0;">Portales pendientes</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Comercios sin portal configurado — genera el bot con Claude</div>
         </div>
         <button class="btn btn-outline btn-sm" onclick="cargarPortales()">↺ Actualizar</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden;" id="portales-card">
         <div class="empty-state" style="padding:32px;">
-          <div class="empty-icon">⏳</div>
-          <div class="empty-title">Cargando...</div>
+          <div class="empty-icon">⏳</div><div class="empty-title">Cargando...</div>
         </div>
       </div>
     </div>
 
   </div>
 
-  <!-- Modal Registrar Portal -->
+  <!-- ── Modal: Registrar portal ── -->
   <div class="modal-overlay" id="modal-portal">
     <div class="modal-card">
       <div class="modal-header">
         <div class="modal-title">Registrar portal de facturación</div>
-        <button class="modal-close" onclick="cerrarModal()">✕</button>
+        <button class="modal-close" onclick="cerrarModal('modal-portal')">✕</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="modal-comercio">
@@ -246,39 +236,318 @@
         <div id="modal-alert" class="alert" style="margin-top:0;"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>
+        <button class="btn btn-outline" onclick="cerrarModal('modal-portal')">Cancelar</button>
         <button class="btn btn-primary" id="modal-btn" onclick="registrarPortal()">Registrar portal</button>
       </div>
     </div>
   </div>
 
+  <!-- ── Modal: Generar bot con Claude ── -->
+  <div class="modal-overlay" id="modal-prompt">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title">Generar bot con Claude — <span id="prompt-comercio-label"></span></div>
+        <button class="modal-close" onclick="cerrarModal('modal-prompt')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.83rem;color:var(--text-muted);margin-bottom:12px;">
+          Copia este prompt y pégalo en Claude Code (nueva sesión). Claude analizará el portal y generará el bot automáticamente.
+        </p>
+        <div class="prompt-box" id="prompt-contenido"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="cerrarModal('modal-prompt')">Cerrar</button>
+        <button class="btn btn-primary" onclick="copiarPrompt()">📋 Copiar prompt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal: Debug screenshots ── -->
+  <div class="modal-overlay" id="modal-debug">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <div class="modal-title">Debug — <span id="debug-comercio-label"></span></div>
+        <button class="modal-close" onclick="cerrarModal('modal-debug')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:0.83rem;color:var(--text-muted);margin-bottom:12px;">
+          Screenshots recientes del bot. Los más nuevos aparecen primero.
+        </p>
+        <div class="debug-grid" id="debug-grid">
+          <div style="padding:24px;text-align:center;color:var(--text-muted);">Cargando screenshots...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="cerrarModal('modal-debug')">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 4C: Burbuja WhatsApp ── -->
+  <div class="wa-bubble" onclick="abrirWhatsApp()">
+    <div class="wa-tooltip">¿Necesitas ayuda?</div>
+    <div class="wa-btn">
+      <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+        <path d="M16 0C7.163 0 0 7.163 0 16c0 2.833.738 5.488 2.031 7.794L0 32l8.418-2.009A15.93 15.93 0 0016 32c8.837 0 16-7.163 16-16S24.837 0 16 0zm0 29.333a13.27 13.27 0 01-6.818-1.877l-.488-.293-5.003 1.194 1.227-4.872-.32-.503A13.267 13.267 0 012.667 16C2.667 8.636 8.636 2.667 16 2.667S29.333 8.636 29.333 16 23.364 29.333 16 29.333zm7.293-9.907c-.4-.2-2.368-1.168-2.735-1.301-.368-.133-.635-.2-.902.2-.267.4-1.034 1.301-1.268 1.568-.233.267-.467.3-.867.1-.4-.2-1.688-.622-3.215-1.981-1.188-1.058-1.99-2.365-2.223-2.765-.233-.4-.025-.616.175-.815.18-.178.4-.467.6-.7.2-.233.267-.4.4-.667.133-.267.067-.5-.033-.7-.1-.2-.902-2.168-1.235-2.968-.325-.78-.655-.674-.902-.686l-.768-.013c-.267 0-.7.1-1.067.5-.368.4-1.4 1.368-1.4 3.335 0 1.967 1.433 3.868 1.633 4.135.2.267 2.82 4.305 6.833 6.034.955.412 1.7.659 2.281.844.958.305 1.831.262 2.52.159.769-.115 2.368-.969 2.702-1.904.333-.935.333-1.736.233-1.904-.1-.167-.367-.267-.767-.467z"/>
+      </svg>
+    </div>
+  </div>
+
   <script>
+    const WA_NUMBER = '526443615568';
+
     let allResidentes = [];
-    let allEmpleados = [];
+    let allEmpleados  = [];
 
     async function init() {
       try {
-        const meRes = await fetch('/api/me');
-        const me = await meRes.json();
+        const me = await (await fetch('/api/me')).json();
         const initials = (me.nombre || '').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'A';
         document.getElementById('nav-avatar').textContent = initials;
-        document.getElementById('nav-name').textContent = me.nombre || '';
+        document.getElementById('nav-name').textContent   = me.nombre || '';
       } catch {}
-
-      await Promise.all([cargarEmpleados(), cargarResidentes()]);
+      await Promise.all([cargarEmpleados(), cargarResidentes(), cargarErrores(), cargarPortales()]);
     }
 
-    async function cargarResidentes() {
-      const res = await fetch('/api/admin/todos-residentes');
+    // ── WhatsApp ──────────────────────────────────────────────────────────────
+    function abrirWhatsApp() {
+      const msg = encodeURIComponent('Hola, necesito ayuda con el portal de facturación.');
+      window.open(`https://wa.me/${WA_NUMBER}?text=${msg}`, '_blank');
+    }
+
+    // ── Modales genéricos ─────────────────────────────────────────────────────
+    function cerrarModal(id) {
+      document.getElementById(id).classList.remove('open');
+    }
+    document.addEventListener('click', e => {
+      ['modal-portal','modal-prompt','modal-debug'].forEach(id => {
+        const el = document.getElementById(id);
+        if (e.target === el) el.classList.remove('open');
+      });
+    });
+
+    // ── 4B: Tickets fallidos ──────────────────────────────────────────────────
+    async function cargarErrores() {
+      const card = document.getElementById('errores-card');
+      const res  = await fetch('/api/admin/tickets/errores');
       const data = await res.json();
+
+      if (!data.ok || !data.tickets.length) {
+        card.innerHTML = `
+          <div class="empty-state" style="padding:32px;">
+            <div class="empty-icon">✅</div>
+            <div class="empty-title">Sin tickets fallidos</div>
+            <div class="empty-desc">Todos los tickets se procesaron correctamente</div>
+          </div>`;
+        return;
+      }
+
+      card.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1.5px solid var(--border);background:var(--bg);">
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">#</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Empleado</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Comercio</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Fecha</th>
+              <th style="padding:12px 20px;text-align:right;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.tickets.map(t => {
+              const ocr = (() => { try { return JSON.parse(t.ocr_json || '{}'); } catch { return {}; } })();
+              const total = ocr.total ? `$${ocr.total}` : '—';
+              const fecha = new Date(t.creado).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+              return `
+              <tr style="border-bottom:1px solid #f0f4ec;">
+                <td style="padding:12px 20px;font-size:0.8rem;color:var(--text-muted);">#${t.id}</td>
+                <td style="padding:12px 20px;font-size:0.875rem;font-weight:600;">${t.user_nombre || '—'}</td>
+                <td style="padding:12px 20px;">
+                  <div style="font-weight:600;font-size:0.875rem;">${t.comercio || 'Desconocido'}</div>
+                  <div style="font-size:0.76rem;color:var(--text-muted);">Total: ${total}</div>
+                </td>
+                <td style="padding:12px 20px;font-size:0.8rem;color:var(--text-muted);">${fecha}</td>
+                <td style="padding:12px 20px;text-align:right;display:flex;gap:6px;justify-content:flex-end;">
+                  <button class="debug-btn" onclick="verDebug('${(t.comercio||'').replace(/'/g,"\\'")}', ${t.id})">🔍 Debug</button>
+                  <button class="repro-btn" onclick="reprocesar(${t.id}, this)">↺ Reprocesar</button>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    async function verDebug(comercio, ticketId) {
+      document.getElementById('debug-comercio-label').textContent = `${comercio} #${ticketId}`;
+      document.getElementById('modal-debug').classList.add('open');
+      const grid = document.getElementById('debug-grid');
+      grid.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">Cargando screenshots...</div>';
+
+      const res  = await fetch(`/api/admin/debug-files?comercio=${encodeURIComponent(comercio)}`);
+      const data = await res.json();
+
+      if (!data.ok || !data.archivos.length) {
+        grid.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);">No se encontraron screenshots de debug para este bot.</div>';
+        return;
+      }
+
+      grid.innerHTML = data.archivos.map(a => {
+        const nombre = a.key.split('/').pop();
+        const hora   = new Date(a.fecha).toLocaleTimeString('es-MX', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+        return `
+          <div class="debug-thumb">
+            <img src="${a.url}" alt="${nombre}" loading="lazy" onclick="window.open('${a.url}','_blank')" title="Abrir en nueva pestaña">
+            <div class="debug-thumb-label">${hora} — ${nombre.substring(0,30)}</div>
+          </div>`;
+      }).join('');
+    }
+
+    async function reprocesar(ticketId, btn) {
+      btn.disabled = true;
+      btn.textContent = '...';
+      const res  = await fetch(`/api/admin/tickets/${ticketId}/reprocess-imap`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        showAlert(`Ticket #${ticketId} encolado para reproceso`, 'success');
+        setTimeout(cargarErrores, 1500);
+      } else {
+        showAlert(data.msg || 'Error al reprocesar', 'error');
+        btn.disabled = false;
+        btn.textContent = '↺ Reprocesar';
+      }
+    }
+
+    // ── 4A: Portales pendientes ───────────────────────────────────────────────
+    async function cargarPortales() {
+      const card = document.getElementById('portales-card');
+      const res  = await fetch('/api/portales-pendientes');
+      const data = await res.json();
+      if (!data.ok) return;
+
+      if (!data.grupos.length) {
+        card.innerHTML = `
+          <div class="empty-state" style="padding:32px;">
+            <div class="empty-icon">✅</div>
+            <div class="empty-title">Sin portales pendientes</div>
+            <div class="empty-desc">Todos los tickets han sido procesados correctamente</div>
+          </div>`;
+        return;
+      }
+
+      card.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1.5px solid var(--border);background:var(--bg);">
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Comercio</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Tickets</th>
+              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Último</th>
+              <th style="padding:12px 20px;text-align:right;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.grupos.map(g => `
+              <tr style="border-bottom:1px solid #f0f4ec;">
+                <td style="padding:14px 20px;font-weight:600;font-size:0.875rem;">${g.comercio || 'Desconocido'}</td>
+                <td style="padding:14px 20px;"><span class="badge badge-error">${g.total_tickets}</span></td>
+                <td style="padding:14px 20px;font-size:0.8rem;color:var(--text-muted);">${new Date(g.ultimo_ticket).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
+                <td style="padding:14px 20px;text-align:right;display:flex;gap:6px;justify-content:flex-end;">
+                  <button class="debug-btn" onclick="abrirPrompt('${(g.comercio||'').replace(/'/g,"\\'")}', '${(g.url||'').replace(/'/g,"\\'")}', \`${(g.notas||'').replace(/`/g,'\\`').replace(/'/g,"\\'")}\`)">🤖 Generar bot</button>
+                  <button class="btn btn-primary btn-sm" onclick="abrirModalPortal('${(g.comercio||'').replace(/'/g,"\\'")}')">Registrar</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+    }
+
+    function abrirPrompt(comercio, url, notas) {
+      document.getElementById('prompt-comercio-label').textContent = comercio;
+      document.getElementById('modal-prompt').classList.add('open');
+
+      const prompt = `Analiza el portal de facturación del comercio "${comercio}" y genera el bot Puppeteer completo.
+
+Datos del portal reportados por el usuario:
+- Comercio: ${comercio}
+- URL del portal: ${url || 'No disponible — buscar en el ticket del usuario'}
+- Notas del usuario: ${notas || 'Sin notas adicionales'}
+
+Antes de escribir código:
+1. Lee bots/gasmaz.js como referencia de estructura
+2. Lee portales/portales.json para ver el patrón de los portales existentes
+
+Luego genera:
+A) Análisis del portal (tecnología, campos, flujo, casos especiales)
+B) El bot completo en bots/${comercio.toLowerCase().replace(/\s+/g,'-')}.js siguiendo EXACTAMENTE la estructura de gasmaz.js
+C) Qué líneas agregar en bots/index.js para registrar el nuevo bot
+D) La entrada completa para portales/portales.json`;
+
+      document.getElementById('prompt-contenido').textContent = prompt;
+    }
+
+    function copiarPrompt() {
+      const texto = document.getElementById('prompt-contenido').textContent;
+      navigator.clipboard.writeText(texto).then(() => {
+        showAlert('Prompt copiado al portapapeles', 'success');
+      });
+    }
+
+    function abrirModalPortal(comercio) {
+      document.getElementById('modal-comercio').value         = comercio;
+      document.getElementById('modal-comercio-label').textContent = comercio;
+      document.getElementById('modal-nombre').value           = '';
+      document.getElementById('modal-url').value              = '';
+      document.getElementById('modal-notas').value            = '';
+      document.getElementById('modal-alert').style.display    = 'none';
+      document.getElementById('modal-portal').classList.add('open');
+    }
+
+    async function registrarPortal() {
+      const nombre   = document.getElementById('modal-nombre').value.trim();
+      const url      = document.getElementById('modal-url').value.trim();
+      const notas    = document.getElementById('modal-notas').value.trim();
+      const comercio = document.getElementById('modal-comercio').value;
+      const alertEl  = document.getElementById('modal-alert');
+      const btn      = document.getElementById('modal-btn');
+
+      alertEl.style.display = 'none';
+      if (!nombre || !url) {
+        alertEl.className   = 'alert alert-error';
+        alertEl.textContent = 'Nombre y URL son obligatorios';
+        alertEl.style.display = 'block';
+        return;
+      }
+      btn.disabled  = true;
+      btn.innerHTML = '<span class="spinner"></span> Guardando...';
+
+      const res  = await fetch('/api/portales-pendientes', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ nombre, url, notas, comercio })
+      });
+      const data = await res.json();
+      btn.disabled  = false;
+      btn.textContent = 'Registrar portal';
+
+      if (data.ok) {
+        cerrarModal('modal-portal');
+        showAlert('Portal registrado. Los tickets fueron liberados para reintento.', 'success');
+        cargarPortales();
+      } else {
+        alertEl.className   = 'alert alert-error';
+        alertEl.textContent = data.msg || 'Error al registrar';
+        alertEl.style.display = 'block';
+      }
+    }
+
+    // ── Empleados y residentes ────────────────────────────────────────────────
+    async function cargarResidentes() {
+      const data = await (await fetch('/api/admin/todos-residentes')).json();
       if (!data.ok) return;
       allResidentes = data.residentes;
       renderCatalog();
     }
 
     async function cargarEmpleados() {
-      const res = await fetch('/api/admin/usuarios');
-      const data = await res.json();
+      const data = await (await fetch('/api/admin/usuarios')).json();
       if (!data.ok) return;
       allEmpleados = data.usuarios;
       renderEmpleados();
@@ -299,10 +568,7 @@
           : '<div class="rc-meta" style="color:#bbb;">Sin asignar</div>';
         return `
           <div class="residente-catalog-item">
-            <div>
-              <div class="rc-name">${r.nombre}</div>
-              ${asignadoA}
-            </div>
+            <div><div class="rc-name">${r.nombre}</div>${asignadoA}</div>
             ${disponibleBadge}
           </div>`;
       }).join('');
@@ -312,36 +578,29 @@
       const userId = document.getElementById('filtro-empleado').value;
       const resSel = document.getElementById('filtro-residente');
       resSel.innerHTML = '<option value="">Todos los residentes</option>';
-      resSel.disabled = !userId;
-
+      resSel.disabled  = !userId;
       if (userId) {
-        const r = await fetch(`/api/admin/residentes/${userId}`);
-        const d = await r.json();
-        if (d.ok && d.residentes.length) {
+        const d = await (await fetch(`/api/admin/residentes/${userId}`)).json();
+        if (d.ok && d.residentes.length)
           resSel.innerHTML += d.residentes.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
-        }
       }
       cargarAdminTickets();
     }
 
     async function cargarAdminTickets() {
-      const userId = document.getElementById('filtro-empleado').value;
+      const userId      = document.getElementById('filtro-empleado').value;
       const residenteId = document.getElementById('filtro-residente').value;
-
-      const card = document.getElementById('admin-tickets-card');
+      const card        = document.getElementById('admin-tickets-card');
 
       if (!userId) {
         card.innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-icon">🔍</div><div class="empty-title">Selecciona un empleado para ver sus tickets</div></div>`;
         return;
       }
-
       card.innerHTML = `<div class="empty-state" style="padding:24px;"><div class="empty-icon">⏳</div><div class="empty-title">Cargando...</div></div>`;
 
       const params = new URLSearchParams({ user_id: userId });
       if (residenteId) params.set('residente_id', residenteId);
-
-      const res = await fetch(`/api/admin/tickets?${params}`);
-      const data = await res.json();
+      const data = await (await fetch(`/api/admin/tickets?${params}`)).json();
 
       if (!data.ok || !data.tickets.length) {
         card.innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-icon">🎫</div><div class="empty-title">Sin tickets</div><div class="empty-desc">No hay tickets con los filtros seleccionados</div></div>`;
@@ -349,10 +608,10 @@
       }
 
       const statusMap = {
-        pendiente: '<span class="badge badge-pending">Pendiente</span>',
-        procesando: '<span class="badge badge-processing">Procesando</span>',
-        procesado: '<span class="badge badge-success">Facturado</span>',
-        error: '<span class="badge badge-error">Error</span>',
+        pendiente:         '<span class="badge badge-pending">Pendiente</span>',
+        procesando:        '<span class="badge badge-processing">Procesando</span>',
+        procesado:         '<span class="badge badge-success">Facturado</span>',
+        error:             '<span class="badge badge-error">Error</span>',
         procesando_correo: '<span class="badge badge-processing">En correo</span>',
       };
 
@@ -384,7 +643,7 @@
       document.getElementById('filtro-empleado').value = '';
       const resSel = document.getElementById('filtro-residente');
       resSel.innerHTML = '<option value="">Todos los residentes</option>';
-      resSel.disabled = true;
+      resSel.disabled  = true;
       document.getElementById('admin-tickets-card').innerHTML = `<div class="empty-state" style="padding:32px;"><div class="empty-icon">🔍</div><div class="empty-title">Selecciona un empleado para ver sus tickets</div></div>`;
     }
 
@@ -398,36 +657,30 @@
       }
 
       const filtroSel = document.getElementById('filtro-empleado');
-      if (filtroSel) {
+      if (filtroSel)
         filtroSel.innerHTML = '<option value="">Seleccionar empleado...</option>' +
           allEmpleados.map(u => `<option value="${u.id}">${u.nombre} (${u.email})</option>`).join('');
-      }
 
       lista.innerHTML = allEmpleados.map(u => {
         const initials = u.nombre.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
         const rolBadge = u.rol === 'admin'
           ? '<span class="badge badge-success">Admin</span>'
           : '<span class="badge badge-processing">Residente</span>';
-
         const tagsHtml = u.residentes.length
           ? u.residentes.map(r => `
-              <span class="residente-tag">
-                ${r.nombre}
+              <span class="residente-tag">${r.nombre}
                 <button class="tag-remove" onclick="quitarResidente(${r.id}, ${u.id}, this)" title="Quitar">×</button>
               </span>`).join('')
           : '<span class="no-asignados">Sin residentes asignados</span>';
-
-        // Available residents not yet assigned to this user
-        const asignadosIds = new Set(u.residentes.map(r => r.id));
-        const disponibles = allResidentes.filter(r => r.disponible && !asignadosIds.has(r.id));
-        const selectHtml = disponibles.length
+        const asignadosIds  = new Set(u.residentes.map(r => r.id));
+        const disponibles   = allResidentes.filter(r => r.disponible && !asignadosIds.has(r.id));
+        const selectHtml    = disponibles.length
           ? `<select id="sel-${u.id}" class="input" style="font-size:0.82rem;padding:8px 12px;">
-              <option value="">Seleccionar residente...</option>
-              ${disponibles.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('')}
+               <option value="">Seleccionar residente...</option>
+               ${disponibles.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('')}
              </select>
              <button class="btn btn-primary btn-sm" onclick="asignarResidente(${u.id})">Asignar</button>`
           : `<span style="font-size:0.8rem;color:var(--text-muted);">Sin residentes disponibles</span>`;
-
         return `
           <div class="empleado-card" id="card-usuario-${u.id}">
             <div class="empleado-header">
@@ -449,165 +702,46 @@
 
     async function asignarResidente(userId) {
       const sel = document.getElementById(`sel-${userId}`);
-      const residenteId = sel?.value;
-      if (!residenteId) return showAlert('Selecciona un residente', 'error');
-
-      const res = await fetch(`/api/residentes/${residenteId}/asignar/${userId}`, { method: 'POST' });
-      const data = await res.json();
-      if (data.ok) {
-        showAlert('Residente asignado correctamente', 'success');
-        await Promise.all([cargarEmpleados(), cargarResidentes()]);
-      } else {
-        showAlert(data.msg || 'Error al asignar', 'error');
-      }
+      if (!sel?.value) return showAlert('Selecciona un residente', 'error');
+      const data = await (await fetch(`/api/residentes/${sel.value}/asignar/${userId}`, { method: 'POST' })).json();
+      if (data.ok) { showAlert('Residente asignado correctamente', 'success'); await Promise.all([cargarEmpleados(), cargarResidentes()]); }
+      else showAlert(data.msg || 'Error al asignar', 'error');
     }
 
     async function quitarResidente(residenteId, userId, btn) {
       btn.disabled = true;
-      const res = await fetch(`/api/residentes/${residenteId}/quitar/${userId}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.ok) {
-        showAlert('Residente quitado', 'success');
-        await Promise.all([cargarEmpleados(), cargarResidentes()]);
-      } else {
-        showAlert(data.msg || 'Error al quitar', 'error');
-        btn.disabled = false;
-      }
+      const data = await (await fetch(`/api/residentes/${residenteId}/quitar/${userId}`, { method: 'DELETE' })).json();
+      if (data.ok) { showAlert('Residente quitado', 'success'); await Promise.all([cargarEmpleados(), cargarResidentes()]); }
+      else { showAlert(data.msg || 'Error al quitar', 'error'); btn.disabled = false; }
     }
 
     async function crearResidente() {
-      const nombre = document.getElementById('nuevo-nombre').value.trim();
+      const nombre     = document.getElementById('nuevo-nombre').value.trim();
       const disponible = document.getElementById('nuevo-disponible').checked;
       if (!nombre) return showAlert('Ingresa el nombre del residente', 'error');
-
-      const res = await fetch('/api/residentes/crear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const data = await (await fetch('/api/residentes/crear', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nombre, disponible })
-      });
-      const data = await res.json();
+      })).json();
       if (data.ok) {
         document.getElementById('nuevo-nombre').value = '';
         showAlert(`Residente "${nombre}" creado`, 'success');
         toggleCreateForm();
         await Promise.all([cargarEmpleados(), cargarResidentes()]);
-      } else {
-        showAlert(data.msg || 'Error al crear', 'error');
-      }
+      } else showAlert(data.msg || 'Error al crear', 'error');
     }
 
-    function toggleCreateForm() {
-      document.getElementById('create-form').classList.toggle('open');
-    }
+    function toggleCreateForm() { document.getElementById('create-form').classList.toggle('open'); }
 
     function showAlert(msg, type) {
       const el = document.getElementById('main-alert');
-      el.className = `alert alert-${type}`;
-      el.textContent = msg;
+      el.className    = `alert alert-${type}`;
+      el.textContent  = msg;
       el.style.display = 'block';
       setTimeout(() => { el.style.display = 'none'; }, 3500);
     }
 
-    async function cargarPortales() {
-      const card = document.getElementById('portales-card');
-      const res = await fetch('/api/portales-pendientes');
-      const data = await res.json();
-      if (!data.ok) return;
-
-      if (!data.grupos.length) {
-        card.innerHTML = `
-          <div class="empty-state" style="padding:32px;">
-            <div class="empty-icon">✅</div>
-            <div class="empty-title">Sin portales pendientes</div>
-            <div class="empty-desc">Todos los tickets han sido procesados correctamente</div>
-          </div>`;
-        return;
-      }
-
-      card.innerHTML = `
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="border-bottom:1.5px solid var(--border);background:var(--bg);">
-              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Comercio</th>
-              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Tickets</th>
-              <th style="padding:12px 20px;text-align:left;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Último</th>
-              <th style="padding:12px 20px;text-align:right;font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;">Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.grupos.map(g => `
-              <tr style="border-bottom:1px solid #f0f4ec;">
-                <td style="padding:14px 20px;font-weight:600;font-size:0.875rem;">${g.comercio || 'Desconocido'}</td>
-                <td style="padding:14px 20px;"><span class="badge badge-error">${g.total_tickets}</span></td>
-                <td style="padding:14px 20px;font-size:0.8rem;color:var(--text-muted);">${new Date(g.ultimo_ticket).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
-                <td style="padding:14px 20px;text-align:right;">
-                  <button class="btn btn-primary btn-sm" onclick="abrirModalPortal('${(g.comercio || '').replace(/'/g, "\\'")}')">Registrar portal</button>
-                </td>
-              </tr>`).join('')}
-          </tbody>
-        </table>`;
-    }
-
-    function abrirModalPortal(comercio) {
-      document.getElementById('modal-comercio').value = comercio;
-      document.getElementById('modal-comercio-label').textContent = comercio;
-      document.getElementById('modal-nombre').value = '';
-      document.getElementById('modal-url').value = '';
-      document.getElementById('modal-notas').value = '';
-      document.getElementById('modal-alert').style.display = 'none';
-      document.getElementById('modal-portal').classList.add('open');
-    }
-
-    function cerrarModal() {
-      document.getElementById('modal-portal').classList.remove('open');
-    }
-
-    async function registrarPortal() {
-      const nombre = document.getElementById('modal-nombre').value.trim();
-      const url = document.getElementById('modal-url').value.trim();
-      const notas = document.getElementById('modal-notas').value.trim();
-      const comercio = document.getElementById('modal-comercio').value;
-      const alertEl = document.getElementById('modal-alert');
-      const btn = document.getElementById('modal-btn');
-
-      alertEl.style.display = 'none';
-      if (!nombre || !url) {
-        alertEl.className = 'alert alert-error';
-        alertEl.textContent = 'Nombre y URL son obligatorios';
-        alertEl.style.display = 'block';
-        return;
-      }
-
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span> Guardando...';
-
-      const res = await fetch('/api/portales-pendientes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, url, notas, comercio })
-      });
-      const data = await res.json();
-
-      btn.disabled = false;
-      btn.textContent = 'Registrar portal';
-
-      if (data.ok) {
-        cerrarModal();
-        showAlert('Portal registrado. Los tickets fueron liberados para reintento.', 'success');
-        cargarPortales();
-      } else {
-        alertEl.className = 'alert alert-error';
-        alertEl.textContent = data.msg || 'Error al registrar';
-        alertEl.style.display = 'block';
-      }
-    }
-
-    document.getElementById('modal-portal').addEventListener('click', e => {
-      if (e.target === document.getElementById('modal-portal')) cerrarModal();
-    });
-
     init();
-    cargarPortales();
     initNotificaciones();
   </script>
 </body>

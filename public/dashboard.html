@@ -970,5 +970,21 @@
       }
     })();
   </script>
+  <!-- WhatsApp bubble -->
+  <style>
+    .wa-bubble{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;align-items:center;gap:10px;cursor:pointer;}
+    .wa-btn{width:56px;height:56px;background:#25D366;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(37,211,102,0.45);transition:transform 0.15s,box-shadow 0.15s;}
+    .wa-btn:hover{transform:scale(1.08);box-shadow:0 6px 20px rgba(37,211,102,0.55);}
+    .wa-btn svg{width:30px;height:30px;fill:white;}
+    .wa-tooltip{background:white;color:#1a1a1a;font-size:0.82rem;font-weight:600;padding:8px 13px;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,0.12);white-space:nowrap;opacity:0;pointer-events:none;transform:translateX(6px);transition:opacity 0.2s,transform 0.2s;}
+    .wa-bubble:hover .wa-tooltip{opacity:1;transform:translateX(0);}
+  </style>
+  <div class="wa-bubble" onclick="window.open('https://wa.me/526443615568?text=' + encodeURIComponent('Hola, necesito ayuda con el portal de facturación.'), '_blank')">
+    <div class="wa-tooltip">¿Necesitas ayuda?</div>
+    <div class="wa-btn">
+      <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C7.163 0 0 7.163 0 16c0 2.833.738 5.488 2.031 7.794L0 32l8.418-2.009A15.93 15.93 0 0016 32c8.837 0 16-7.163 16-16S24.837 0 16 0zm0 29.333a13.27 13.27 0 01-6.818-1.877l-.488-.293-5.003 1.194 1.227-4.872-.32-.503A13.267 13.267 0 012.667 16C2.667 8.636 8.636 2.667 16 2.667S29.333 8.636 29.333 16 23.364 29.333 16 29.333zm7.293-9.907c-.4-.2-2.368-1.168-2.735-1.301-.368-.133-.635-.2-.902.2-.267.4-1.034 1.301-1.268 1.568-.233.267-.467.3-.867.1-.4-.2-1.688-.622-3.215-1.981-1.188-1.058-1.99-2.365-2.223-2.765-.233-.4-.025-.616.175-.815.18-.178.4-.467.6-.7.2-.233.267-.4.4-.667.133-.267.067-.5-.033-.7-.1-.2-.902-2.168-1.235-2.968-.325-.78-.655-.674-.902-.686l-.768-.013c-.267 0-.7.1-1.067.5-.368.4-1.4 1.368-1.4 3.335 0 1.967 1.433 3.868 1.633 4.135.2.267 2.82 4.305 6.833 6.034.955.412 1.7.659 2.281.844.958.305 1.831.262 2.52.159.769-.115 2.368-.969 2.702-1.904.333-.935.333-1.736.233-1.904-.1-.167-.367-.267-.767-.467z"/></svg>
+    </div>
+  </div>
+
 </body>
 </html>

@@ -9,7 +9,7 @@ const fs = require("fs");
 const Anthropic = require("@anthropic-ai/sdk");
 const nodemailer = require("nodemailer");
 const { detectarYFacturar } = require("./bots/index");
-const { borrarArchivoR2 } = require("./storage/r2");
+const { borrarArchivoR2, listarArchivosR2 } = require("./storage/r2");
 const { esperarFacturaPorCorreo } = require("./mail/imap");
 
 const app = express();
@@ -1149,6 +1149,42 @@ limpiarFacturasVencidas();
 setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
 
 // ── ENDPOINT ADMIN: forzar reproceso IMAP de un ticket atascado ──
+// ── ENDPOINT ADMIN: tickets en error ──
+app.get("/api/admin/tickets/errores", auth, requireAdmin, async (req, res) => {
+  try {
+    const [tickets] = await db.query(`
+      SELECT t.id, t.comercio, t.status, t.ocr_json, t.creado,
+             u.nombre AS user_nombre, u.email AS user_email
+      FROM tickets t
+      JOIN users u ON t.user_id = u.id
+      WHERE t.status = 'error'
+      ORDER BY t.creado DESC
+      LIMIT 50
+    `);
+    res.json({ ok: true, tickets });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── ENDPOINT ADMIN: debug screenshots de R2 ──
+app.get("/api/admin/debug-files", auth, requireAdmin, async (req, res) => {
+  try {
+    const { comercio } = req.query;
+    const prefijos = comercio
+      ? [`debug/${comercio.toLowerCase().split(' ')[0]}`]
+      : ['debug/'];
+    const archivos = await listarArchivosR2(prefijos[0], 30);
+    const soloImagenes = archivos
+      .filter(a => a.key.endsWith('.png'))
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+      .slice(0, 20);
+    res.json({ ok: true, archivos: soloImagenes });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 app.post("/api/admin/tickets/:id/reprocess-imap", auth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;

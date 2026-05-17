@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 
 const r2 = new S3Client({
   region: 'auto',
@@ -42,4 +42,23 @@ async function borrarArchivoR2(key) {
   }
 }
 
-module.exports = { subirArchivoR2, borrarArchivoR2 };
+async function listarArchivosR2(prefijo = 'debug/', limite = 50) {
+  try {
+    const resp = await r2.send(new ListObjectsV2Command({
+      Bucket:  process.env.R2_BUCKET,
+      Prefix:  prefijo,
+      MaxKeys: limite,
+    }));
+    return (resp.Contents || []).map(obj => ({
+      key:    obj.Key,
+      url:    `${process.env.R2_PUBLIC_URL}/${obj.Key}`,
+      fecha:  obj.LastModified,
+      tamaño: obj.Size,
+    }));
+  } catch (e) {
+    console.error('❌ Error listando R2:', e.message);
+    return [];
+  }
+}
+
+module.exports = { subirArchivoR2, borrarArchivoR2, listarArchivosR2 };
