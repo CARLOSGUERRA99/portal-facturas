@@ -73,8 +73,9 @@ async function resolverTurnstile(page, apiKey, capturedSitekey) {
   }
   console.log(`🔑 Sitekey: ${sitekey}`);
 
-  // Eliminar hash fragment (#/portalweb) — CapSolver rechaza URLs con #
-  const pageUrl = page.url().split("#")[0];
+  // CapSolver solo acepta hostname sin puerto no-estándar ni hash
+  const rawUrl = new URL(page.url().split("#")[0]);
+  const pageUrl = `${rawUrl.protocol}//${rawUrl.hostname}/`;
 
   // Crear tarea en CapSolver
   const createRes = await fetch("https://api.capsolver.com/createTask", {
