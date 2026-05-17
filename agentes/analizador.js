@@ -12,7 +12,8 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
   const urlFinal = portalUrl || url;
   const nombreFinal = comercioNombre || 'portal';
 
-  const portalesJson = fs.readFileSync(path.join(__dirname, '../portales/portales.json'), 'utf8');
+  // Solo mandamos los nombres/tecnologías de referencia, no el JSON completo (muy largo)
+  const portalesRef = 'Portales existentes: OXXO (JSF/PrimeFaces), ARCO/BuzonFacturas (multi-step), Gasmaz/NexusFuel (ASP.NET 2 pasos), Farmacias Guadalajara (Angular).';
 
   let imagenBase64 = screenshotBase64;
   let imagenMime = mimeType || 'image/png';
@@ -47,7 +48,7 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
         return 'HTML/JS clásico';
       });
 
-      // Extraer elementos interactivos visibles para contexto adicional
+      // Extraer elementos interactivos visibles (máx 25, solo los que tienen identificador)
       const elementos = await page.evaluate(() =>
         Array.from(document.querySelectorAll('input, select, textarea, button, [role="button"]'))
           .filter(el => !!(el.offsetParent))
@@ -56,11 +57,12 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
             type: el.getAttribute('type') || '',
             id: el.id || '',
             name: el.name || '',
-            placeholder: el.getAttribute('placeholder') || '',
+            placeholder: (el.getAttribute('placeholder') || '').substring(0, 40),
             formControl: el.getAttribute('formcontrolname') || el.getAttribute('ng-model') || '',
-            text: el.textContent?.trim().substring(0, 60) || '',
-            disabled: el.disabled || false,
+            text: el.textContent?.trim().substring(0, 40) || '',
           }))
+          .filter(el => el.id || el.name || el.formControl || el.placeholder)
+          .slice(0, 25)
       );
 
       const buf = await page.screenshot({ fullPage: false });
@@ -96,8 +98,7 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
 
 Analiza este portal de facturación y extrae toda la información necesaria para automatizarlo.
 
-Portales ya implementados (referencia para similitud):
-${portalesJson}
+${portalesRef}
 
 ${textoContexto}
 
@@ -139,17 +140,38 @@ Responde SOLO con este JSON (sin texto adicional, sin markdown):
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
+    max_tokens: 4000,
     messages: [{ role: 'user', content }],
   });
 
-  const text = response.content[0].text
+  let text = response.content[0].text
     .replace(/^```json\n?/m, '')
     .replace(/^```\n?/m, '')
     .replace(/\n?```$/m, '')
     .trim();
 
-  const analisis = JSON.parse(text);
+  // Si el JSON está incompleto, extraer solo la parte válida
+  let analisis;
+  try {
+    analisis = JSON.parse(text);
+  } catch {
+    // Intentar extraer el JSON entre llaves
+    const match = text.match(/\{[\s\S]*/);
+    if (match) {
+      try {
+        // Cerrar llaves/corchetes faltantes y reintentar
+        let partial = match[0];
+        const opens = (partial.match(/\{/g) || []).length - (partial.match(/\}/g) || []).length;
+        const arrOpens = (partial.match(/\[/g) || []).length - (partial.match(/\]/g) || []).length;
+        partial += ']'.repeat(Math.max(0, arrOpens)) + '}'.repeat(Math.max(0, opens));
+        analisis = JSON.parse(partial);
+      } catch {
+        throw new Error(`Respuesta del analizador no es JSON válido: ${text.substring(0, 200)}`);
+      }
+    } else {
+      throw new Error(`Respuesta del analizador no es JSON válido: ${text.substring(0, 200)}`);
+    }
+  }
   analisis._url = urlFinal;
   analisis._screenshots = screenshots;
 

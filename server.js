@@ -468,6 +468,7 @@ async function procesarCola() {
       `SELECT t.id, t.user_id FROM tickets t
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'pendiente_confirmacion' AND u.rfc IS NOT NULL AND u.rfc != ''
+       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas')
        ORDER BY t.creado ASC LIMIT ?`,
       [slots]
     );

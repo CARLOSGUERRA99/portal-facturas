@@ -53,14 +53,24 @@ async function orquestar({ db, ticketId, portalUrl, comercioNombre, instruccione
     portalId = ins.insertId;
   }
 
-  // ── PASO 1: Analizar portal ──────────────────────────────────────────────────
+  // ── PASO 1: Analizar portal (hasta 3 intentos) ──────────────────────────────
   console.log('📡 [Orquestador] Paso 1: Analizando portal...');
   let analisis;
-  try {
-    analisis = await analizarPortal({ portalUrl, comercioNombre, notas: instrucciones });
-  } catch (err) {
-    await db.query('UPDATE portales_agente SET estado=?, error_msg=? WHERE id=?', ['error', `Análisis: ${err.message}`, portalId]);
-    return { ok: false, etapa: 'analisis', portalId, msg: err.message };
+  let analisisErr;
+  for (let intAnalisis = 1; intAnalisis <= 3; intAnalisis++) {
+    try {
+      analisis = await analizarPortal({ portalUrl, comercioNombre, notas: instrucciones });
+      analisisErr = null;
+      break;
+    } catch (err) {
+      analisisErr = err;
+      console.log(`⚠️ [Orquestador] Análisis intento ${intAnalisis}/3 falló: ${err.message}`);
+      if (intAnalisis < 3) await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  if (analisisErr) {
+    await db.query('UPDATE portales_agente SET estado=?, error_msg=? WHERE id=?', ['error', `Análisis: ${analisisErr.message}`, portalId]);
+    return { ok: false, etapa: 'analisis', portalId, msg: analisisErr.message };
   }
 
   await db.query('UPDATE portales_agente SET analisis=?, estado=? WHERE id=?',
