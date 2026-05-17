@@ -86,23 +86,60 @@ async function facturarHomeDepotMexico({
     await fillInput(page, "#ticket", noTicket);
     await screenshot("paso2_rfc_ticket");
 
-    // ── PASO 3 — Esperar Turnstile con dos intentos de 25s ───────────────────
-    // El widget Turnstile puede tardar en resolverse después de que el usuario llena los campos
-    const esperarToken = async (segundos) => {
-      const ms = segundos * 1000;
-      console.log(`🔒 Esperando Turnstile ${segundos}s...`);
-      await page.waitForFunction(
-        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
-        { timeout: ms }
-      ).catch(() => null);
-      return page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
+    // ── PASO 3 — Click en el checkbox de Cloudflare Turnstile ───────────────────
+    console.log("🔒 PASO 3 — Haciendo click en checkbox Turnstile...");
+
+    // El checkbox vive dentro de un iframe de challenges.cloudflare.com
+    const intentarClickTurnstile = async () => {
+      // Opción A: acceder al frame CF y hacer click en el checkbox
+      const frames = page.frames();
+      console.log(`   Frames disponibles: ${frames.map(f => f.url().substring(0, 60)).join(" | ")}`);
+      const cfFrame = frames.find(f =>
+        f.url().includes("challenges.cloudflare.com") || f.url().includes("turnstile")
+      );
+      if (cfFrame) {
+        console.log(`🔒 Frame CF encontrado: ${cfFrame.url().substring(0, 80)}`);
+        const cb = await cfFrame.$("input[type='checkbox']").catch(() => null);
+        if (cb) { await cb.click(); console.log("🔒 Click en checkbox dentro del frame"); return true; }
+        // Si no hay checkbox explícito, click en el body del frame
+        await cfFrame.click("body").catch(() => {});
+        console.log("🔒 Click en body del frame CF");
+        return true;
+      }
+
+      // Opción B: click por coordenadas sobre el widget ngx-turnstile
+      const widget = await page.$("ngx-turnstile, .turnstile-container").catch(() => null);
+      if (widget) {
+        const box = await widget.boundingBox().catch(() => null);
+        if (box) {
+          await page.mouse.click(box.x + 25, box.y + box.height / 2);
+          console.log(`🔒 Click por coordenadas en Turnstile (${box.x + 25}, ${box.y + box.height / 2})`);
+          return true;
+        }
+      }
+      console.log("⚠️ No se encontró el widget Turnstile");
+      return false;
     };
 
-    let token = await esperarToken(25);
+    await intentarClickTurnstile();
+
+    // Esperar hasta 25s a que el click resuelva el token
+    console.log("🔒 Esperando token tras click (25s)...");
+    await page.waitForFunction(
+      () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
+      { timeout: 25000 }
+    ).catch(() => null);
+
+    let token = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
 
     if (token.length < 50) {
-      console.log("⚠️ Token ausente tras 25s — esperando 25s más...");
-      token = await esperarToken(25);
+      console.log("⚠️ Token ausente — segundo intento de click + 25s...");
+      await intentarClickTurnstile();
+      await page.waitForFunction(
+        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
+        { timeout: 25000 }
+      ).catch(() => null);
+      token = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
     }
 
     console.log(`🔒 Turnstile: ${token.length > 50 ? "RESUELTO (" + token.length + " chars)" : "NO RESUELTO — intentando click de todos modos"}`);
