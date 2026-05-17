@@ -69,50 +69,50 @@ async function facturarHomeDepotMexico({
   }
 
   try {
-    // ── PASO 1 — Cargar portal ────────────────────────────────────────────────
+    // ── PASO 1 — Cargar portal y esperar Turnstile ANTES de interactuar ─────────
     console.log("🌐 PASO 1 — Cargando portal...");
-    // La URL base redirige automáticamente al puerto 2053 con Angular SPA
     await page.goto(
       "https://facturacion.homedepot.com.mx/",
-      { waitUntil: "networkidle2", timeout: 40000 }
+      { waitUntil: "networkidle0", timeout: 40000 }
     );
-    await page.waitForTimeout(3000);
-    await screenshot("paso1_cargado");
     console.log(`📍 URL final: ${page.url()}`);
 
-    // ── PASO 2 — Esperar campos y llenar RFC + Ticket ─────────────────────────
-    console.log("📋 PASO 2 — Llenando RFC y No. de Ticket...");
+    // Esperar Turnstile SIN tocar nada — stealth necesita que la página esté quieta
+    console.log("🔒 Esperando Turnstile (intento 1/2, 20s)...");
+    await page.waitForFunction(
+      () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
+      { timeout: 20000 }
+    ).catch(() => null);
 
-    // Esperar que los campos del formulario Angular estén disponibles
-    await page.waitForSelector("#rfc", { timeout: 20000 });
+    let tokenCheck = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
+
+    if (tokenCheck.length < 50) {
+      // Recargar y dar 25s más — a veces la segunda carga lo resuelve
+      console.log("🔄 Token ausente — recargando portal...");
+      await page.reload({ waitUntil: "networkidle0", timeout: 40000 });
+      console.log("🔒 Esperando Turnstile (intento 2/2, 25s)...");
+      await page.waitForFunction(
+        () => { const t = document.querySelector("input[name='cf-turnstile-response']"); return t && t.value && t.value.length > 50; },
+        { timeout: 25000 }
+      ).catch(() => null);
+      tokenCheck = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
+    }
+
+    console.log(`🔒 Turnstile token: ${tokenCheck.length > 50 ? "PRESENTE (" + tokenCheck.length + " chars)" : "AUSENTE — continuando de todos modos"}`);
+    await screenshot("paso1_cargado");
+
+    // ── PASO 2 — Llenar RFC + Ticket (rápido, el token ya debería estar) ────────
+    console.log("📋 PASO 2 — Llenando RFC y No. de Ticket...");
+    await page.waitForSelector("#rfc",    { timeout: 15000 });
     await page.waitForSelector("#ticket", { timeout: 10000 });
 
-    // Llenar RFC — id="rfc"
-    await fillInput(page, "#rfc", rfc);
-    await page.waitForTimeout(300);
-
-    // Llenar No. de Ticket — id="ticket" (solo dígitos, 18-23 chars)
+    await fillInput(page, "#rfc",    rfc);
     await fillInput(page, "#ticket", noTicket);
-    await page.waitForTimeout(500);
-
     await screenshot("paso2_rfc_ticket");
 
-    // ── PASO 3 — Esperar Turnstile y habilitar Continuar ─────────────────────
-    console.log("🔒 PASO 3 — Esperando resolución de Cloudflare Turnstile...");
-
-    // Esperar hasta 30s a que stealth resuelva el Turnstile (token en hidden input)
-    await page.waitForFunction(
-      () => {
-        const t = document.querySelector("input[name='cf-turnstile-response']");
-        return t && t.value && t.value.length > 50;
-      },
-      { timeout: 30000 }
-    ).catch(() => console.log("⚠️ Turnstile no se resolvió en 30s — intentando de todos modos"));
-
-    const tokenFinal = await page.$eval(
-      "input[name='cf-turnstile-response']", el => el.value
-    ).catch(() => "");
-    console.log(`🔒 Turnstile token: ${tokenFinal.length > 50 ? "PRESENTE (" + tokenFinal.length + " chars)" : "AUSENTE"}`);
+    // ── PASO 3 — Esperar que Angular habilite el botón y hacer click ──────────
+    console.log("⏳ PASO 3 — Esperando que Continuar se habilite...");
+    const tokenFinal = await page.$eval("input[name='cf-turnstile-response']", el => el.value).catch(() => "");
 
     // Esperar que el botón también se habilite (Angular validation)
     await page.waitForFunction(
