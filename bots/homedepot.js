@@ -53,7 +53,7 @@ async function resolverTurnstile(page, apiKey, capturedSitekey) {
     sitekey = await page.evaluate(async () => {
       try {
         const scripts = Array.from(document.querySelectorAll("script[src]"))
-          .filter(s => /\.\w{8,}\.js$/.test(s.src) && !s.src.includes("main."));
+          .filter(s => /\/\d+\.[^/]+\.js/.test(s.src) || (s.src.includes(".js") && !s.src.includes("main.")));
         for (const script of scripts) {
           const text = await fetch(script.src).then(r => r.text()).catch(() => "");
           const m = text.match(/["'`](0x[0-9a-zA-Z]{8,})["'`]/);
@@ -223,16 +223,32 @@ async function facturarHomeDepotMexico({
     });
   });
 
-  // Capturar sitekey también vía network interception (request URL de Cloudflare)
+  // Capturar sitekey vía respuestas HTTP: chunks Angular + URLs de Cloudflare
   let capturedSitekey = null;
-  page.on("request", (req) => {
+  page.on("response", async (resp) => {
     if (capturedSitekey) return;
-    const u = req.url();
-    if (!u.includes("challenges.cloudflare.com")) return;
-    const m = u.match(/0x[0-9a-zA-Z]{8,}/);
-    if (m) {
-      capturedSitekey = m[0];
-      console.log(`🔑 Sitekey capturado via network: ${capturedSitekey}`);
+    const u = resp.url();
+
+    // Sitekey en URL de Cloudflare (path o query param)
+    if (u.includes("challenges.cloudflare.com")) {
+      const m = u.match(/0x[0-9a-zA-Z]{8,}/);
+      if (m) {
+        capturedSitekey = m[0];
+        console.log(`🔑 Sitekey en URL Cloudflare: ${capturedSitekey}`);
+        return;
+      }
+    }
+
+    // Sitekey dentro del contenido de un chunk JS de Angular (chunk 1600 = PortalwebComponent)
+    if (/\/\d+\.[^/]+\.js(\?|$)/.test(u) || /chunk/.test(u)) {
+      try {
+        const text = await resp.text().catch(() => "");
+        const m = text.match(/["'`](0x[0-9a-zA-Z]{8,})["'`]/);
+        if (m) {
+          capturedSitekey = m[0];
+          console.log(`🔑 Sitekey en chunk JS (${u.split("/").pop().split("?")[0]}): ${capturedSitekey}`);
+        }
+      } catch {}
     }
   });
 
@@ -245,6 +261,14 @@ async function facturarHomeDepotMexico({
     );
     console.log(`📍 URL final: ${page.url()}`);
     await screenshot("paso1_cargado");
+
+    // Diagnóstico: listar frames y scripts cargados
+    const frameUrls = page.frames().map(f => f.url()).filter(Boolean);
+    console.log(`🔍 Frames (${frameUrls.length}):`, frameUrls.join(" | "));
+    const scriptUrls = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("script[src]")).map(s => s.src)
+    ).catch(() => []);
+    console.log(`🔍 Scripts cargados (${scriptUrls.length}):`, scriptUrls.join(" | "));
 
     // Esperar hasta 15 s a que el componente Angular cargue y Turnstile se renderice
     console.log("⏳ Esperando que Turnstile inicialice...");
@@ -264,6 +288,9 @@ async function facturarHomeDepotMexico({
       if (capturedSitekey) break;
     }
     console.log(`🔑 Sitekey interceptado: ${capturedSitekey || "NO CAPTURADO"}`);
+    // Diagnóstico post-espera: frames de Cloudflare
+    const cfFrames = page.frames().filter(f => f.url().includes("cloudflare"));
+    console.log(`🔍 Frames Cloudflare (${cfFrames.length}):`, cfFrames.map(f => f.url()).join(" | ") || "ninguno");
 
     // ── PASO 2 — Llenar RFC + Ticket ─────────────────────────────────────────
     console.log("📋 PASO 2 — Llenando RFC y No. de Ticket...");
