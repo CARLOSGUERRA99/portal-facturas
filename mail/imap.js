@@ -18,6 +18,7 @@ function esCFDI(subject, from) {
     s.includes('gasmaz') ||
     f.includes('buzonfacturas') ||
     f.includes('noreply') ||
+    f.includes('no-responder') ||
     f.includes('factura')
   );
 }

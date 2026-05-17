@@ -505,12 +505,15 @@ async function facturarHomeDepotMexico({
     // Detectar casos especiales
     const textoTrasValidar = await page.evaluate(() => document.body.innerText.toLowerCase());
 
-    if (/ya\s*(fue\s*)?facturad|previously\s*invoiced/i.test(textoTrasValidar)) {
-      console.log("♻️ Folio ya facturado — intentando recuperar...");
+    // "ya facturado": el portal saltó directo a la página de éxito (muestra "Reenviar Factura")
+    // o mostró texto de error de duplicado — en ambos casos la factura existe, usar IMAP
+    if (
+      /ya\s*(fue\s*)?facturad|previously\s*invoiced/i.test(textoTrasValidar) ||
+      /reenviar\s*factura|refacturar/i.test(textoTrasValidar)
+    ) {
+      console.log("♻️ Folio ya facturado — la factura llega por correo, usando IMAP...");
       await screenshot("ya_facturado");
-      const { xmlUrl, pdfUrl } = await intentarDescarga(page, browser, ticketId);
       await browser.close();
-      if (xmlUrl || pdfUrl) return { ok: true, xmlUrl, pdfUrl, yaExistia: true };
       return { ok: true, procesandoCorreo: true };
     }
 
