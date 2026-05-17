@@ -121,8 +121,17 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
     const cfdiCount = await page.$eval("#selVoucherUse", el => el.options.length);
     console.log(`✅ Opciones de Uso CFDI cargadas: ${cfdiCount}`);
 
-    const cfdiKeywords = usoCfdi
-      ? [String(usoCfdi)]
+    // El perfil guarda el código SAT (ej: "G03") pero el portal muestra texto descriptivo.
+    // Mapeamos código → keywords de texto para que selectByText encuentre la opción.
+    const CFDI_KEYWORDS = {
+      G01: ["Adquisición de mercancias", "Adquisicion de mercancias"],
+      G03: ["Gastos en general"],
+      G02: ["Devoluciones, descuentos"],
+      S01: ["Sin efectos fiscales"],
+      CP01: ["Pagos"],
+    };
+    const cfdiKeywords = (usoCfdi && CFDI_KEYWORDS[String(usoCfdi).toUpperCase()])
+      ? CFDI_KEYWORDS[String(usoCfdi).toUpperCase()]
       : ["Gastos en general"];
     await selectByText(page, "#selVoucherUse", cfdiKeywords);
 
