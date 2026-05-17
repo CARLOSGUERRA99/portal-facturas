@@ -10,6 +10,7 @@ const { execSync } = require("child_process");
 const Anthropic = require("@anthropic-ai/sdk");
 const nodemailer = require("nodemailer");
 const { detectarYFacturar } = require("./bots/index");
+const { orquestar, activarBot, restaurarBotsDinamicos } = require("./agentes/orquestador");
 const { subirArchivoR2, borrarArchivoR2, listarArchivosR2 } = require("./storage/r2");
 const { esperarFacturaPorCorreo } = require("./mail/imap");
 
@@ -337,6 +338,26 @@ async function initDB() {
   } catch(e) { /* tabla ya existe */ }
 
   try {
+    await db.query(`CREATE TABLE IF NOT EXISTS portales_agente (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      comercio VARCHAR(100) NOT NULL,
+      nombre VARCHAR(200),
+      portal_url TEXT,
+      instrucciones TEXT,
+      estado ENUM('analizando','generando','validando','corrigiendo','pendiente_aprobacion','activo','error') DEFAULT 'analizando',
+      analisis JSON,
+      bot_code LONGTEXT,
+      nombre_archivo VARCHAR(100),
+      nombre_funcion VARCHAR(100),
+      intentos_correccion INT DEFAULT 0,
+      error_msg TEXT,
+      ticket_id INT,
+      creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      actualizado TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )`);
+  } catch(e) { /* tabla ya existe */ }
+
+  try {
     const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM residentes");
     if (n === 0) {
       for (const r of DEFAULT_RESIDENTES) {
@@ -359,6 +380,7 @@ async function initDB() {
   // Migración one-time: renombrar facturas existentes que no tienen UUID en el nombre del archivo
   // Se ejecuta en cada arranque pero solo procesa las que aún no tienen UUID en su URL
   migrarUUIDFacturas().catch(e => console.log("⚠️ Migración UUID:", e.message));
+  restaurarBotsDinamicos(db).catch(e => console.log("⚠️ restaurarBots:", e.message));
 }
 initDB();
 
@@ -954,7 +976,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
       ocr_text: ticket.ocr_text,
       portalUrl: datos.portalUrl || ticket.portal_url || null,
       comercio: ticket.comercio,
-    });
+    }, db);
 
     const _duracionMs = Date.now() - _inicioMs;
     const _botNombre = resultado.portal || datos.portal || ticket.comercio || 'desconocido';
@@ -1357,7 +1379,6 @@ app.get("/api/portales-pendientes/datos", auth, requireAdmin, async (req, res) =
 const { analizarPortal } = require("./agentes/analizador");
 const { generarBot }     = require("./agentes/generador");
 const { validarBot }     = require("./agentes/validador");
-const { orquestarPortal } = require("./agentes/orquestador");
 
 // POST /api/admin/agente/analizar
 app.post("/api/admin/agente/analizar", auth, requireAdmin, async (req, res) => {
@@ -1407,20 +1428,18 @@ app.post("/api/admin/agente/validar", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// POST /api/admin/agente/orquestar
+// POST /api/admin/agente/orquestar — pipeline completo con DB + corrección automática
 app.post("/api/admin/agente/orquestar", auth, requireAdmin, async (req, res) => {
   try {
-    const { screenshotBase64, mimeType, url, notas, nombrePortal, datosTest } = req.body;
-    if (!nombrePortal)
-      return res.json({ ok: false, msg: "Falta nombrePortal" });
-    if (!screenshotBase64 && !url)
-      return res.json({ ok: false, msg: "Envía screenshotBase64 o url" });
+    const { ticketId, portalUrl, url, comercioNombre, nombrePortal, instrucciones, notas } = req.body;
+    const urlFinal = portalUrl || url;
+    const nombreFinal = comercioNombre || nombrePortal;
+    if (!urlFinal || !nombreFinal)
+      return res.json({ ok: false, msg: "portalUrl y comercioNombre son requeridos" });
 
-    console.log(`🎭 Orquestador iniciado para: ${nombrePortal}`);
-    const resultado = await orquestarPortal({
-      screenshotBase64, mimeType, url, notas, nombrePortal, datosTest,
-    });
-    res.json({ ok: true, ...resultado });
+    console.log(`🎭 [Orquestador] Iniciando para: ${nombreFinal}`);
+    const resultado = await orquestar({ db, ticketId: ticketId || null, portalUrl: urlFinal, comercioNombre: nombreFinal, instrucciones: instrucciones || notas || '' });
+    res.json(resultado);
   } catch (err) {
     console.error("❌ Orquestador:", err.message);
     res.json({ ok: false, msg: err.message });
@@ -1839,7 +1858,7 @@ async function procesarReintentos() {
         codigoPostal: t.codigo_postal, regimenFiscal: t.regimen_fiscal,
         usoCfdi: t.uso_cfdi || "G03", ticketId: t.id,
         comercio: t.comercio, ocr_text: t.ocr_text,
-      });
+      }, db);
       const durMs = Date.now() - inicioMs;
 
       if (resultado.ok && resultado.procesandoCorreo) {
@@ -1873,6 +1892,76 @@ async function procesarReintentos() {
   }
 }
 setInterval(procesarReintentos, 5 * 60 * 1000);
+
+// ── AGENTES — Fase 5: CRUD portales gestionados ──────────────────────────────
+
+// Listar todos los portales gestionados por agentes
+app.get("/api/admin/agente/portales", requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT id, comercio, nombre, estado, intentos_correccion, error_msg, nombre_archivo, nombre_funcion, creado, actualizado FROM portales_agente ORDER BY creado DESC"
+    );
+    res.json({ ok: true, portales: rows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// Detalle de un portal (incluye código generado y análisis)
+app.get("/api/admin/agente/portales/:id", requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM portales_agente WHERE id = ? LIMIT 1", [req.params.id]);
+    if (!rows.length) return res.json({ ok: false, msg: "No encontrado" });
+    res.json({ ok: true, portal: rows[0] });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// Aprobar y activar bot generado
+app.post("/api/admin/agente/portales/:id/aprobar", requireAdmin, async (req, res) => {
+  try {
+    const resultado = await activarBot({ db, portalId: parseInt(req.params.id) });
+    res.json(resultado);
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// Rechazar y reiniciar orquestación con notas
+app.post("/api/admin/agente/portales/:id/rechazar", requireAdmin, async (req, res) => {
+  const { notas } = req.body;
+  try {
+    await db.query(
+      "UPDATE portales_agente SET estado = 'error', error_msg = ? WHERE id = ?",
+      [notas || 'Rechazado manualmente', req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// Re-orquestar un portal existente (con notas corregidas)
+app.post("/api/admin/agente/portales/:id/reorquestar", requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.query("SELECT * FROM portales_agente WHERE id = ? LIMIT 1", [req.params.id]);
+    if (!rows.length) return res.json({ ok: false, msg: "No encontrado" });
+    const portal = rows[0];
+    const { instrucciones } = req.body;
+    const resultado = await orquestar({
+      db,
+      portalUrl: portal.portal_url,
+      comercioNombre: portal.nombre,
+      instrucciones: instrucciones || portal.instrucciones || '',
+    });
+    res.json(resultado);
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));

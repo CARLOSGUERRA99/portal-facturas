@@ -3,8 +3,10 @@ const { facturarBuzonFacturas } = require('./buzonfacturas');
 const { facturarGasmaz } = require('./gasmaz');
 const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
 const { facturarHomeDepotMexico } = require('./homedepot');
+const fs = require('fs');
+const path = require('path');
 
-async function detectarYFacturar(datos) {
+async function detectarYFacturar(datos, db = null) {
   const texto = (datos.ocr_text || '').toLowerCase();
   const comercio = (datos.comercio || '').toLowerCase();
   const portalUrl = (datos.portalUrl || '').toLowerCase();
@@ -59,6 +61,30 @@ async function detectarYFacturar(datos) {
   ) {
     console.log('🎯 Portal detectado: Gasmaz/NexusFuel');
     return await facturarGasmaz(datos);
+  }
+
+  // Buscar bot dinámico generado por el sistema de agentes
+  const slug = (portal || comercio).replace(/\s+/g, '').replace(/[^a-z0-9]/g, '').slice(0, 30);
+  if (slug) {
+    const candidatos = [
+      path.join(__dirname, `${slug}.js`),
+      path.join(__dirname, `${slug.replace(/_/g, '')}.js`),
+    ];
+    for (const botPath of candidatos) {
+      if (fs.existsSync(botPath)) {
+        try {
+          delete require.cache[require.resolve(botPath)];
+          const botModule = require(botPath);
+          const fn = Object.values(botModule)[0];
+          if (typeof fn === 'function') {
+            console.log(`🤖 Bot dinámico: ${path.basename(botPath)}`);
+            return await fn(datos);
+          }
+        } catch (e) {
+          console.log(`⚠️ Error cargando bot dinámico ${botPath}:`, e.message);
+        }
+      }
+    }
   }
 
   console.log('⚠️ Portal no reconocido:', datos.comercio);
