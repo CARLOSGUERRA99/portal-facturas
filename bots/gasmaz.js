@@ -33,69 +33,94 @@ async function selectByText(page, selector, keywords) {
   return !!found;
 }
 
-// Descarga XML y PDF desde #divFiles — interceptación de red + fallback fetch con cookies
-async function descargarArchivos(page, ticketId) {
-  const archivos = [];
-
-  // Activar interceptación ANTES de hacer click en los enlaces
-  await page.setRequestInterception(true);
-  page.on("request", req => req.continue());
-  page.on("response", async response => {
-    try {
-      const url = response.url();
-      const ct  = response.headers()["content-type"] || "";
-      if (ct.includes("xml") || ct.includes("pdf") || /\.(xml|pdf)/i.test(url)) {
-        const buf = await response.buffer().catch(() => null);
-        if (buf && buf.length > 500) {
-          archivos.push({ buf, url, ct });
-          console.log(`📥 Interceptado: ${url} | ${buf.length} bytes`);
-        }
-      }
-    } catch {}
-  });
+// Descarga XML y PDF desde #divFiles.
+// Los links usan javascript:DownloadInvoice(...) — se intercepta la respuesta de red
+// o se captura la nueva pestaña que abre la función, según cómo opere el portal.
+async function descargarArchivos(page, browser, ticketId) {
+  const ts = ticketId || Date.now();
+  let xmlUrl = null, pdfUrl = null;
 
   const links = await page.$$eval("#divFiles a", els =>
     els.map(el => ({ text: el.textContent.trim().toUpperCase(), href: el.href }))
   );
   console.log("🔗 Links en #divFiles:", JSON.stringify(links));
 
-  // Click XML → esperar → click PDF → esperar
-  await page.evaluate(() => {
-    const xml = [...document.querySelectorAll("#divFiles a")]
-      .find(l => l.textContent.trim().toUpperCase().includes("XML"));
-    if (xml) xml.click();
-  });
-  await page.waitForTimeout(3000);
+  // Activar interceptación de red (ignora si ya estaba activa)
+  await page.setRequestInterception(true).catch(() => {});
+  page.on("request", req => req.continue().catch(() => {}));
 
-  await page.evaluate(() => {
-    const pdf = [...document.querySelectorAll("#divFiles a")]
-      .find(l => l.textContent.trim().toUpperCase().includes("PDF"));
-    if (pdf) pdf.click();
-  });
-  await page.waitForTimeout(3000);
+  // Captura un archivo haciendo click en el link y esperando la respuesta
+  // por dos canales: respuesta en la misma página O nueva pestaña.
+  async function clickYCapturar(texto) {
+    const bufPromisePagina = new Promise(resolve => {
+      const onResp = async (response) => {
+        try {
+          const ct  = (response.headers()["content-type"] || "").toLowerCase();
+          const url = response.url().toLowerCase();
+          const esArchivo =
+            ct.includes("xml") || ct.includes("pdf") ||
+            ct.includes("octet-stream") || ct.includes("force-download") ||
+            url.includes(".xml")  || url.includes(".pdf");
+          if (!esArchivo) return;
+          const buf = await response.buffer().catch(() => null);
+          if (buf && buf.length > 500) {
+            page.off("response", onResp);
+            resolve(buf);
+          }
+        } catch {}
+      };
+      page.on("response", onResp);
+      setTimeout(() => { page.off("response", onResp); resolve(null); }, 12000);
+    });
 
-  // Subir archivos interceptados
-  let xmlUrl = null, pdfUrl = null;
-  const ts = ticketId || Date.now();
+    const bufPromisePestana = new Promise(resolve => {
+      const onTarget = async (target) => {
+        try {
+          const newPage = await target.page();
+          if (!newPage) return resolve(null);
+          await newPage.waitForTimeout(2000);
+          const r = await newPage.waitForResponse(r => r.status() === 200, { timeout: 10000 }).catch(() => null);
+          const buf = r ? await r.buffer().catch(() => null) : null;
+          await newPage.close().catch(() => {});
+          resolve(buf && buf.length > 500 ? buf : null);
+        } catch { resolve(null); }
+      };
+      browser.once("targetcreated", onTarget);
+      setTimeout(() => resolve(null), 12000);
+    });
 
-  for (const { buf, url, ct } of archivos) {
-    if ((ct.includes("xml") || /\.xml/i.test(url)) && !xmlUrl) {
-      xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.xml`, "application/xml");
-      console.log("✅ XML subido (interceptado):", xmlUrl);
-    } else if ((ct.includes("pdf") || /\.pdf/i.test(url)) && !pdfUrl) {
-      pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
-      console.log("✅ PDF subido (interceptado):", pdfUrl);
-    }
+    await page.evaluate((txt) => {
+      const link = [...document.querySelectorAll("#divFiles a")]
+        .find(l => l.textContent.trim().toUpperCase().includes(txt));
+      if (link) link.click();
+    }, texto);
+
+    return Promise.race([bufPromisePagina, bufPromisePestana]);
   }
 
-  // Fallback: fetch directo con cookies de sesión
-  if (!xmlUrl || !pdfUrl) {
-    console.log("⚠️ Interceptación vacía — intentando fetch con cookies...");
-    const cookies  = await page.cookies();
-    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join("; ");
+  const xmlBuf = await clickYCapturar("XML");
+  if (xmlBuf) {
+    xmlUrl = await subirArchivoR2(xmlBuf, `facturas/gasmaz_${ts}.xml`, "application/xml");
+    console.log("✅ XML subido:", xmlUrl);
+  } else {
+    console.log("⚠️ No se capturó XML por red");
+  }
 
+  const pdfBuf = await clickYCapturar("PDF");
+  if (pdfBuf) {
+    pdfUrl = await subirArchivoR2(pdfBuf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
+    console.log("✅ PDF subido:", pdfUrl);
+  } else {
+    console.log("⚠️ No se capturó PDF por red");
+  }
+
+  // Fallback: fetch con cookies para links con URL directa (no javascript:)
+  if (!xmlUrl || !pdfUrl) {
+    console.log("⚠️ Intentando fallback fetch con cookies...");
+    const cookies   = await page.cookies();
+    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join("; ");
     for (const { text, href } of links) {
-      if (!href) continue;
+      if (!href || href.startsWith("javascript:")) continue;
       const bytes = await page.evaluate(async (url, cookie) => {
         const r   = await fetch(url, { headers: { Cookie: cookie } });
         const arr = await r.arrayBuffer();
@@ -108,6 +133,13 @@ async function descargarArchivos(page, ticketId) {
         console.log("✅ XML subido (fetch):", xmlUrl);
       } else if (text.includes("PDF") && !pdfUrl) {
         pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ts}.pdf`, "application/pdf");
+        console.log("✅ PDF subido (fetch):", pdfUrl);
+      }
+    }
+  }
+
+  return { xmlUrl, pdfUrl };
+}
         console.log("✅ PDF subido (fetch):", pdfUrl);
       }
     }
@@ -187,7 +219,7 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
     if (caso === "ya_facturado") {
       console.log("♻️ Folio ya facturado — recuperando archivos existentes...");
       await page.waitForSelector("#divFiles", { visible: true, timeout: 10000 });
-      const { xmlUrl, pdfUrl } = await descargarArchivos(page, ticketId);
+      const { xmlUrl, pdfUrl } = await descargarArchivos(page, browser, ticketId);
       await browser.close();
 
       if (!xmlUrl && !pdfUrl) {
@@ -279,7 +311,7 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
     await page.waitForSelector("#divFiles", { visible: true, timeout: 20000 });
     await screenshot("paso6_descarga");
 
-    const { xmlUrl, pdfUrl } = await descargarArchivos(page, ticketId);
+    const { xmlUrl, pdfUrl } = await descargarArchivos(page, browser, ticketId);
     await browser.close();
 
     if (!xmlUrl && !pdfUrl) {
