@@ -3,6 +3,17 @@ const mysql   = require("mysql2/promise");
 const { McpServer }                    = require("@modelcontextprotocol/sdk/server/mcp.js");
 const { StreamableHTTPServerTransport } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 const { z } = require("zod");
+const { S3Client, ListObjectsV2Command } = require("@aws-sdk/client-s3");
+
+// ── Cliente R2 ─────────────────────────────────────────────────────────────────
+const s3 = new S3Client({
+  region: "auto",
+  endpoint: process.env.R2_ENDPOINT,
+  credentials: {
+    accessKeyId:     process.env.R2_ACCESS_KEY,
+    secretAccessKey: process.env.R2_SECRET_KEY,
+  },
+});
 
 // ── Base de datos ──────────────────────────────────────────────────────────────
 const db = mysql.createPool({
@@ -139,6 +150,104 @@ function crearMcpServer() {
           type: "text",
           text: `✅ Ticket #${ticket_id} (${ticket.comercio}) encolado para reproceso. Status anterior: ${ticket.status}`
         }]
+      };
+    }
+  );
+
+  // ── TOOL: estado_r2 ────────────────────────────────────────────────────────
+  server.tool(
+    "estado_r2",
+    "Lista archivos recientes en R2. Usa prefijo 'facturas/' para ver XMLs/PDFs generados, 'debug/' para screenshots de bots.",
+    {
+      prefijo: z.enum(["facturas/", "debug/", ""]).optional().describe("Carpeta a listar: facturas/ | debug/ | '' (todo)"),
+      limite:  z.number().optional().describe("Máximo de archivos (default 30)"),
+    },
+    async ({ prefijo = "facturas/", limite = 30 }) => {
+      const cmd = new ListObjectsV2Command({
+        Bucket:  process.env.R2_BUCKET,
+        Prefix:  prefijo,
+        MaxKeys: limite,
+      });
+      const resp = await s3.send(cmd);
+      const archivos = (resp.Contents || []).map(obj => ({
+        key:     obj.Key,
+        url:     `${process.env.R2_PUBLIC_URL}/${obj.Key}`,
+        tamaño:  `${Math.round(obj.Size / 1024)} KB`,
+        fecha:   obj.LastModified,
+      }));
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            prefijo,
+            total: archivos.length,
+            hayMas: resp.IsTruncated,
+            archivos,
+          }, null, 2),
+        }],
+      };
+    }
+  );
+
+  // ── TOOL: logs_railway ──────────────────────────────────────────────────────
+  server.tool(
+    "logs_railway",
+    "Obtiene los logs recientes del servicio portal-facturas desde la API de Railway. Requiere RAILWAY_TOKEN y RAILWAY_DEPLOYMENT_ID en las variables de entorno.",
+    {
+      limite: z.number().optional().describe("Número de líneas a traer (default 50)"),
+      filtro: z.string().optional().describe("Texto para filtrar líneas (ej: 'error', 'bot', 'OXXO')"),
+    },
+    async ({ limite = 50, filtro }) => {
+      const token        = process.env.RAILWAY_TOKEN;
+      const deploymentId = process.env.RAILWAY_DEPLOYMENT_ID;
+
+      if (!token || !deploymentId) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              error: "Faltan variables: RAILWAY_TOKEN y/o RAILWAY_DEPLOYMENT_ID",
+              instruccion: "Agrega estas vars en Railway → portal-facturas-mcp → Variables",
+            }, null, 2),
+          }],
+        };
+      }
+
+      const query = `
+        query {
+          deploymentLogs(deploymentId: "${deploymentId}", limit: ${limite * 2}) {
+            message
+            timestamp
+            severity
+          }
+        }
+      `;
+
+      const resp = await fetch("https://backboard.railway.app/graphql/v2", {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ query }),
+      });
+
+      const data = await resp.json();
+      if (data.errors) {
+        return { content: [{ type: "text", text: JSON.stringify({ error: data.errors }, null, 2) }] };
+      }
+
+      let lineas = data.data.deploymentLogs || [];
+      if (filtro) {
+        lineas = lineas.filter(l => l.message.toLowerCase().includes(filtro.toLowerCase()));
+      }
+      lineas = lineas.slice(-limite);
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ total: lineas.length, filtro: filtro || null, logs: lineas }, null, 2),
+        }],
       };
     }
   );
