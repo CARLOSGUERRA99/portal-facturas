@@ -196,6 +196,28 @@ async function crearNotificacion(userId, tipo, mensaje) {
   }
 }
 
+async function registrarIntento(ticketId, bot, resultado, mensaje, duracionMs, screenshotUrls = []) {
+  try {
+    await db.query(
+      "INSERT INTO ticket_intentos (ticket_id, bot, resultado, mensaje, screenshot_urls, duracion_ms) VALUES (?, ?, ?, ?, ?, ?)",
+      [ticketId, bot || null, resultado, mensaje || null,
+       screenshotUrls.length ? JSON.stringify(screenshotUrls) : null, duracionMs || null]
+    );
+  } catch (e) {
+    console.error("⚠️ registrarIntento:", e.message);
+  }
+}
+
+// Calcula la próxima medianoche (hora local del servidor)
+function proximaMedianoche() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara'];
+
 function corregirIdVentaOxxo(id) {
   if (!id) return id;
   const map = { T:'1', t:'1', I:'1', i:'1', O:'0', o:'0', S:'5', s:'5' };
@@ -271,6 +293,24 @@ async function initDB() {
   try {
     await db.query("ALTER TABLE tickets MODIFY COLUMN status ENUM('pendiente','procesando','procesando_correo','procesado','error','pendiente_confirmacion') NOT NULL DEFAULT 'pendiente'");
   } catch(e) { /* enum ya actualizado */ }
+
+  try {
+    await db.query(`CREATE TABLE IF NOT EXISTS ticket_intentos (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      ticket_id INT NOT NULL,
+      bot VARCHAR(60),
+      resultado ENUM('ok','error','procesando_correo') NOT NULL,
+      mensaje TEXT,
+      screenshot_urls TEXT,
+      duracion_ms INT,
+      creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+    )`);
+  } catch(e) { /* tabla ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN reintento_programado TIMESTAMP NULL");
+  } catch(e) { /* columna ya existe */ }
 
   try {
     await db.query(`CREATE TABLE IF NOT EXISTS notificaciones (
@@ -893,8 +933,9 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
 
     if (!perfil.rfc) return res.json({ ok: false, msg: "Completa tu perfil fiscal primero" });
 
-    await db.query("UPDATE tickets SET status = 'procesando' WHERE id = ?", [ticketId]);
+    await db.query("UPDATE tickets SET status = 'procesando', reintento_programado = NULL WHERE id = ?", [ticketId]);
 
+    const _inicioMs = Date.now();
     const resultado = await detectarYFacturar({
       ...datos,
       rfc: perfil.rfc,
@@ -915,21 +956,19 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
       comercio: ticket.comercio,
     });
 
+    const _duracionMs = Date.now() - _inicioMs;
+    const _botNombre = resultado.portal || datos.portal || ticket.comercio || 'desconocido';
+
     if (resultado.sinPortal) {
-      await db.query(
-        "UPDATE tickets SET status = 'error', portal_url = 'desconocido' WHERE id = ?",
-        [ticketId]
-      );
+      await db.query("UPDATE tickets SET status = 'error', portal_url = 'desconocido' WHERE id = ?", [ticketId]);
+      await registrarIntento(ticketId, _botNombre, 'error', 'Portal no reconocido', _duracionMs);
       await crearNotificacion(
-        req.session.userId,
-        "portal_desconocido",
-        `No pudimos facturar tu ticket de ${ticket.comercio || "comercio desconocido"} porque no reconocemos el portal de facturación. El administrador ha sido notificado.`
+        req.session.userId, "portal_desconocido",
+        `Tu ticket de ${ticket.comercio || "este comercio"} necesita revisión — aún no tenemos configurado su portal. El administrador fue notificado y lo habilitará pronto.`
       );
       const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
       if (adminRows.length > 0) {
-        await crearNotificacion(
-          adminRows[0].id,
-          "portal_pendiente",
+        await crearNotificacion(adminRows[0].id, "portal_pendiente",
           `Nuevo portal detectado en ticket #${ticketId} de ${ticket.comercio || "comercio desconocido"}. Revisa la sección Portales Pendientes.`
         );
       }
@@ -938,6 +977,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
 
     if (resultado.ok && resultado.procesandoCorreo) {
       await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [ticketId]);
+      await registrarIntento(ticketId, _botNombre, 'procesando_correo', 'Factura generada — esperando correo', _duracionMs);
       return res.json({ ok: true, procesandoCorreo: true, msg: "Factura generada — esperando correo con archivos XML/PDF. Te avisaremos cuando estén listos." });
     }
 
@@ -945,13 +985,13 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
       let pdfUrl = resultado.pdfUrl || resultado.pdf || null;
       let xmlUrl = resultado.xmlUrl || resultado.xml || null;
 
-      // Renombrar archivos con UUID del CFDI si el bot los subió con nombre genérico
       if (xmlUrl) {
         const renombrado = await renombrarConUUID(xmlUrl, pdfUrl, ticket.comercio);
         xmlUrl = renombrado.xmlUrl;
         pdfUrl = renombrado.pdfUrl;
       }
 
+      await registrarIntento(ticketId, _botNombre, 'ok', `XML: ${xmlUrl || 'n/a'} | PDF: ${pdfUrl || 'n/a'}`, _duracionMs);
       await db.query(
         "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
         [req.session.userId, ticketId, ticket.comercio, pdfUrl, xmlUrl, "completado"]
@@ -994,11 +1034,27 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
 
       res.json({ ok: true, pdf: pdfUrl, xml: xmlUrl });
     } else {
-      await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]);
-      res.json({ ok: false, msg: resultado.msg });
+      // Error del bot — programar reintento automático a medianoche
+      const medianoche = proximaMedianoche();
+      await db.query(
+        "UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?",
+        [medianoche, ticketId]
+      );
+      await registrarIntento(ticketId, _botNombre, 'error', resultado.msg || 'Error desconocido', _duracionMs);
+
+      // Notificación con contexto: ¿portal conocido o nuevo?
+      const esPortalConocido = PORTALES_CONOCIDOS.includes((datos.portal || '').toLowerCase());
+      const mensajeUsuario = esPortalConocido
+        ? `Tu factura de ${ticket.comercio || "este comercio"} no pudo generarse en este intento. El sistema lo reintentará automáticamente esta noche a las 12:00 am. Si la necesitas antes, puedes reintentar manualmente desde Mis Tickets.`
+        : `Tu ticket de ${ticket.comercio || "este comercio"} está en proceso de revisión — es un comercio que aún estamos configurando. Te avisaremos dentro de 24 a 48 horas cuando esté listo.`;
+
+      await crearNotificacion(req.session.userId, "factura_error", mensajeUsuario);
+      res.json({ ok: false, msg: resultado.msg, reintentoEn: medianoche.toISOString() });
     }
   } catch (err) {
     console.error("❌ Error:", err.message);
+    await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]).catch(() => {});
+    await registrarIntento(ticketId, 'sistema', 'error', err.message, Date.now() - _inicioMs).catch(() => {});
     res.status(500).json({ ok: false, msg: err.message });
   }
 });
@@ -1498,6 +1554,24 @@ app.post("/api/admin/agente/aprobar", auth, requireAdmin, async (req, res) => {
   }
 });
 
+// ── ENDPOINT ADMIN: historial de intentos de un ticket ──
+app.get("/api/admin/tickets/:id/intentos", auth, requireAdmin, async (req, res) => {
+  try {
+    const [intentos] = await db.query(
+      `SELECT id, bot, resultado, mensaje, screenshot_urls, duracion_ms, creado
+       FROM ticket_intentos WHERE ticket_id = ? ORDER BY creado DESC LIMIT 20`,
+      [req.params.id]
+    );
+    res.json({ ok: true, intentos: intentos.map(i => ({
+      ...i,
+      screenshot_urls: i.screenshot_urls ? JSON.parse(i.screenshot_urls) : [],
+      duracion_s: i.duracion_ms ? (i.duracion_ms / 1000).toFixed(1) + 's' : null,
+    })) });
+  } catch (err) {
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
 // ── ENDPOINT ADMIN: forzar reproceso IMAP de un ticket atascado ──
 // ── ENDPOINT ADMIN: tickets en error ──
 app.get("/api/admin/tickets/errores", auth, requireAdmin, async (req, res) => {
@@ -1728,6 +1802,77 @@ async function procesarTicketsPorCorreo() {
   }
 }
 setInterval(procesarTicketsPorCorreo, 2 * 60 * 1000);
+
+// ── JOB REINTENTOS AUTOMÁTICOS: corre cada 5 min, procesa tickets con reintento_programado <= NOW() ──
+async function procesarReintentos() {
+  let tickets;
+  try {
+    const [rows] = await db.query(
+      `SELECT t.*, u.email, u.nombre AS user_nombre,
+              u.rfc, u.razon_social, u.codigo_postal, u.regimen_fiscal, u.uso_cfdi
+       FROM tickets t
+       JOIN users u ON t.user_id = u.id
+       WHERE t.status = 'error'
+         AND t.reintento_programado IS NOT NULL
+         AND t.reintento_programado <= NOW()`
+    );
+    tickets = rows;
+  } catch { return; }
+  if (!tickets.length) return;
+
+  console.log(`🔄 Reintentos automáticos: ${tickets.length} ticket(s)`);
+
+  for (const t of tickets) {
+    // Bloqueo: no reintentar si ya está siendo procesado
+    const [[check]] = await db.query("SELECT status FROM tickets WHERE id = ?", [t.id]);
+    if (check?.status === 'procesando') continue;
+
+    await db.query("UPDATE tickets SET status = 'procesando', reintento_programado = NULL WHERE id = ?", [t.id]);
+    console.log(`🔄 Reintentando ticket #${t.id} (${t.comercio})`);
+
+    const inicioMs = Date.now();
+    try {
+      const datos = JSON.parse(t.ocr_json || "{}");
+      const resultado = await detectarYFacturar({
+        ...datos,
+        rfc: t.rfc, razonSocial: t.razon_social,
+        codigoPostal: t.codigo_postal, regimenFiscal: t.regimen_fiscal,
+        usoCfdi: t.uso_cfdi || "G03", ticketId: t.id,
+        comercio: t.comercio, ocr_text: t.ocr_text,
+      });
+      const durMs = Date.now() - inicioMs;
+
+      if (resultado.ok && resultado.procesandoCorreo) {
+        await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [t.id]);
+        await registrarIntento(t.id, datos.portal || t.comercio, 'procesando_correo', 'Reintento automático — esperando correo', durMs);
+      } else if (resultado.ok) {
+        let xmlUrl = resultado.xmlUrl || resultado.xml || null;
+        let pdfUrl = resultado.pdfUrl || resultado.pdf || null;
+        if (xmlUrl) { const r = await renombrarConUUID(xmlUrl, pdfUrl, t.comercio); xmlUrl = r.xmlUrl; pdfUrl = r.pdfUrl; }
+        await registrarIntento(t.id, datos.portal || t.comercio, 'ok', 'Reintento automático exitoso', durMs);
+        await db.query("INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?,?,?,?,?,?)",
+          [t.user_id, t.id, t.comercio, pdfUrl, xmlUrl, 'completado']);
+        await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [t.id]);
+        await crearNotificacion(t.user_id, "factura_lista",
+          `✅ Tu factura de ${t.comercio} fue generada en el reintento automático. Puedes descargarla en Mis Facturas.`);
+        console.log(`✅ Reintento exitoso ticket #${t.id}`);
+      } else {
+        // Falló de nuevo — programar otro reintento para mañana a medianoche
+        const sigMedianoche = proximaMedianoche();
+        await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [sigMedianoche, t.id]);
+        await registrarIntento(t.id, datos.portal || t.comercio, 'error', `Reintento automático falló: ${resultado.msg}`, durMs);
+        await crearNotificacion(t.user_id, "factura_error",
+          `Tu factura de ${t.comercio} sigue en proceso — el sistema la reintentará mañana a las 12:00 am. Si es urgente, entra a Mis Tickets y da click en Reintentar.`);
+        console.log(`⚠️ Reintento fallido ticket #${t.id}: ${resultado.msg}`);
+      }
+    } catch (e) {
+      await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [proximaMedianoche(), t.id]);
+      await registrarIntento(t.id, t.comercio, 'error', `Excepción en reintento: ${e.message}`, Date.now() - inicioMs);
+      console.log(`❌ Excepción reintentando ticket #${t.id}:`, e.message);
+    }
+  }
+}
+setInterval(procesarReintentos, 5 * 60 * 1000);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
