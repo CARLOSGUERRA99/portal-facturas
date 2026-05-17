@@ -1149,6 +1149,22 @@ async function limpiarFacturasVencidas() {
 limpiarFacturasVencidas();
 setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
 
+// GET /api/portales-pendientes/datos?comercio=X — notas y URL guardadas para ese comercio
+app.get("/api/portales-pendientes/datos", auth, requireAdmin, async (req, res) => {
+  try {
+    const { comercio } = req.query;
+    if (!comercio) return res.json({ ok: false, msg: "Falta comercio" });
+    const [rows] = await db.query(
+      "SELECT nombre, url, notas FROM portales_pendientes WHERE nombre LIKE ? ORDER BY creado DESC LIMIT 1",
+      [`%${comercio}%`]
+    );
+    if (!rows.length) return res.json({ ok: true, portal: null });
+    res.json({ ok: true, portal: rows[0] });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 // ── AGENTES — Generar bot nuevo ──────────────────────────────────────────────
 
 const { analizarPortal } = require("./agentes/analizador");

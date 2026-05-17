@@ -841,9 +841,33 @@ D) La entrada completa para portales/portales.json`;
 
     // ── AGENTES ────────────────────────────────────────────────────────────────
 
-    function abrirAgenteConNombre(comercio) {
+    async function abrirAgenteConNombre(comercio) {
       document.getElementById('ag-nombre').value = comercio;
       document.getElementById('seccion-agentes').scrollIntoView({ behavior: 'smooth' });
+
+      // Pre-llenar URL y notas si existen en portales_pendientes
+      try {
+        const res = await fetch('/api/portales-pendientes/datos?comercio=' + encodeURIComponent(comercio));
+        const data = await res.json();
+        if (data.ok && data.portal) {
+          if (data.portal.url && data.portal.url !== 'sin-url') {
+            document.getElementById('ag-url').value = data.portal.url;
+          }
+          if (data.portal.notas) {
+            let notasTexto = data.portal.notas;
+            try {
+              const parsed = JSON.parse(data.portal.notas);
+              const partes = [];
+              if (parsed.descripcion) partes.push(parsed.descripcion);
+              if (parsed.linkPortal)   partes.push('Link: ' + parsed.linkPortal);
+              if (parsed.acceso)       partes.push('Acceso: ' + parsed.acceso);
+              if (parsed.campos)       partes.push('Campos: ' + parsed.campos.join(', '));
+              notasTexto = partes.join('\n');
+            } catch {}
+            document.getElementById('ag-notas').value = notasTexto;
+          }
+        }
+      } catch {}
     }
     let agState = { analisis: null, codigo: null, nombreArchivo: null, nombreFuncion: null };
 
