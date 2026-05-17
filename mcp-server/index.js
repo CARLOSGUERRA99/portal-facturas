@@ -1,7 +1,7 @@
 const express = require("express");
 const mysql   = require("mysql2/promise");
-const { McpServer }           = require("@modelcontextprotocol/sdk/server/mcp.js");
-const { SSEServerTransport }  = require("@modelcontextprotocol/sdk/server/sse.js");
+const { McpServer }                    = require("@modelcontextprotocol/sdk/server/mcp.js");
+const { StreamableHTTPServerTransport } = require("@modelcontextprotocol/sdk/server/streamableHttp.js");
 const { z } = require("zod");
 
 // ── Base de datos ──────────────────────────────────────────────────────────────
@@ -146,44 +146,40 @@ function crearMcpServer() {
   return server;
 }
 
-// ── Express + SSE ──────────────────────────────────────────────────────────────
+// ── Express + Streamable HTTP ──────────────────────────────────────────────────
 const app = express();
+app.use(express.json());
 
 app.get("/health", (req, res) => res.json({ ok: true, service: "portal-facturas-mcp" }));
 
 // Middleware de autenticación (no aplica a /health)
 app.use((req, res, next) => {
-  if (!API_KEY) return next(); // sin key configurada, acceso libre (no recomendado)
+  if (!API_KEY) return next();
   const key = req.headers["x-api-key"] || req.query.api_key;
   if (key !== API_KEY) return res.status(401).json({ error: "API key inválida" });
   next();
 });
 
-// Un transporte SSE por conexión
-const transportes = {};
-
-app.get("/sse", async (req, res) => {
-  const transport = new SSEServerTransport("/messages", res);
-  transportes[transport.sessionId] = transport;
+// Endpoint MCP — acepta GET y POST en /mcp
+app.all("/mcp", async (req, res) => {
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined, // stateless
+  });
 
   const server = crearMcpServer();
-  await server.connect(transport);
 
   res.on("close", () => {
-    delete transportes[transport.sessionId];
+    transport.close();
+    server.close();
   });
-});
 
-app.post("/messages", express.json(), async (req, res) => {
-  const sessionId = req.query.sessionId;
-  const transport = transportes[sessionId];
-  if (!transport) return res.status(404).json({ error: "Sesión no encontrada" });
-  await transport.handlePostMessage(req, res);
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
 });
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`✅ MCP server corriendo en puerto ${PORT}`);
-  console.log(`   SSE endpoint: http://localhost:${PORT}/sse`);
+  console.log(`   HTTP endpoint: http://localhost:${PORT}/mcp`);
   console.log(`   Auth: ${API_KEY ? "API key activa" : "SIN autenticación (configura MCP_API_KEY)"}`);
 });
