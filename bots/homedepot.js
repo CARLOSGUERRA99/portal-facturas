@@ -190,17 +190,34 @@ async function facturarHomeDepotMexico({
     } catch {}
   }
 
-  // NO interceptamos window.turnstile (causaba que Angular viera null y nunca llamara render()).
-  // En su lugar usamos rAF para envolver turnstile.render() tan pronto como esté disponible.
   await page.evaluateOnNewDocument(() => {
     window.__turnstileCallbacks = [];
     window.__turnstileLastParams = null;
-    window.__injectTurnstileToken = function(token) {
-      for (const cb of window.__turnstileCallbacks) {
-        try { cb(token); } catch {}
+    window.__cfMsgHandlers   = [];   // handlers 'message' registrados en window
+    window.__cfIncomingMsgs  = [];   // mensajes que lleguen del iframe de CF
+
+    // ── Interceptar window.addEventListener para capturar handlers de 'message' ──
+    // Cloudflare's api.js registra un handler para recibir el token del iframe via postMessage.
+    // Capturamos ese handler para poder llamarlo con el token de CapSolver.
+    const _origAEL = window.addEventListener.bind(window);
+    window.addEventListener = function(type, fn, opts) {
+      if (type === "message" && typeof fn === "function") {
+        window.__cfMsgHandlers.push(fn);
       }
+      return _origAEL(type, fn, opts);
     };
 
+    // Listener de captura (true) para ver los mensajes que manda el iframe ANTES de que
+    // los procese Cloudflare, y guardar su formato para usarlo luego.
+    _origAEL("message", function(e) {
+      try {
+        if (e.origin && e.origin.includes("cloudflare")) {
+          window.__cfIncomingMsgs.push(JSON.stringify({ o: e.origin, d: e.data }).slice(0, 300));
+        }
+      } catch {}
+    }, true);
+
+    // ── Wrap rAF de render() para capturar callbacks de Angular ──
     function wrapTurnstileRender() {
       const ts = window.turnstile;
       if (!ts || typeof ts.render !== "function" || ts.__hd_wrapped) return false;
@@ -208,8 +225,7 @@ async function facturarHomeDepotMexico({
       ts.render = function(container, params) {
         try {
           window.__turnstileLastParams = JSON.stringify({
-            sitekey: params?.sitekey,
-            callbackType: typeof params?.callback,
+            sitekey: params?.sitekey, callbackType: typeof params?.callback,
             paramsKeys: params ? Object.keys(params) : [],
           });
           if (params?.sitekey) window.__turnstileSitekey = params.sitekey;
@@ -223,14 +239,45 @@ async function facturarHomeDepotMexico({
       ts.__hd_wrapped = true;
       return true;
     }
-
-    // Usar rAF para envolver render() lo más pronto posible (antes de que Angular llame a ngAfterViewInit)
-    function rafWrap() {
-      if (!wrapTurnstileRender()) requestAnimationFrame(rafWrap);
-    }
+    function rafWrap() { if (!wrapTurnstileRender()) requestAnimationFrame(rafWrap); }
     requestAnimationFrame(rafWrap);
 
-    // MutationObserver para iframes de Cloudflare (respaldo sitekey)
+    // ── Función de inyección: prueba todos los mecanismos ──
+    window.__injectTurnstileToken = function(token) {
+      // 1. callbacks capturados por render()
+      for (const cb of window.__turnstileCallbacks) { try { cb(token); } catch {} }
+
+      // 2. simular postMessage del iframe hacia los handlers de api.js
+      const iframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+      const iframeSrc = iframe?.src || "";
+      const widgetIdMatch = iframeSrc.match(/cf-chl-widget-([a-z0-9]+)/);
+      const widgetId = widgetIdMatch ? widgetIdMatch[1] : undefined;
+
+      // Varios formatos que Cloudflare usa en distintas versiones del widget
+      const formats = [
+        { source: "cloudflare-challenge-platform", token, widgetId },
+        { token, widgetId, event: "token", msgType: "token" },
+        { token, widgetId },
+        { token },
+      ];
+      const fakeOrigin = "https://challenges.cloudflare.com";
+      for (const data of formats) {
+        for (const handler of window.__cfMsgHandlers) {
+          try {
+            handler.call(window, {
+              data, origin: fakeOrigin,
+              source: iframe?.contentWindow || null,
+            });
+          } catch {}
+        }
+        // También vía dispatchEvent por si Cloudflare usa addEventListener global
+        try {
+          window.dispatchEvent(new MessageEvent("message", { data, origin: fakeOrigin }));
+        } catch {}
+      }
+    };
+
+    // MutationObserver para sitekey desde iframe src
     const obs = new MutationObserver(() => {
       if (window.__turnstileSitekey) return;
       const iframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]');
@@ -337,23 +384,29 @@ async function facturarHomeDepotMexico({
     } else if (capsolverKey) {
       const capToken = await resolverTurnstile(page, capsolverKey, capturedSitekey) || "";
       if (capToken) {
-        // Método 1: callbacks capturados por nuestro wrapper de render()
-        const callbacksLlamados = await page.evaluate((token) => {
+        // Diagnóstico: mensajes reales que llegaron del iframe CF y handlers capturados
+        const cfDiag = await page.evaluate(() => ({
+          incomingMsgs: window.__cfIncomingMsgs || [],
+          handlers: window.__cfMsgHandlers?.length || 0,
+          renderParams: window.__turnstileLastParams || "render() nunca llamado",
+          angularEls: Array.from(document.querySelectorAll("*")).filter(e => !!e.__ngContext__).map(e => e.tagName).slice(0, 15).join(","),
+        })).catch(() => ({}));
+        console.log(`🔍 CF msgs recibidos: ${JSON.stringify(cfDiag.incomingMsgs)} | handlers: ${cfDiag.handlers}`);
+        console.log(`🔍 render params: ${cfDiag.renderParams}`);
+        console.log(`🔍 Angular elements: ${cfDiag.angularEls || "ninguno"}`);
+
+        // Inyectar token por todos los mecanismos: render() callbacks + postMessage handlers + __ngContext__
+        const injResult = await page.evaluate((token) => {
+          const log = [];
+
+          // Mecanismo A: render() callbacks + postMessage handlers (via __injectTurnstileToken)
           if (typeof window.__injectTurnstileToken === "function") {
             window.__injectTurnstileToken(token);
-            return window.__turnstileCallbacks ? window.__turnstileCallbacks.length : 0;
+            log.push(`A:cbs=${window.__turnstileCallbacks?.length || 0},handlers=${window.__cfMsgHandlers?.length || 0}`);
           }
-          return 0;
-        }, capToken);
-        console.log(`🔑 Callbacks render(): ${callbacksLlamados} | render params: ${await page.evaluate(() => window.__turnstileLastParams || "nunca llamado").catch(() => "?")}`);
 
-        // Método 2: inyección directa via __ngContext__ de Angular Ivy (ControlValueAccessor.onChange)
-        const ngResult = await page.evaluate((token) => {
-          const log = [];
-          const elems = [
-            document.querySelector("ngx-turnstile"),
-            ...Array.from(document.querySelectorAll("*")).filter(e => e.__ngContext__ && e.tagName && e.tagName.includes("-")),
-          ].filter(Boolean);
+          // Mecanismo B: __ngContext__ onChange (ControlValueAccessor de ngx-turnstile)
+          const elems = Array.from(document.querySelectorAll("*")).filter(e => !!e.__ngContext__);
           for (const el of elems) {
             const ctx = el.__ngContext__;
             const arr = Array.isArray(ctx) ? ctx : [];
@@ -361,33 +414,27 @@ async function facturarHomeDepotMexico({
               const item = arr[i];
               if (!item || typeof item !== "object") continue;
               if (typeof item.onChange === "function") {
-                try { item.onChange(token); log.push("onChange@" + el.tagName + "[" + i + "]"); } catch(e) { log.push("ERR:" + e.message); }
+                try { item.onChange(token); log.push("B:onChange@" + el.tagName + "[" + i + "]"); } catch(e) { log.push("B:ERR:" + e.message); }
               }
-              if (item.resolved && typeof item.resolved.emit === "function") {
-                try { item.resolved.emit(token); log.push("emit@" + el.tagName + "[" + i + "]"); } catch {}
-              }
-            }
-            // window.ng (Angular dev mode)
-            if (window.ng) {
-              const comp = window.ng.getComponent?.(el);
-              if (comp) {
-                if (typeof comp.onChange === "function") { comp.onChange(token); log.push("ng.onChange"); }
-                if (comp.resolved?.emit) { comp.resolved.emit(token); log.push("ng.emit"); }
+              if (item.resolved?.emit) {
+                try { item.resolved.emit(token); log.push("B:emit@" + el.tagName + "[" + i + "]"); } catch {}
               }
             }
           }
-          return log.join(" | ") || "no componentes encontrados";
+
+          // Mecanismo C: input hidden
+          const inp = document.querySelector("input[name='cf-turnstile-response']");
+          if (inp) {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+            if (setter) setter.call(inp, token); else inp.value = token;
+            inp.dispatchEvent(new Event("input",  { bubbles: true }));
+            inp.dispatchEvent(new Event("change", { bubbles: true }));
+            log.push("C:input");
+          }
+
+          return log.join(" | ") || "ningún mecanismo actuó";
         }, capToken);
-        console.log(`🔑 Angular __ngContext__ injection: ${ngResult}`);
-
-        // Método 3: input hidden por si existe
-        await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
-          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-          if (setter) setter.call(el, t); else el.value = t;
-          el.dispatchEvent(new Event("input",  { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-        }, capToken).catch(() => {});
-
+        console.log(`🔑 Inyección: ${injResult}`);
         await page.waitForTimeout(800);
       }
     } else {
