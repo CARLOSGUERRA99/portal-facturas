@@ -168,18 +168,28 @@ async function facturarHomeDepotMexico({
     } catch {}
   }
 
-  // Capturar sitekey interceptando requests de red (antes de navegar)
-  let capturedSitekey = null;
-  page.on("request", req => {
-    const url = req.url();
-    if (!url.includes("challenges.cloudflare.com")) return;
-    console.log(`🌐 CF request: ${url.substring(0, 120)}`);
-    try {
-      const u = new URL(url);
-      const k = u.searchParams.get("k") || u.searchParams.get("sitekey");
-      if (k && k.length > 8) { capturedSitekey = k; console.log(`🔑 Sitekey capturado de red: ${k}`); }
-    } catch {}
+  // Interceptar window.turnstile.render() ANTES de que Angular lo llame
+  // Es la única forma confiable de capturar el sitekey
+  await page.evaluateOnNewDocument(() => {
+    Object.defineProperty(window, "turnstile", {
+      configurable: true,
+      get() { return this._turnstileReal; },
+      set(val) {
+        if (val && typeof val.render === "function") {
+          const orig = val.render.bind(val);
+          val.render = function(container, params) {
+            if (params && params.sitekey) {
+              window.__turnstileSitekey = params.sitekey;
+            }
+            return orig(container, params);
+          };
+        }
+        this._turnstileReal = val;
+      },
+    });
   });
+
+  let capturedSitekey = null;
 
   try {
     // ── PASO 1 — Cargar portal ────────────────────────────────────────────────
@@ -189,6 +199,9 @@ async function facturarHomeDepotMexico({
       { waitUntil: "networkidle0", timeout: 40000 }
     );
     console.log(`📍 URL final: ${page.url()}`);
+    // Leer sitekey capturado por el interceptor
+    capturedSitekey = await page.evaluate(() => window.__turnstileSitekey || null).catch(() => null);
+    console.log(`🔑 Sitekey interceptado: ${capturedSitekey || "NO CAPTURADO"}`);
     await screenshot("paso1_cargado");
 
     // ── PASO 2 — Llenar RFC + Ticket ─────────────────────────────────────────
