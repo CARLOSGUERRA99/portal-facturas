@@ -573,6 +573,14 @@ async function initDB() {
   } catch(e) { /* columna ya existe */ }
 
   try {
+    await db.query("ALTER TABLE tickets ADD COLUMN error_msg TEXT NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE ticket_intentos MODIFY COLUMN resultado VARCHAR(30) NOT NULL");
+  } catch(e) { /* ya modificado */ }
+
+  try {
     await db.query(`CREATE TABLE IF NOT EXISTS notificaciones (
       id INT AUTO_INCREMENT PRIMARY KEY,
       user_id INT NOT NULL,
