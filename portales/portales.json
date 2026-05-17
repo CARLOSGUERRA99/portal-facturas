@@ -1,0 +1,247 @@
+{
+  "version": "1.0",
+  "actualizado": "2026-05-17",
+  "portales": {
+    "oxxo": {
+      "nombre": "OXXO Facturación Electrónica",
+      "bot": "bots/oxxo.js",
+      "estado": "produccion",
+      "url_base": "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/inicio.do",
+      "url_reimpresion": "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/reimpresionFactura.do",
+      "tecnologia": "JSF PrimeFaces (Java)",
+      "stealth": false,
+      "comercios": ["OXXO (cualquier sucursal — San Javier, Misiones, Centro, etc.)"],
+      "deteccion": {
+        "por_portal_field": "oxxo",
+        "por_texto_ocr": ["oxxo"],
+        "por_comercio": ["oxxo"],
+        "por_url_qr": []
+      },
+      "campos_ticket": ["fecha", "folio", "idVenta", "total"],
+      "campos_fiscales": ["rfc", "razonSocial", "calle", "ext", "int", "colonia", "municipio", "codigoPostal", "estado", "regimenFiscal", "usoCfdi"],
+      "flujo": [
+        "Paso 1: Abrir portal, cerrar popup inicial (.ui-dialog-titlebar-close)",
+        "Paso 2: Fecha con datepicker jQuery UI (#form:fecha_input) — navegar mes a mes",
+        "Paso 3: Llenar folio (#form:folio), idVenta (#form:venta), total (#form:total)",
+        "Paso 4: Click 'Validar Ticket' (span con texto exacto) → esperar #form:continuar habilitado",
+        "Paso 5: Click #form:continuar",
+        "Paso 6: RFC (#form:rfc) + blur → dispara carga de régimen fiscal",
+        "Paso 7: Razón social — polling activo 40 intentos × 300ms en múltiples selectores",
+        "Paso 8: Dirección (#form:calle, ext, int, colonia, dele)",
+        "Paso 9: CP (#form:codigo) + blur → dispara carga de estado",
+        "Paso 10: Estado (#form:estado_label → panel li items)",
+        "Paso 11: Régimen fiscal (#form:selectOneMenuRegFis_label → buscar '601')",
+        "Paso 12: Uso CFDI (#form:selectOneMenuCFDI_label → buscar 'Gastos en general')",
+        "Paso 13: Click #form:generarFactura",
+        "Paso 14: Enviar correo + descargar PDF/XML → fallback IMAP"
+      ],
+      "selectores_clave": {
+        "fecha": "#form\\:fecha_input",
+        "folio": "#form\\:folio",
+        "idVenta": "#form\\:venta",
+        "total": "#form\\:total",
+        "validar": "span[texto='Validar Ticket']",
+        "continuar": "#form\\:continuar",
+        "rfc": "#form\\:rfc",
+        "razonSocial": "#form\\:razon | #form\\:razonSocial",
+        "calle": "#form\\:calle",
+        "ext": "#form\\:ext",
+        "int": "#form\\:int",
+        "colonia": "#form\\:colonia",
+        "municipio": "#form\\:dele",
+        "codigoPostal": "#form\\:codigo",
+        "estado": "#form\\:estado_label",
+        "regimenFiscal": "#form\\:selectOneMenuRegFis_label",
+        "usoCfdi": "#form\\:selectOneMenuCFDI_label",
+        "generarFactura": "#form\\:generarFactura",
+        "email": "input[type='email']"
+      },
+      "comportamientos_especiales": [
+        "Popup inicial al cargar — cerrar con .ui-dialog-titlebar-close",
+        "Datepicker es readonly, se navega con prev/next y click en celda del día",
+        "Razón social no se habilita inmediatamente tras RFC — requiere polling activo con scroll keepalive",
+        "Régimen y CFDI son PrimeFaces OneMenu — abrir con _label y click en panel li",
+        "Estado se carga dinámicamente tras blur en CP",
+        "CFDI se carga dinámicamente tras seleccionar régimen",
+        "Fallback de reimpresión disponible si falla el flujo normal"
+      ],
+      "fallback": "reimpresionFactura.do — mismos campos, agrega email para reenvío",
+      "datos_fijos": {
+        "regimenFiscal": "601 — General de Ley Personas Morales",
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      },
+      "ocr_correcciones": {
+        "folio": "Solo dígitos después de 'Fol_Vta:' — corregir O→0 S→5 I→1 T→1",
+        "idVenta": "Código después de 'ID=' — formato 2dig+3let+2dig+alfanum+1dig — corregir O→0 en posiciones 0,1,5,6"
+      }
+    },
+
+    "arco": {
+      "nombre": "BuzonFacturas (ARCO)",
+      "bot": "bots/buzonfacturas.js",
+      "estado": "produccion",
+      "url_base": "https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0",
+      "url_descarga": "https://buzonfacturas.com/CFDI/DescargarFactura",
+      "tecnologia": "ASP.NET MVC",
+      "stealth": false,
+      "comercios": ["Gasolineras ARCO (cualquier sucursal)"],
+      "deteccion": {
+        "por_portal_field": "arco",
+        "por_texto_ocr": ["buzonfacturas", "arco"],
+        "por_comercio": ["arco"],
+        "por_url_qr": ["buzonfacturas.com", "buzonfacturas", "arco"]
+      },
+      "campos_ticket": ["codigoTicket", "total"],
+      "campos_fiscales": ["rfc", "razonSocial", "usoCfdi"],
+      "flujo": [
+        "Paso 1: Navegar a URL (del QR o base), llenar RFC (input#RFC), click submit",
+        "Paso 2: Click 'Guardar y continuar' → navega a /DatosTicket",
+        "Paso 3: Llenar código de facturación (input#CodigoFacturacion), click #btnVerificar",
+        "Paso 4: Detectar casos especiales: ticket vencido (+2 días) o ya facturado",
+        "Paso 5: Seleccionar forma de pago (select#FormaDePago → '28' tarjeta débito)",
+        "Paso 6: Seleccionar uso CFDI (select#UsoCFDI → 'G03')",
+        "Paso 7: Llenar correo (input#correo) ANTES de generar",
+        "Paso 8: Click 'Generar factura' → navega a pantalla de confirmación",
+        "Paso 9: Descarga directa XML/PDF con targetcreated → fallback IMAP"
+      ],
+      "selectores_clave": {
+        "rfc": "input#RFC",
+        "submitRfc": "button[type='submit'].btn-info",
+        "guardarContinuar": "button[name='btn'][value='GenerarFactura']",
+        "codigoFacturacion": "input#CodigoFacturacion",
+        "verificar": "button#btnVerificar",
+        "formaDePago": "select#FormaDePago",
+        "usoCfdi": "select#UsoCFDI",
+        "email": "input#correo",
+        "generarFactura": "button[name='btn'][value='GenerarFactura']",
+        "descargarXml": "input[type='submit'][value='Descargar XML']",
+        "descargarPdf": "input[type='submit'][value='Descargar PDF']"
+      },
+      "comportamientos_especiales": [
+        "Flujo multi-step con navegaciones reales entre páginas",
+        "Ticket vencido si tiene más de 2 días — retorna ok:false con mensaje",
+        "Ticket ya facturado — usa Estrategia B (busca en /CFDI/DescargarFactura por RFC+folio)",
+        "Descarga con targetcreated (abre nueva pestaña)",
+        "Correo debe llenarse ANTES de generar para que el portal lo envíe automáticamente"
+      ],
+      "casos_especiales": {
+        "ticket_vencido": "Retornar { ok: false, msg: 'El ticket excede los 2 días permitidos...' }",
+        "ya_facturado": "Estrategia B: navegar a /CFDI/DescargarFactura, buscar por RFC, descargar"
+      },
+      "datos_fijos": {
+        "formaDePago": "28 — Tarjeta de débito",
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+
+    "gasmaz": {
+      "nombre": "NexusFuel / Gasmaz",
+      "bot": "bots/gasmaz.js",
+      "estado": "produccion",
+      "url_base": "https://redmaxfactura.nexusfuel.mx/",
+      "tecnologia": "ASP.NET WebForms + AJAX",
+      "stealth": true,
+      "comercios": ["Gasmaz", "RedMax", "otras gasolineras con portal NexusFuel"],
+      "deteccion": {
+        "por_portal_field": "gasmaz",
+        "por_texto_ocr": ["nexusfuel", "gasmaz"],
+        "por_comercio": ["gasmaz"],
+        "por_url_qr": ["nexusfuel.mx", "nexusfuel", "gasmaz"]
+      },
+      "campos_ticket": ["referencia", "folio", "total", "portalUrl"],
+      "campos_fiscales": ["rfc", "razonSocial", "regimenFiscal", "usoCfdi"],
+      "flujo": [
+        "Paso 1: Cargar portal (URL del QR o redmaxfactura.nexusfuel.mx)",
+        "Paso 2: Llenar #txtReferencia, #txtFolio, #txtAmount, #txtRFC",
+        "Paso 3: Click #btnNext → detectar caso: paso2 | ya_facturado | timeout",
+        "Paso 4 (caso ya_facturado): waitForSelector #divFiles → descargarArchivos()",
+        "Paso 5 (caso normal): llenar #txtName, #txtEmail",
+        "Paso 6: Seleccionar #selFiscalRegime (régimen fiscal)",
+        "Paso 7: Esperar AJAX options.length > 1 en #selVoucherUse, luego seleccionar",
+        "Paso 8: Seleccionar #selPaymentWay (forma de pago)",
+        "Paso 9: Click botón 'Facturar' con evaluateHandle().asElement().click()",
+        "Paso 10: Promise.race navegación/confirmación",
+        "Paso 11: waitForSelector #divFiles → descargarArchivos()"
+      ],
+      "selectores_clave": {
+        "referencia": "#txtReferencia",
+        "folio": "#txtFolio",
+        "monto": "#txtAmount",
+        "rfc": "#txtRFC",
+        "buscar": "#btnNext",
+        "razonSocial": "#txtName",
+        "email": "#txtEmail",
+        "regimenFiscal": "#selFiscalRegime",
+        "usoCfdi": "#selVoucherUse",
+        "formaPago": "#selPaymentWay",
+        "facturar": "button[texto='Facturar']",
+        "divDescarga": "#divFiles",
+        "divDocumentos": "#divDocumentsDownload"
+      },
+      "comportamientos_especiales": [
+        "Uso stealth=true en la URL de Browserless",
+        "Selects de CFDI cargan vía AJAX tras seleccionar régimen — waitForFunction options.length > 1",
+        "El campo CFDI usa texto ('Gastos en general'), NO el código SAT — mapeo en CFDI_KEYWORDS",
+        "Botón Facturar causa navegación — usar evaluateHandle().asElement().click()",
+        "Caso ya_facturado: detectar #divDocumentsDownload o texto 'ya fue facturado'",
+        "Descarga: DownloadInvoice() abre ../DownloadInvoice.aspx en iframe oculto — construir URL directamente",
+        "PDF via ShowInvoiceReport() → ReportViewer.aspx (HTML) — interceptar con nueva página y request interception"
+      ],
+      "descarga": {
+        "xml": "Construir URL: {baseUrl}DownloadInvoice.aspx?fiscalFolioId={uuid}&stationId={id}",
+        "pdf": "Abrir {baseUrl}Report/ReportViewer.aspx en nueva página, interceptar respuesta PDF",
+        "fiscalFolioId": "fileName.split('_')[3].replace('.xml', '') donde fileName viene del href"
+      },
+      "cfdi_keywords": {
+        "G01": ["Adquisición de mercancias", "Adquisicion de mercancias"],
+        "G03": ["Gastos en general"],
+        "G02": ["Devoluciones, descuentos"],
+        "S01": ["Sin efectos fiscales"],
+        "CP01": ["Pagos"]
+      },
+      "datos_fijos": {
+        "formaPago": "Tarjeta de débito",
+        "usoCfdi_default": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+
+    "farmaciaguadalajara": {
+      "nombre": "Farmacias Guadalajara",
+      "bot": "bots/farmaciaguadalajara.js",
+      "estado": "en_desarrollo",
+      "url_base": "https://www.movil.farmaciasguadalajara.com/facturacion/",
+      "tecnologia": "Angular 15 con reactive forms y ng-mask",
+      "stealth": true,
+      "comercios": ["Farmacias Guadalajara (cualquier sucursal)", "Farmacias Benavides (mismo portal)"],
+      "deteccion": {
+        "por_portal_field": "farmaciaguadalajara",
+        "por_texto_ocr": ["farmacia guadalajara", "farmaciasguadalajara", "fragua"],
+        "por_comercio": ["farmacia guadalajara", "fragua"],
+        "por_url_qr": ["farmaciasguadalajara.com"]
+      },
+      "campos_ticket": ["folioFactura", "caja", "fechaCompra", "noTicket"],
+      "campos_fiscales": ["rfc", "codigoPostal", "razonSocial", "regimenFiscal", "usoCfdi"],
+      "flujo": [
+        "Paso 1: Cargar portal Angular",
+        "Paso 2: Llenar folioFactura (formato XXXXXX-XXXXXX-X con guiones)",
+        "Paso 3: Click 'Validar folio' → modal de confirmación de sucursal → click 'Sí'",
+        "Paso 4: Clasificar modal resultado (sistema_caido | datos_invalidos | ya_facturado | confirmacion)",
+        "Paso 5: Si confirmacion → waitForSelector('input#rfc:not([disabled])')",
+        "Paso 6: Llenar RFC, CP, razón social, régimen, uso CFDI",
+        "Paso 7: Generar factura"
+      ],
+      "comportamientos_especiales": [
+        "Angular reactive forms — campos se habilitan en cascada, no todos a la vez",
+        "waitForSelector('input#rfc:not([disabled])') para esperar que el formulario esté listo",
+        "Modal de clasificación: sistema_caido vs datos_invalidos vs ya_facturado vs confirmacion",
+        "sistema_caido: regex específico 'sistema de facturación...no está disponible' — NO 'no disponible' genérico",
+        "Folio tiene formato con guiones (XXXXXX-XXXXXX-X) — ng-mask lo formatea automáticamente",
+        "Fecha con Escape antes y después para cerrar datepicker Angular"
+      ],
+      "notas_desarrollo": "Bot tiene lógica correcta pero aún no tiene caso de éxito end-to-end validado"
+    }
+  }
+}
