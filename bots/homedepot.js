@@ -569,7 +569,35 @@ async function facturarHomeDepotMexico({
 
     await page.click("button.btn-primary");
     console.log("✅ Click en Facturar");
-    await page.waitForTimeout(6000);
+    await page.waitForTimeout(2000);
+
+    // Modal de confirmación: "Iniciando timbrado de comprobante / ¿Toda la información es correcta?"
+    // Aparece con botones "Regresar" y "Continuar" — hay que hacer click en "Continuar"
+    const modalTitulo = await page.evaluate(() => {
+      const modal = document.querySelector("app-modal-alert");
+      if (!modal) return null;
+      return modal.innerText?.trim().slice(0, 80) || "modal-sin-texto";
+    }).catch(() => null);
+
+    if (modalTitulo) {
+      console.log(`📋 Modal detectado: "${modalTitulo}" — haciendo click en Continuar...`);
+      await page.evaluate(() => {
+        // Buscar el botón "Continuar" (no "Regresar") dentro del modal
+        const btns = Array.from(document.querySelectorAll("app-modal-alert button, .modal button"));
+        const continuar = btns.find(b => /continuar/i.test(b.textContent));
+        if (continuar) { continuar.scrollIntoView(); continuar.click(); }
+        else {
+          // Fallback: cualquier btn-primary dentro del modal
+          const primary = document.querySelector("app-modal-alert .btn-primary, app-modal-alert button:last-child");
+          if (primary) primary.click();
+        }
+      });
+      console.log("✅ Click en Continuar del modal");
+      await page.waitForTimeout(8000); // esperar timbrado SAT
+    } else {
+      await page.waitForTimeout(5000);
+    }
+
     await screenshot("paso5_post_facturar");
 
     const textoFinal = await page.evaluate(() => document.body.innerText.toLowerCase());
