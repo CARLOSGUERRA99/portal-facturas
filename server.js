@@ -545,6 +545,17 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
           console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
         datosOCR.portalUrl = urlQR;
       }
+
+      // Si sigue desconocido, resolver por nombre del comercio detectado
+      if (portalDetectado === "desconocido" && det.comercio) {
+        const c = det.comercio.toLowerCase();
+        if (c.includes("oxxo")) portalDetectado = "oxxo";
+        else if (c.includes("arco")) portalDetectado = "arco";
+        else if (c.includes("gasmaz") || c.includes("nexusfuel")) portalDetectado = "gasmaz";
+        else if (c.includes("guadalajara") || c.includes("fragua")) portalDetectado = "farmaciaguadalajara";
+        if (portalDetectado !== "desconocido")
+          console.log(`🏪 Portal resuelto por nombre de comercio: ${portalDetectado}`);
+      }
     } catch (e) {
       console.log("⚠️ Haiku detección falló:", e.message);
     }
@@ -630,6 +641,19 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
       console.log("⚠️ Sonnet extracción falló:", e.message);
       if (!datosOCR.comercio) {
         return res.json({ ok: false, error: "No se pudo identificar el portal" });
+      }
+    }
+
+    // Si Haiku no identificó el portal pero Sonnet extrajo el nombre del comercio, resolver ahora
+    if (portalDetectado === "desconocido" && datosOCR.comercio) {
+      const c = (datosOCR.comercio || "").toLowerCase();
+      if (c.includes("oxxo")) portalDetectado = "oxxo";
+      else if (c.includes("arco")) portalDetectado = "arco";
+      else if (c.includes("gasmaz") || c.includes("nexusfuel")) portalDetectado = "gasmaz";
+      else if (c.includes("guadalajara") || c.includes("fragua")) portalDetectado = "farmaciaguadalajara";
+      if (portalDetectado !== "desconocido") {
+        console.log(`🏪 Portal reclasificado por comercio Sonnet: ${portalDetectado}`);
+        datosOCR.portal = portalDetectado;
       }
     }
 
