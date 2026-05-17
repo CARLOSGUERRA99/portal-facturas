@@ -515,7 +515,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
             { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
             { type: "text", text: `Identifica el tipo de ticket de compra. Responde SOLO este JSON:
 {
-  "portal": "oxxo" | "arco" | "gasmaz" | "farmaciaguadalajara" | "desconocido",
+  "portal": "oxxo" | "arco" | "gasmaz" | "farmaciaguadalajara" | "homedepot" | "desconocido",
   "confianza": número del 0 al 100,
   "urlQR": "URL completa si hay un QR de facturación, o null",
   "comercio": "nombre del comercio"
@@ -524,6 +524,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
 - "arco": si ves ARCO o referencia a buzonfacturas.com
 - "gasmaz": si ves GASMAZ, NexusFuel, o URL nexusfuel.mx
 - "farmaciaguadalajara": si ves Farmacias Guadalajara, Fragua, Corporativo Fragua, o URL farmaciasguadalajara.com
+- "homedepot": si ves Home Depot, logo naranja de The Home Depot, o URL homedepot.com.mx
 - "desconocido": cualquier otro caso` }
           ],
         }],
