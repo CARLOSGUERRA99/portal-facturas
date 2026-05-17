@@ -8,9 +8,9 @@ const { z } = require("zod");
 const db = mysql.createPool({
   host:     process.env.DB_HOST,
   user:     process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
+  password: process.env.DB_PASS,
   port:     parseInt(process.env.DB_PORT) || 3306,
-  database: process.env.DB_DATABASE,
+  database: process.env.DB_NAME,
 });
 
 // ── API Key de protección ──────────────────────────────────────────────────────
@@ -149,15 +149,15 @@ function crearMcpServer() {
 // ── Express + SSE ──────────────────────────────────────────────────────────────
 const app = express();
 
-// Middleware de autenticación
+app.get("/health", (req, res) => res.json({ ok: true, service: "portal-facturas-mcp" }));
+
+// Middleware de autenticación (no aplica a /health)
 app.use((req, res, next) => {
   if (!API_KEY) return next(); // sin key configurada, acceso libre (no recomendado)
   const key = req.headers["x-api-key"] || req.query.api_key;
   if (key !== API_KEY) return res.status(401).json({ error: "API key inválida" });
   next();
 });
-
-app.get("/health", (req, res) => res.json({ ok: true, service: "portal-facturas-mcp" }));
 
 // Un transporte SSE por conexión
 const transportes = {};
