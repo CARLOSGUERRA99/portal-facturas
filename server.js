@@ -502,12 +502,12 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
     let textoOCR = "";
     let portalDetectado = "desconocido";
 
-    // ── PASADA 1: Detección de portal (Haiku) ──
-    console.log("🔍 Pasada 1: detección con Haiku...");
+    // ── PASADA 1: Detección de portal (Sonnet) ──
+    console.log("🔍 Pasada 1: detección con Sonnet...");
     const t1start = Date.now();
     try {
       const resp1 = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
+        model: "claude-sonnet-4-6",
         max_tokens: 200,
         messages: [{
           role: "user",
@@ -533,7 +533,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
       portalDetectado = det.portal || "desconocido";
       const urlQR = det.urlQR || null;
       if (det.comercio) datosOCR.comercio = det.comercio;
-      console.log(`⏱️ Haiku detección: ${t1ms}ms | Portal: ${portalDetectado} (${det.confianza || 0}pts)`);
+      console.log(`⏱️ Sonnet detección: ${t1ms}ms | Portal: ${portalDetectado} (${det.confianza || 0}pts)`);
 
       // Si desconocido pero hay URL en QR, intentar resolver por URL
       if (portalDetectado === "desconocido" && urlQR) {
@@ -553,7 +553,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         console.log(`🏪 Portal resuelto por nombre OXXO: ${det.comercio}`);
       }
     } catch (e) {
-      console.log("⚠️ Haiku detección falló:", e.message);
+      console.log("⚠️ Sonnet detección falló:", e.message);
     }
 
     // ── PASADA 2: Extracción dirigida (Sonnet) ──
@@ -640,7 +640,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
       }
     }
 
-    // Si Haiku no identificó el portal pero Sonnet extrajo "OXXO" en el comercio, reclasificar
+    // Si la detección no identificó el portal pero Sonnet extrajo "OXXO" en el comercio, reclasificar
     if (portalDetectado === "desconocido" && (datosOCR.comercio || "").toLowerCase().includes("oxxo")) {
       portalDetectado = "oxxo";
       datosOCR.portal = "oxxo";
