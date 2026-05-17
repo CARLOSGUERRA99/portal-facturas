@@ -546,15 +546,10 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         datosOCR.portalUrl = urlQR;
       }
 
-      // Si sigue desconocido, resolver por nombre del comercio detectado
-      if (portalDetectado === "desconocido" && det.comercio) {
-        const c = det.comercio.toLowerCase();
-        if (c.includes("oxxo")) portalDetectado = "oxxo";
-        else if (c.includes("arco")) portalDetectado = "arco";
-        else if (c.includes("gasmaz") || c.includes("nexusfuel")) portalDetectado = "gasmaz";
-        else if (c.includes("guadalajara") || c.includes("fragua")) portalDetectado = "farmaciaguadalajara";
-        if (portalDetectado !== "desconocido")
-          console.log(`🏪 Portal resuelto por nombre de comercio: ${portalDetectado}`);
+      // Si sigue desconocido pero el comercio contiene "oxxo", enrutar a oxxo.js
+      if (portalDetectado === "desconocido" && det.comercio && det.comercio.toLowerCase().includes("oxxo")) {
+        portalDetectado = "oxxo";
+        console.log(`🏪 Portal resuelto por nombre OXXO: ${det.comercio}`);
       }
     } catch (e) {
       console.log("⚠️ Haiku detección falló:", e.message);
@@ -644,17 +639,11 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
       }
     }
 
-    // Si Haiku no identificó el portal pero Sonnet extrajo el nombre del comercio, resolver ahora
-    if (portalDetectado === "desconocido" && datosOCR.comercio) {
-      const c = (datosOCR.comercio || "").toLowerCase();
-      if (c.includes("oxxo")) portalDetectado = "oxxo";
-      else if (c.includes("arco")) portalDetectado = "arco";
-      else if (c.includes("gasmaz") || c.includes("nexusfuel")) portalDetectado = "gasmaz";
-      else if (c.includes("guadalajara") || c.includes("fragua")) portalDetectado = "farmaciaguadalajara";
-      if (portalDetectado !== "desconocido") {
-        console.log(`🏪 Portal reclasificado por comercio Sonnet: ${portalDetectado}`);
-        datosOCR.portal = portalDetectado;
-      }
+    // Si Haiku no identificó el portal pero Sonnet extrajo "OXXO" en el comercio, reclasificar
+    if (portalDetectado === "desconocido" && (datosOCR.comercio || "").toLowerCase().includes("oxxo")) {
+      portalDetectado = "oxxo";
+      datosOCR.portal = "oxxo";
+      console.log(`🏪 Portal reclasificado como OXXO por comercio Sonnet: ${datosOCR.comercio}`);
     }
 
     // Correcciones SOLO para OXXO
