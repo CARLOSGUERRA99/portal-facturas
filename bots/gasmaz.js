@@ -106,16 +106,18 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
     const regimenKeywords = regimenFiscal
       ? [String(regimenFiscal)]
       : ["601", "General de Ley Personas Morales", "General de Ley"];
-    await selectByText(page, "#cmbRegimen", regimenKeywords);
+    await page.waitForSelector("#selFiscalRegime", { visible: true, timeout: 10000 });
+    await selectByText(page, "#selFiscalRegime", regimenKeywords);
 
     // Uso CFDI
     const cfdiKeywords = usoCfdi
       ? [String(usoCfdi)]
-      : ["G03", "Gastos en general", "Gastos"];
-    await selectByText(page, "#cmbUsoCFDI", cfdiKeywords);
+      : ["G03", "Gastos en general", "gastos en general", "gasto"];
+    await page.waitForSelector("#selVoucherUse", { visible: true, timeout: 10000 });
+    await selectByText(page, "#selVoucherUse", cfdiKeywords);
 
     // Forma de pago — tarjeta de débito por defecto
-    await selectByText(page, "#cmbFormaPago", ["débito", "debito", "Tarjeta de déb"]);
+    await selectByText(page, "#selPaymentWay", ["débito", "debito", "Tarjeta de déb"]);
 
     await screenshot("paso4_datos_facturacion");
     console.log("✅ Datos de facturación completos");
