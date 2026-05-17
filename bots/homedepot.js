@@ -308,25 +308,33 @@ async function facturarHomeDepotMexico({
     console.log("🔒 PASO 3 — Resolviendo Cloudflare Turnstile...");
 
     const capsolverKey = process.env.CAPSOLVER_API_KEY;
-    let token = "";
 
-    if (capsolverKey) {
-      token = await resolverTurnstile(page, capsolverKey, capturedSitekey) || "";
-      if (token) {
-        // Inyectar token en el hidden input de Turnstile
-        await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
-          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-          if (setter) setter.call(el, t); else el.value = t;
-          el.dispatchEvent(new Event("input",  { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-        }, token);
-        console.log("✅ Token Turnstile inyectado en el formulario");
+    // Revisar si el Turnstile invisible ya se resolvió solo en background
+    const tokenExistente = await page.$eval(
+      "input[name='cf-turnstile-response']", el => el.value
+    ).catch(() => "");
+
+    if (tokenExistente && tokenExistente.length > 50) {
+      console.log(`✅ Turnstile invisible ya resuelto en background (${tokenExistente.length} chars) — sin necesidad de CapSolver`);
+    } else if (capsolverKey) {
+      const capToken = await resolverTurnstile(page, capsolverKey, capturedSitekey) || "";
+      if (capToken) {
+        // Intentar inyectar — si el input no existe el Turnstile es invisible y ya fue resuelto
+        try {
+          await page.$eval("input[name='cf-turnstile-response']", (el, t) => {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+            if (setter) setter.call(el, t); else el.value = t;
+            el.dispatchEvent(new Event("input",  { bubbles: true }));
+            el.dispatchEvent(new Event("change", { bubbles: true }));
+          }, capToken);
+          console.log(`✅ Token CapSolver inyectado (${capToken.length} chars)`);
+        } catch {
+          console.log("⚠️ No se encontró input[name='cf-turnstile-response'] — Turnstile invisible, continuando sin inyectar");
+        }
       }
     } else {
       console.log("⚠️ CAPSOLVER_API_KEY no configurada — intentando sin resolver captcha");
     }
-
-    console.log(`🔒 Turnstile: ${token.length > 50 ? "RESUELTO (" + token.length + " chars)" : "NO RESUELTO"}`);
 
     // Esperar que Angular habilite el botón (campos válidos)
     await page.waitForFunction(
