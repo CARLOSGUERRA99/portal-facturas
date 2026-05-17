@@ -36,10 +36,12 @@ async function selectByText(page, selector, keywords) {
 
 async function facturarHomeDepotMexico({
   rfc, razonSocial, regimenFiscal, usoCfdi, codigoPostal,
-  barcode, ticketId,
+  barcode, folio, ticketId,
 }) {
+  // El OCR puede guardar el folio como "folio" o "barcode" según el portal
+  const codigoTicket = barcode || folio;
   console.log("🤖 Iniciando bot Home Depot Mexico...");
-  console.log(`   Barcode: ${barcode} | RFC: ${rfc} | CP: ${codigoPostal}`);
+  console.log(`   Ticket: ${codigoTicket} | RFC: ${rfc} | CP: ${codigoPostal}`);
 
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
@@ -141,7 +143,7 @@ async function facturarHomeDepotMexico({
     });
     console.log(`🔍 Selector Ticket: ${ticketSelector}`);
     if (ticketSelector) {
-      await fillInput(page, ticketSelector, barcode);
+      await fillInput(page, ticketSelector, codigoTicket);
       await page.waitForTimeout(400);
     }
 
@@ -149,33 +151,50 @@ async function facturarHomeDepotMexico({
 
     // ── PASO 4 — Cloudflare Turnstile ─────────────────────────────────────────
     console.log("🔒 PASO 4 — Manejando Cloudflare CAPTCHA...");
-    // Intentar hacer click en el checkbox del CAPTCHA
-    const captchaClickado = await page.evaluate(() => {
-      // Buscar iframe de Cloudflare Turnstile
-      const iframes = Array.from(document.querySelectorAll("iframe"));
-      const cfIframe = iframes.find(f =>
-        (f.src || "").includes("cloudflare") ||
-        (f.src || "").includes("challenges") ||
-        (f.title || "").toLowerCase().includes("cloudflare") ||
-        (f.title || "").toLowerCase().includes("challenge")
-      );
-      if (cfIframe) {
-        console.log("🔒 iframe Cloudflare encontrado:", cfIframe.src);
-        return "iframe_encontrado";
-      }
-      // Buscar checkbox directo
-      const cb = document.querySelector("input[type='checkbox']");
-      if (cb) { cb.click(); return "checkbox_clickado"; }
-      return "no_captcha";
-    });
-    console.log(`🔒 CAPTCHA estado: ${captchaClickado}`);
 
-    if (captchaClickado === "iframe_encontrado") {
-      // Esperar a que stealth mode resuelva el CAPTCHA automáticamente
-      console.log("⏳ Esperando resolución automática de CAPTCHA (stealth)...");
-      await page.waitForTimeout(6000);
-      await screenshot("paso4_post_captcha");
+    // Buscar iframe de Cloudflare en los frames activos de Puppeteer
+    const frames = page.frames();
+    console.log(`🔒 Frames en página: ${frames.length}`);
+    for (const f of frames) {
+      console.log(`   frame url: ${f.url()}`);
     }
+
+    const cfFrame = frames.find(f =>
+      f.url().includes("cloudflare") ||
+      f.url().includes("challenges.cloudflare") ||
+      f.url().includes("turnstile")
+    );
+
+    if (cfFrame) {
+      console.log(`🔒 Frame Cloudflare encontrado: ${cfFrame.url()}`);
+      try {
+        // Esperar a que el checkbox aparezca dentro del iframe
+        await cfFrame.waitForSelector("input[type='checkbox']", { timeout: 8000 });
+        await cfFrame.$eval("input[type='checkbox']", el => el.click());
+        console.log("🔒 Checkbox Cloudflare clickado");
+        await page.waitForTimeout(4000);
+      } catch {
+        // Stealth mode puede haberlo resuelto solo
+        console.log("🔒 No se pudo clickar checkbox — esperando resolución stealth...");
+        await page.waitForTimeout(6000);
+      }
+    } else {
+      // Sin iframe visible — stealth pudo resolverlo o el portal no muestra CAPTCHA
+      console.log("🔒 Sin iframe Cloudflare visible — asumiendo resuelto");
+      await page.waitForTimeout(2000);
+    }
+    await screenshot("paso4_post_captcha");
+
+    // Esperar a que el botón Continuar se habilite (CAPTCHA completado)
+    console.log("⏳ Esperando que Continuar se habilite...");
+    await page.waitForFunction(
+      () => {
+        const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
+          .find(el => /continuar|siguiente|validar|buscar|facturar/i.test(el.textContent || el.value || ""));
+        return btn && !btn.disabled;
+      },
+      { timeout: 15000 }
+    ).catch(() => console.log("⚠️ Timeout esperando botón habilitado — intentando click de todos modos"));
 
     // ── PASO 5 — Click en Continuar ───────────────────────────────────────────
     console.log("🔍 PASO 5 — Haciendo click en Continuar...");

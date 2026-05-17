@@ -1515,6 +1515,22 @@ async function procesarTicketsPorCorreo() {
     } catch (imapErr) {
       console.log(`⚠️ Job IMAP: no llegó correo para ticket #${ticket.id} — intentando Estrategia B...`);
 
+      // Estrategia B solo aplica para BuzonFacturas/ARCO
+      const portalDelTicket = (ticket.portal || "").toLowerCase();
+      const esArco = portalDelTicket === "arco" || portalDelTicket === "buzonfacturas" ||
+        (ticket.comercio || "").toLowerCase().includes("arco");
+
+      if (!esArco) {
+        console.log(`⚠️ Estrategia B omitida — portal "${ticket.portal}" no es arco/buzonfacturas`);
+        await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticket.id]);
+        await crearNotificacion(
+          ticket.user_id,
+          "factura_error",
+          `No se pudieron recuperar los archivos de tu factura de ${ticket.comercio || "comercio"}. Por favor intenta de nuevo o contacta al administrador.`
+        );
+        continue;
+      }
+
       try {
         const { facturarBuzonFacturas } = require("./bots/buzonfacturas");
         const datos = JSON.parse(ticket.ocr_json || "{}");
