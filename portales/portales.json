@@ -210,7 +210,7 @@
 
     "homedepotmexico": {
       "nombre": "Home Depot Mexico",
-      "bot": "bots/homedepotmexico.js",
+      "bot": "bots/homedepot.js",
       "estado": "produccion",
       "url_base": "https://facturacion.homedepot.com.mx:2053/FacturacionWeb/#/portalweb",
       "tecnologia": "Angular SPA (puerto 2053, HTTPS propio)",

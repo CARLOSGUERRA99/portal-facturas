@@ -2,7 +2,7 @@ const { facturarOXXO } = require('./oxxo');
 const { facturarBuzonFacturas } = require('./buzonfacturas');
 const { facturarGasmaz } = require('./gasmaz');
 const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
-const { facturarHomeDepotMexico } = require('./homedepotmexico');
+const { facturarHomeDepotMexico } = require('./homedepot');
 
 async function detectarYFacturar(datos) {
   const texto = (datos.ocr_text || '').toLowerCase();
