@@ -13,6 +13,40 @@ const { detectarYFacturar } = require("./bots/index");
 const { borrarArchivoR2, listarArchivosR2 } = require("./storage/r2");
 const { esperarFacturaPorCorreo } = require("./mail/imap");
 
+// Construye el prompt de detección dinámicamente desde portales.json
+function buildPromptDeteccion() {
+  let portalesData = { portales: {} };
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, "portales/portales.json"), "utf8");
+    portalesData = JSON.parse(raw);
+  } catch {}
+
+  const portales = portalesData.portales || {};
+  const claves = Object.keys(portales);
+  const opcionesPortal = [...claves, "desconocido"].join('" | "');
+
+  const lineasDeteccion = claves.map(clave => {
+    const p = portales[clave];
+    const det = p.deteccion || {};
+    const pistas = [
+      ...(det.por_texto_ocr || []),
+      ...(det.por_comercio || []),
+      ...(det.por_url_qr || []),
+    ].filter((v, i, a) => a.indexOf(v) === i); // deduplicar
+    return `- "${clave}": si ves ${pistas.map(s => `"${s}"`).join(", ")} o el nombre "${p.nombre}"`;
+  });
+
+  return `Identifica el tipo de ticket de compra. Responde SOLO este JSON:
+{
+  "portal": "${opcionesPortal}",
+  "confianza": número del 0 al 100,
+  "urlQR": "URL completa si hay un QR de facturación, o null",
+  "comercio": "nombre del comercio"
+}
+${lineasDeteccion.join("\n")}
+- "desconocido": cualquier otro caso`;
+}
+
 const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -513,19 +547,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
-            { type: "text", text: `Identifica el tipo de ticket de compra. Responde SOLO este JSON:
-{
-  "portal": "oxxo" | "arco" | "gasmaz" | "farmaciaguadalajara" | "homedepot" | "desconocido",
-  "confianza": número del 0 al 100,
-  "urlQR": "URL completa si hay un QR de facturación, o null",
-  "comercio": "nombre del comercio"
-}
-- "oxxo": si ves logo/nombre OXXO, o texto "Fol_Vta:" e "ID="
-- "arco": si ves ARCO o referencia a buzonfacturas.com
-- "gasmaz": si ves GASMAZ, NexusFuel, o URL nexusfuel.mx
-- "farmaciaguadalajara": si ves Farmacias Guadalajara, Fragua, Corporativo Fragua, o URL farmaciasguadalajara.com
-- "homedepot": si ves Home Depot, logo naranja de The Home Depot, o URL homedepot.com.mx
-- "desconocido": cualquier otro caso` }
+            { type: "text", text: buildPromptDeteccion() }
           ],
         }],
       });
