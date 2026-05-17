@@ -1,21 +1,16 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
-// Llena un input y dispara eventos Angular para que el form reactive se actualice
+// Llena un input Angular usando el setter nativo (evita caracteres extra o desordenados)
 async function fillInput(page, selector, value) {
-  await page.click(selector);
-  await page.waitForTimeout(100);
-  await page.click(selector, { clickCount: 3 });
-  await page.keyboard.press("Backspace");
-  await page.waitForTimeout(50);
-  await page.keyboard.type(String(value), { delay: 60 });
-  await page.waitForTimeout(100);
-  // Angular necesita eventos input + blur para marcar el campo como válido
-  await page.$eval(selector, el => {
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+  await page.$eval(selector, (el, v) => {
+    // Setter nativo bypasea el override de Angular y escribe el valor limpio de golpe
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    if (setter) setter.call(el, v); else el.value = v;
+    el.dispatchEvent(new Event("input",  { bubbles: true }));
     el.dispatchEvent(new Event("change", { bubbles: true }));
-    el.dispatchEvent(new Event("blur", { bubbles: true }));
-  });
+    el.dispatchEvent(new Event("blur",   { bubbles: true }));
+  }, String(value));
   await page.waitForTimeout(150);
   const actual = await page.$eval(selector, el => el.value).catch(() => "?");
   console.log(`📝 ${selector}: "${actual}"`);
