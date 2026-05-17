@@ -1115,11 +1115,13 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
 
+    console.log(`💾 Insertando ticket — portal: ${portalDetectado}, residente_id: ${residente_id}, usuario: ${req.session.userId}`);
     const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, datosOCR.portalUrl || portalUrl || null]
     );
     const ticketId = insertResult.insertId;
+    console.log(`✅ Ticket #${ticketId} insertado — enviando respuesta al cliente`);
 
     if (portalDetectado === 'desconocido') {
       // Los agentes arrancan DESPUÉS de que el residente llene el cuestionario (tiene el link del portal)
