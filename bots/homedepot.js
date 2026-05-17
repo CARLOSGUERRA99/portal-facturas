@@ -190,41 +190,68 @@ async function facturarHomeDepotMexico({
     } catch {}
   }
 
-  // Interceptar window.turnstile.render() ANTES de que Angular lo llame.
-  // También instala un MutationObserver para capturar el sitekey del src del iframe de Cloudflare.
+  // Estrategia: interceptar window.onloadTurnstileCallback que Angular ASIGNA para saber
+  // cuándo Cloudflare termina de cargar. En ese momento envolvemos turnstile.render()
+  // justo antes de que Angular lo llame — así capturamos el callback de éxito.
   await page.evaluateOnNewDocument(() => {
+    window.__turnstileCallbacks = [];
+    window.__turnstileLastParams = null;
+    window.__injectTurnstileToken = function(token) {
+      for (const cb of window.__turnstileCallbacks) {
+        try { cb(token); } catch {}
+      }
+    };
+
+    function wrapTurnstileRender() {
+      const ts = window.turnstile;
+      if (!ts || typeof ts.render !== "function" || ts.__hd_wrapped) return;
+      const orig = ts.render.bind(ts);
+      ts.render = function(container, params) {
+        try {
+          window.__turnstileLastParams = JSON.stringify({
+            sitekey: params?.sitekey,
+            callbackType: typeof params?.callback,
+            paramsKeys: params ? Object.keys(params) : [],
+          });
+          if (params?.sitekey) window.__turnstileSitekey = params.sitekey;
+          const cb = params?.callback;
+          if (typeof cb === "function") {
+            window.__turnstileCallbacks.push(cb);
+          } else if (typeof cb === "string" && typeof window[cb] === "function") {
+            window.__turnstileCallbacks.push(window[cb]);
+          }
+        } catch {}
+        return orig(container, params);
+      };
+      ts.__hd_wrapped = true;
+    }
+
+    // Interceptar la asignación de window.onloadTurnstileCallback:
+    // Angular lo asigna para recibir el aviso de que Cloudflare está listo.
+    // Lo envolvemos para también envolver turnstile.render() en ese momento.
+    let _angularOnload = null;
+    Object.defineProperty(window, "onloadTurnstileCallback", {
+      configurable: true,
+      enumerable: true,
+      get() { return _angularOnload; },
+      set(fn) {
+        _angularOnload = function() {
+          wrapTurnstileRender(); // envolver render ANTES de que Angular lo llame
+          return typeof fn === "function" ? fn.apply(this, arguments) : undefined;
+        };
+      },
+    });
+
+    // Respaldo: interceptar asignación directa de window.turnstile
     let _ts;
     Object.defineProperty(window, "turnstile", {
       configurable: true,
       enumerable: true,
       get() { return _ts; },
-      set(val) {
-        if (val && typeof val.render === "function") {
-          const orig = val.render;
-          val.render = function(container, params) {
-            try {
-              if (params && params.sitekey) window.__turnstileSitekey = params.sitekey;
-              // Log de diagnóstico (visible via page.on('console'))
-              console.log("[TS-INTERCEPTOR] render() params keys:", JSON.stringify(Object.keys(params || {})));
-              console.log("[TS-INTERCEPTOR] callback type:", typeof params?.callback, "| value:", String(params?.callback).slice(0, 80));
-              // Callback puede ser función directa O nombre de función global (string)
-              const cb = params?.callback;
-              if (typeof cb === "function") {
-                window.__turnstileCallbacks.push(cb);
-              } else if (typeof cb === "string" && typeof window[cb] === "function") {
-                window.__turnstileCallbacks.push(window[cb]);
-              }
-            } catch(e) {
-              console.log("[TS-INTERCEPTOR] error:", e.message);
-            }
-            return orig.apply(this, arguments);
-          };
-        }
-        _ts = val;
-      },
+      set(val) { _ts = val; },
     });
 
-    // Detectar iframe de Cloudflare vía MutationObserver como respaldo
+    // MutationObserver para iframes de Cloudflare (respaldo)
     const obs = new MutationObserver(() => {
       if (window.__turnstileSitekey) return;
       const iframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"]');
@@ -237,21 +264,6 @@ async function facturarHomeDepotMexico({
       childList: true, subtree: true,
       attributes: true, attributeFilter: ["src"],
     });
-
-    // Guardar el callback de éxito de Turnstile para poder llamarlo con token de CapSolver
-    window.__turnstileCallbacks = [];
-    window.__injectTurnstileToken = function(token) {
-      for (const cb of window.__turnstileCallbacks) {
-        try { cb(token); } catch {}
-      }
-    };
-  });
-
-  // Mostrar en Railway los console.log del browser (diagnóstico de Turnstile)
-  page.on("console", msg => {
-    if (msg.text().includes("[TS-INTERCEPTOR]")) {
-      console.log("🔍 [browser]", msg.text());
-    }
   });
 
   // Capturar sitekey vía respuestas HTTP: chunks Angular + URLs de Cloudflare
@@ -319,9 +331,9 @@ async function facturarHomeDepotMexico({
       if (capturedSitekey) break;
     }
     console.log(`🔑 Sitekey interceptado: ${capturedSitekey || "NO CAPTURADO"}`);
-    // Diagnóstico post-espera: frames de Cloudflare
-    const cfFrames = page.frames().filter(f => f.url().includes("cloudflare"));
-    console.log(`🔍 Frames Cloudflare (${cfFrames.length}):`, cfFrames.map(f => f.url()).join(" | ") || "ninguno");
+    // Diagnóstico: params exactos que Angular pasó a turnstile.render()
+    const renderParams = await page.evaluate(() => window.__turnstileLastParams || "render() nunca llamado").catch(() => "error");
+    console.log(`🔍 Turnstile render params: ${renderParams}`);
 
     // ── PASO 2 — Llenar RFC + Ticket ─────────────────────────────────────────
     console.log("📋 PASO 2 — Llenando RFC y No. de Ticket...");
