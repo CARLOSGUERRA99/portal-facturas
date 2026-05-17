@@ -316,8 +316,34 @@ async function initDB() {
   }
 
   console.log("✅ DB schema actualizado");
+
+  // Migración one-time: renombrar facturas existentes que no tienen UUID en el nombre del archivo
+  // Se ejecuta en cada arranque pero solo procesa las que aún no tienen UUID en su URL
+  migrarUUIDFacturas().catch(e => console.log("⚠️ Migración UUID:", e.message));
 }
 initDB();
+
+async function migrarUUIDFacturas() {
+  const [facturas] = await db.query(
+    `SELECT id, comercio, xml_url, pdf_url FROM facturas
+     WHERE xml_url IS NOT NULL
+       AND xml_url NOT REGEXP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'`
+  );
+  if (!facturas.length) return;
+  console.log(`🔖 Migración UUID: ${facturas.length} factura(s) pendiente(s) de renombrar`);
+  for (const f of facturas) {
+    try {
+      const { xmlUrl, pdfUrl } = await renombrarConUUID(f.xml_url, f.pdf_url, f.comercio);
+      if (xmlUrl !== f.xml_url || pdfUrl !== f.pdf_url) {
+        await db.query("UPDATE facturas SET xml_url = ?, pdf_url = ? WHERE id = ?", [xmlUrl, pdfUrl, f.id]);
+        console.log(`✅ Factura #${f.id} (${f.comercio}) renombrada con UUID`);
+      }
+    } catch (e) {
+      console.log(`⚠️ Factura #${f.id} no migrada: ${e.message}`);
+    }
+  }
+  console.log("🔖 Migración UUID completada");
+}
 
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
