@@ -693,6 +693,7 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
       arco:                ['codigoTicket', 'total'],
       gasmaz:              ['portalUrl', 'referencia', 'folio', 'total'],
       farmaciaguadalajara: ['folioFactura', 'caja', 'fechaCompra', 'noTicket'],
+      homedepot:           ['folio', 'fecha', 'total'],
       desconocido:         ['fecha', 'total'],
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
