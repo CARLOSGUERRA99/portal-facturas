@@ -151,16 +151,34 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
     await screenshot("paso4_datos_facturacion");
     console.log("✅ Datos de facturación completos");
 
-    // ── PASO 5 — Click en Facturar ────────────────────────────────────────
+    // ── PASO 5 — Activar intercepción de red ANTES del click ─────────────
+    // Se debe activar antes del click para no perder respuestas que llegan
+    // inmediatamente tras la navegación
+    const archivosDescargados = [];
+    await page.setRequestInterception(true);
+    page.on("request", req => req.continue());
+    page.on("response", async response => {
+      try {
+        const url = response.url();
+        const ct = response.headers()["content-type"] || "";
+        if (ct.includes("xml") || ct.includes("pdf") || /\.(xml|pdf)/i.test(url)) {
+          const buf = await response.buffer().catch(() => null);
+          if (buf && buf.length > 500) {
+            archivosDescargados.push({ buf, url, ct });
+            console.log(`📥 Archivo interceptado: ${url} | size: ${buf.length}`);
+          }
+        }
+      } catch {}
+    });
+
+    // ── PASO 5b — Click en Facturar ───────────────────────────────────────
     console.log("🧾 Haciendo click en Facturar...");
 
-    // Manejar alert/dialog del portal antes del click
     page.on("dialog", async dialog => {
       console.log("🔔 Dialog del portal:", dialog.message());
       await dialog.accept();
     });
 
-    // evaluateHandle devuelve un ElementHandle real — evita "Target closed" con page.evaluate
     const facturarBtn = await page.evaluateHandle(() =>
       [...document.querySelectorAll("button")].find(b => b.textContent.trim() === "Facturar")
     );
@@ -169,71 +187,81 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
     await btnEl.click();
     console.log("✅ Click en Facturar");
 
-    // Esperar navegación O pantalla de confirmación, lo que ocurra primero
     await Promise.race([
       page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }),
-      page.waitForSelector("#divFiles",                    { visible: true, timeout: 20000 }),
-      page.waitForSelector("#divDocumentsDownload",        { visible: true, timeout: 20000 }),
+      page.waitForSelector("#divFiles",             { visible: true, timeout: 20000 }),
+      page.waitForSelector("#divDocumentsDownload", { visible: true, timeout: 20000 }),
       page.waitForSelector(".alert-success, #pConfirmationMessage", { visible: true, timeout: 20000 }),
     ]).catch(() => console.log("⚠️ Sin navegación/confirmación detectada, continuando..."));
 
     await page.waitForTimeout(3000);
     await screenshot("paso5_post_facturar");
 
-    // Esperar pantalla de descarga
+    // ── PASO 6 — Hacer click en XML y PDF para activar descarga ──────────
     console.log("⏳ Esperando pantalla de descarga...");
     await page.waitForSelector("#divFiles", { visible: true, timeout: 20000 });
-    await screenshot("paso5_descarga");
-    console.log("✅ Pantalla de descarga lista");
+    await screenshot("paso6_descarga");
 
-    // ── PASO 6 — Descargar PDF y XML desde #divFiles ──────────────────────
+    const linksEncontrados = await page.$$eval("#divFiles a", els =>
+      els.map(el => ({ text: el.textContent.trim(), href: el.href }))
+    );
+    console.log("🔗 Links en #divFiles:", JSON.stringify(linksEncontrados));
+
+    // Click XML
+    await page.evaluate(() => {
+      const xml = [...document.querySelectorAll("#divFiles a")]
+        .find(l => l.textContent.trim().toUpperCase().includes("XML"));
+      if (xml) xml.click();
+    });
+    await page.waitForTimeout(3000);
+
+    // Click PDF
+    await page.evaluate(() => {
+      const pdf = [...document.querySelectorAll("#divFiles a")]
+        .find(l => l.textContent.trim().toUpperCase().includes("PDF"));
+      if (pdf) pdf.click();
+    });
+    await page.waitForTimeout(3000);
+
+    // ── PASO 7 — Subir archivos interceptados ─────────────────────────────
     let pdfUrl = null, xmlUrl = null;
 
-    async function interceptarDescarga(clickFn) {
-      const newPagePromise = new Promise(resolve =>
-        browser.once("targetcreated", t => resolve(t.page()))
-      );
-      await clickFn();
-      const newPage = await Promise.race([
-        newPagePromise,
-        new Promise((_, r) => setTimeout(r, 10000)),
-      ]).catch(() => null);
-      if (!newPage) return null;
-      await newPage.waitForTimeout(2000);
-      const response = await newPage.waitForResponse(r => r.status() === 200, { timeout: 10000 }).catch(() => null);
-      const buf = response ? await response.buffer().catch(() => null) : null;
-      await newPage.close().catch(() => {});
-      return buf;
+    for (const { buf, url, ct } of archivosDescargados) {
+      if ((ct.includes("xml") || /\.xml/i.test(url)) && !xmlUrl) {
+        xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ticketId || Date.now()}.xml`, "application/xml");
+        console.log("✅ XML subido (interceptado):", xmlUrl);
+      } else if ((ct.includes("pdf") || /\.pdf/i.test(url)) && !pdfUrl) {
+        pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ticketId || Date.now()}.pdf`, "application/pdf");
+        console.log("✅ PDF subido (interceptado):", pdfUrl);
+      }
     }
 
-    const pdfBuf = await interceptarDescarga(() =>
-      page.$eval("#divFiles", container => {
-        const el = Array.from(container.querySelectorAll("a, button")).find(
-          b => /pdf/i.test(b.textContent) || /\.pdf/i.test(b.href || "")
-        );
-        if (el) el.click();
-      })
-    ).catch(() => null);
+    // Fallback: fetch directo con cookies de sesión
+    if (!xmlUrl || !pdfUrl) {
+      console.log("⚠️ Interceptación vacía, intentando fetch con cookies...");
+      const cookies = await page.cookies();
+      const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join("; ");
 
-    const xmlBuf = await interceptarDescarga(() =>
-      page.$eval("#divFiles", container => {
-        const el = Array.from(container.querySelectorAll("a, button")).find(
-          b => /xml/i.test(b.textContent) || /\.xml/i.test(b.href || "")
-        );
-        if (el) el.click();
-      })
-    ).catch(() => null);
+      for (const { text, href } of linksEncontrados) {
+        if (!href) continue;
+        const bytes = await page.evaluate(async (url, cookie) => {
+          const r = await fetch(url, { headers: { Cookie: cookie } });
+          const arr = await r.arrayBuffer();
+          return Array.from(new Uint8Array(arr));
+        }, href, cookieStr).catch(() => null);
+        if (!bytes || bytes.length < 100) continue;
+        const buf = Buffer.from(bytes);
+        if (text.toUpperCase().includes("XML") && !xmlUrl) {
+          xmlUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ticketId || Date.now()}.xml`, "application/xml");
+          console.log("✅ XML subido (fetch):", xmlUrl);
+        } else if (text.toUpperCase().includes("PDF") && !pdfUrl) {
+          pdfUrl = await subirArchivoR2(buf, `facturas/gasmaz_${ticketId || Date.now()}.pdf`, "application/pdf");
+          console.log("✅ PDF subido (fetch):", pdfUrl);
+        }
+      }
+    }
 
     await browser.close();
-
-    if (pdfBuf && pdfBuf.length > 100) {
-      pdfUrl = await subirArchivoR2(pdfBuf, `facturas/gasmaz_${ticketId || Date.now()}.pdf`, "application/pdf");
-      console.log("✅ PDF subido:", pdfUrl);
-    }
-    if (xmlBuf && xmlBuf.length > 100) {
-      xmlUrl = await subirArchivoR2(xmlBuf, `facturas/gasmaz_${ticketId || Date.now()}.xml`, "application/xml");
-      console.log("✅ XML subido:", xmlUrl);
-    }
 
     if (!pdfUrl && !xmlUrl) {
       console.log("⚠️ Sin archivos directos — IMAP recogerá del correo");

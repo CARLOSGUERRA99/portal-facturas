@@ -1100,10 +1100,40 @@ async function limpiarFacturasVencidas() {
 limpiarFacturasVencidas();
 setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
 
+// ── ENDPOINT ADMIN: forzar reproceso IMAP de un ticket atascado ──
+app.post("/api/admin/tickets/:id/reprocess-imap", auth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [[ticket]] = await db.query("SELECT id, status FROM tickets WHERE id = ?", [id]);
+    if (!ticket) return res.json({ ok: false, msg: "Ticket no encontrado" });
+    await db.query("UPDATE tickets SET status = 'procesando_correo' WHERE id = ?", [id]);
+    console.log(`🔄 Admin: ticket #${id} marcado para reproceso IMAP (era: ${ticket.status})`);
+    res.json({ ok: true, msg: `Ticket #${id} encolado para reproceso IMAP` });
+  } catch (err) {
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
 // ── JOB IMAP: procesar tickets en espera de correo ──
 async function procesarTicketsPorCorreo() {
   let rows;
   try {
+    // Hacer timeout de seguridad: tickets en procesando_correo por más de 30 min → error
+    const [atascados] = await db.query(
+      `SELECT t.id, t.user_id, t.comercio FROM tickets t
+       WHERE t.status = 'procesando_correo'
+         AND t.creado < DATE_SUB(NOW(), INTERVAL 30 MINUTE)`
+    );
+    for (const t of atascados) {
+      await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [t.id]);
+      await crearNotificacion(
+        t.user_id,
+        "factura_error",
+        `El correo con tu factura de ${t.comercio || "comercio"} no llegó en el tiempo esperado. Por favor intenta facturar de nuevo.`
+      );
+      console.log(`⏰ Job IMAP: ticket #${t.id} expirado (>30 min en procesando_correo) → error`);
+    }
+
     [rows] = await db.query(
       `SELECT t.id, t.ocr_json, t.comercio, t.user_id, u.email, u.nombre AS user_nombre
        FROM tickets t
@@ -1119,10 +1149,12 @@ async function procesarTicketsPorCorreo() {
   if (!rows.length) return;
 
   console.log(`📬 Job IMAP: ${rows.length} ticket(s) esperando correo`);
+  console.log(`🎫 Tickets en espera:`, rows.map(t => `#${t.id} (${t.comercio})`).join(", "));
 
   for (const ticket of rows) {
     const datos = JSON.parse(ticket.ocr_json || "{}");
     const codigoTicket = datos.codigoTicket || String(ticket.id);
+    console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo...`);
 
     try {
       const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000);
