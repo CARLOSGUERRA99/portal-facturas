@@ -276,7 +276,7 @@ async function ejecutarFacturacion(ticketId, userId) {
         [ticketId]
       );
       await crearNotificacion(userId, 'portal_desconocido',
-        `⚙️ Tu ticket de ${comercioNombre} es un portal nuevo. Nuestros agentes ya lo están analizando para configurarlo automáticamente.`);
+        `Recibimos tu ticket de ${comercioNombre}. Te avisaremos cuando tu factura esté lista.`);
       setImmediate(() => manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl).catch(console.error));
       return { ok: true, agente: true };
     }
@@ -374,7 +374,7 @@ function resumenAgente(resultado, comercioNombre) {
     const etapa = resultado.etapa || 'desconocida';
     return {
       corto: `Agente falló en "${etapa}": ${resultado.msg || 'error desconocido'}`,
-      usuario: `No pudimos configurar ${comercioNombre} automáticamente. El equipo lo revisará manualmente en 24-48 h.`,
+      usuario: `Tu ticket de ${comercioNombre} está en revisión. Te avisaremos cuando tu factura esté lista.`,
       admin: `❌ Agente falló en etapa "${etapa}" para ${comercioNombre}. Error: ${resultado.msg}. Requiere configuración manual.`,
     };
   }
@@ -386,15 +386,15 @@ function resumenAgente(resultado, comercioNombre) {
   if (errores.length === 0) {
     return {
       corto: `Bot generado (${archivo}) — pendiente aprobación.`,
-      usuario: `Configuramos ${comercioNombre} automáticamente. En breve podrás reintentar tu ticket.`,
-      admin: `✅ Bot listo sin errores: ${archivo}. ${advertencias.length} advertencia(s). Aprueba en Portales Pendientes → el ticket se reintentará solo.`,
+      usuario: `Tu ticket de ${comercioNombre} está en proceso. Te avisaremos cuando tu factura esté lista.`,
+      admin: `✅ Bot listo sin errores: ${archivo}. ${advertencias.length} advertencia(s). Aprueba en Portales Pendientes.`,
     };
   }
   const listaErrores = errores.slice(0, 3).join(' | ');
   return {
     corto: `Bot con ${errores.length} error(es): ${listaErrores}`,
-    usuario: `Analizamos ${comercioNombre} pero el portal necesita ajuste. El equipo lo resolverá pronto.`,
-    admin: `⚠️ Bot generado con ${errores.length} error(es): ${listaErrores}. ${advertencias.length} advertencia(s). Revisa y corrige en Portales Pendientes.`,
+    usuario: `Tu ticket de ${comercioNombre} está en revisión. Te avisaremos cuando tu factura esté lista.`,
+    admin: `⚠️ Bot generado con ${errores.length} error(es): ${listaErrores}. ${advertencias.length} advertencia(s). Revisa en Portales Pendientes.`,
   };
 }
 
