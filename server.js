@@ -208,6 +208,10 @@ async function initDB() {
   } catch(e) { /* columna ya existe */ }
 
   try {
+    await db.query("ALTER TABLE tickets ADD COLUMN procesando_correo_desde TIMESTAMP NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
     await db.query("ALTER TABLE tickets MODIFY COLUMN status ENUM('pendiente','procesando','procesando_correo','procesado','error','pendiente_confirmacion') NOT NULL DEFAULT 'pendiente'");
   } catch(e) { /* enum ya actualizado */ }
 
@@ -850,7 +854,7 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     }
 
     if (resultado.ok && resultado.procesandoCorreo) {
-      await db.query("UPDATE tickets SET status = 'procesando_correo' WHERE id = ?", [ticketId]);
+      await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [ticketId]);
       return res.json({ ok: true, procesandoCorreo: true, msg: "Factura generada — esperando correo con archivos XML/PDF. Te avisaremos cuando estén listos." });
     }
 
@@ -1446,7 +1450,7 @@ app.post("/api/admin/tickets/:id/reprocess-imap", auth, requireAdmin, async (req
     const { id } = req.params;
     const [[ticket]] = await db.query("SELECT id, status FROM tickets WHERE id = ?", [id]);
     if (!ticket) return res.json({ ok: false, msg: "Ticket no encontrado" });
-    await db.query("UPDATE tickets SET status = 'procesando_correo' WHERE id = ?", [id]);
+    await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [id]);
     console.log(`🔄 Admin: ticket #${id} marcado para reproceso IMAP (era: ${ticket.status})`);
     res.json({ ok: true, msg: `Ticket #${id} encolado para reproceso IMAP` });
   } catch (err) {
@@ -1459,10 +1463,11 @@ async function procesarTicketsPorCorreo() {
   let rows;
   try {
     // Hacer timeout de seguridad: tickets en procesando_correo por más de 30 min → error
+    // Usa procesando_correo_desde (cuándo entró al estado) no creado (cuándo se creó el ticket)
     const [atascados] = await db.query(
       `SELECT t.id, t.user_id, t.comercio FROM tickets t
        WHERE t.status = 'procesando_correo'
-         AND t.creado < DATE_SUB(NOW(), INTERVAL 30 MINUTE)`
+         AND procesando_correo_desde < DATE_SUB(NOW(), INTERVAL 30 MINUTE)`
     );
     for (const t of atascados) {
       await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [t.id]);
