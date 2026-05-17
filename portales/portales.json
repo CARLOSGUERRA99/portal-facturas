@@ -208,7 +208,7 @@
       }
     },
 
-    "homedepotmexico": {
+    "homedepot": {
       "nombre": "Home Depot Mexico",
       "bot": "bots/homedepot.js",
       "estado": "produccion",
@@ -217,7 +217,7 @@
       "stealth": true,
       "comercios": ["Home Depot (cualquier sucursal en México)"],
       "deteccion": {
-        "por_portal_field": "homedepotmexico",
+        "por_portal_field": "homedepot",
         "por_texto_ocr": ["home depot"],
         "por_comercio": ["home depot"],
         "por_url_qr": ["homedepot.com.mx"]

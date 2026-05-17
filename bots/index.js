@@ -12,7 +12,6 @@ async function detectarYFacturar(datos) {
 
   if (
     portal === 'homedepot' ||
-    portal === 'homedepotmexico' ||
     texto.includes('home depot') ||
     comercio.includes('home depot') ||
     portalUrl.includes('homedepot.com.mx')
