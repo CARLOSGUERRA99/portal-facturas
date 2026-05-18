@@ -5,7 +5,7 @@ const { generarBot, nombreArchivoDesde } = require('./generador');
 const { validarBot } = require('./validador');
 const { corregirBot } = require('./corrector');
 
-const MAX_CORRECCIONES = 1;
+const MAX_CORRECCIONES = 3;
 
 // Datos de prueba genéricos — el portal devolverá "ticket no encontrado"
 // pero eso demuestra que el bot cargó el portal e interactuó con el formulario
