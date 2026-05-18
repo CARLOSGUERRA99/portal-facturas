@@ -2141,6 +2141,19 @@ app.post("/api/admin/agente/portales/:id/reorquestar", requireAdmin, async (req,
   }
 });
 
+// ── LIMPIEZA TEMPORAL: borrar datos de un comercio ──────────────────────────
+app.delete("/api/admin/limpiar-comercio/:slug", auth, requireAdmin, async (req, res) => {
+  try {
+    const slug = req.params.slug.toLowerCase();
+    const [t] = await db.query("DELETE FROM tickets WHERE LOWER(comercio) LIKE ?", [`%${slug}%`]);
+    const [pa] = await db.query("DELETE FROM portales_agente WHERE LOWER(comercio) LIKE ? OR LOWER(nombre) LIKE ?", [`%${slug}%`, `%${slug}%`]);
+    const [pp] = await db.query("DELETE FROM portales_pendientes WHERE LOWER(nombre) LIKE ?", [`%${slug}%`]);
+    res.json({ ok: true, tickets: t.affectedRows, portales_agente: pa.affectedRows, portales_pendientes: pp.affectedRows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 4000;
