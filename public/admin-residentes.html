@@ -556,8 +556,8 @@
               </div>
               <div style="display:flex;gap:8px;flex-shrink:0;">
                 <button class="btn btn-outline btn-sm" onclick="verCodigoBot(${p.id})">Ver código</button>
-                <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="aprobarBot(${p.id})">Activar</button>
-                <button class="btn btn-sm" style="background:#fef0ef;color:#c0392b;border:1px solid #fad7d5;" onclick="rechazarBot(${p.id})">Rechazar</button>
+                <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="aprobarBot(${p.id}, this)">Activar</button>
+                <button class="btn btn-sm" style="background:#fef0ef;color:#c0392b;border:1px solid #fad7d5;" onclick="rechazarBot(${p.id}, this)">Rechazar</button>
               </div>
             </div>
             ${screenshot ? `<div style="padding:16px 20px;border-bottom:1px solid #f0f4ec;">
@@ -595,24 +595,48 @@
       showAlert('Código guardado', 'success');
     }
 
-    async function aprobarBot(id) {
-      if (!confirm('¿Activar este bot en producción?')) return;
+    async function aprobarBot(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Activando...';
+      btn.style.opacity = '0.7';
       try {
         const res = await fetch(`/api/admin/agente/portales/${id}/aprobar`, { method: 'POST' });
         const data = await res.json();
-        if (data.ok) { alert('✅ Bot activado correctamente'); cargarBotsGenerados(); }
-        else alert('❌ Error: ' + data.msg);
-      } catch(e) { alert('❌ Error de conexión: ' + e.message); }
+        if (data.ok) {
+          btn.textContent = '✅ Activado';
+          btn.style.background = '#2e7d32';
+          btn.style.color = 'white';
+          setTimeout(() => cargarBotsGenerados(), 1500);
+        } else {
+          btn.textContent = '❌ Error';
+          btn.style.background = '#fef0ef';
+          btn.style.color = '#c0392b';
+          btn.disabled = false;
+          // Mostrar error debajo del botón
+          const err = document.createElement('div');
+          err.style = 'color:#c0392b;font-size:0.78rem;margin-top:6px;';
+          err.textContent = data.msg || 'Error desconocido';
+          btn.parentNode.appendChild(err);
+        }
+      } catch(e) {
+        btn.textContent = '❌ Sin conexión';
+        btn.style.background = '#fef0ef';
+        btn.disabled = false;
+      }
     }
 
-    async function rechazarBot(id) {
-      const notas = prompt('¿Por qué lo rechazas? (opcional)');
-      if (notas === null) return;
+    async function rechazarBot(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Rechazando...';
       try {
         await fetch(`/api/admin/agente/portales/${id}/rechazar`, { method: 'POST',
-          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notas }) });
-        alert('Bot rechazado'); cargarBotsGenerados();
-      } catch(e) { alert('Error: ' + e.message); }
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notas: '' }) });
+        btn.textContent = 'Rechazado';
+        setTimeout(() => cargarBotsGenerados(), 1000);
+      } catch(e) {
+        btn.textContent = 'Error';
+        btn.disabled = false;
+      }
     }
 
     // ── 4A: Portales pendientes ───────────────────────────────────────────────
