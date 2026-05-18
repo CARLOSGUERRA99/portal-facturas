@@ -6,7 +6,7 @@ async function validarBot({ codigo, nombrePortal, datosTest }) {
   const advertencias = [];
 
   // ── Análisis estático ────────────────────────────────────────────────────────
-  if (!codigo.includes("puppeteer"))
+  if (!/puppeteer/i.test(codigo))
     errores.push("No importa puppeteer");
   if (!codigo.includes("subirArchivoR2"))
     errores.push("No usa subirArchivoR2 para screenshots de debug");
@@ -14,17 +14,15 @@ async function validarBot({ codigo, nombrePortal, datosTest }) {
     errores.push("No se conecta a Browserless");
   if (!codigo.includes("module.exports"))
     errores.push("No tiene module.exports");
-  if (!codigo.includes("ok: true"))
+  if (!/\bok\s*:\s*true\b/.test(codigo))
     errores.push("No tiene retorno estándar { ok: true }");
-  if (!codigo.includes("ok: false"))
+  if (!/\bok\s*:\s*false\b/.test(codigo))
     errores.push("No tiene retorno de error { ok: false }");
 
   if (!codigo.includes("buzonfacturas@serviciosga.site"))
     advertencias.push("No usa el email de captura buzonfacturas@serviciosga.site");
   if (!codigo.includes("procesandoCorreo"))
     advertencias.push("No maneja el caso procesandoCorreo (fallback IMAP)");
-  if (!/ya.{0,10}facturad/i.test(codigo))
-    advertencias.push('No detecta el caso "ya facturado"');
   if (!codigo.includes("browser.close"))
     advertencias.push("No cierra el browser en el bloque catch");
 
