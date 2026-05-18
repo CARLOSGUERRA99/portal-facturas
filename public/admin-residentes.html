@@ -567,7 +567,7 @@
             <div id="codigo-bot-${p.id}" style="display:none;padding:16px 20px;">
               <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;">Código generado</div>
               <textarea style="width:100%;height:300px;font-family:monospace;font-size:0.75rem;border:1px solid #e0e0e0;border-radius:6px;padding:10px;resize:vertical;" id="codigo-txt-${p.id}"></textarea>
-              <button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="guardarCodigoBot(${p.id})">Guardar cambios</button>
+              <button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="guardarCodigoBot(${p.id}, this)">Guardar cambios</button>
             </div>
           </div>`;
         }).join('');
@@ -586,13 +586,14 @@
       el.style.display = 'block';
     }
 
-    async function guardarCodigoBot(id) {
+    async function guardarCodigoBot(id, btn) {
+      if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
       const codigo = document.getElementById(`codigo-txt-${id}`).value;
-      await fetch(`/api/admin/agente/portales/${id}/codigo`, {
+      const res = await fetch(`/api/admin/agente/portales/${id}/codigo`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bot_code: codigo })
       });
-      showAlert('Código guardado', 'success');
+      if (btn) { btn.disabled = false; btn.textContent = res.ok ? '✅ Guardado' : '❌ Error'; }
     }
 
     async function aprobarBot(id, btn) {

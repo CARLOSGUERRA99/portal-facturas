@@ -2099,11 +2099,14 @@ app.get("/api/admin/agente/portales/:id", requireAdmin, async (req, res) => {
 });
 
 // Aprobar y activar bot generado
-app.post("/api/admin/agente/portales/:id/aprobar", requireAdmin, async (req, res) => {
+app.post("/api/admin/agente/portales/:id/aprobar", auth, requireAdmin, async (req, res) => {
   try {
+    console.log(`✅ [Admin] Activando bot portal #${req.params.id}`);
     const resultado = await activarBot({ db, portalId: parseInt(req.params.id) });
+    console.log(`✅ [Admin] Bot activado:`, JSON.stringify(resultado));
     res.json(resultado);
   } catch (e) {
+    console.error(`❌ [Admin] Error activando bot #${req.params.id}:`, e.message);
     res.json({ ok: false, msg: e.message });
   }
 });
