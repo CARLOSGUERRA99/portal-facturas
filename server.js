@@ -2165,6 +2165,21 @@ app.post("/api/admin/agente/portales/:id/reorquestar", requireAdmin, async (req,
   }
 });
 
+// Resetear ticket: borra factura mal guardada y regresa a pendiente_confirmacion
+app.post("/api/admin/tickets/:id/resetear", auth, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.query("DELETE FROM facturas WHERE ticket_id = ?", [id]);
+    await db.query(
+      "UPDATE tickets SET status='pendiente_confirmacion', error_msg=NULL, procesando_correo_desde=NULL, reintento_programado=NULL WHERE id=?",
+      [id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 // ── LIMPIEZA TEMPORAL: borrar datos de un comercio ──────────────────────────
 app.delete("/api/admin/limpiar-comercio/:slug", auth, requireAdmin, async (req, res) => {
   try {

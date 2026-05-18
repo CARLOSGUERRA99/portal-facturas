@@ -102,31 +102,40 @@ async function facturarRendichicas({
     // ── PASO 4: Datos fiscales — el portal ya los tiene pre-llenados ─────────
     // Solo necesitamos llenar el correo y dar Siguiente
 
-    // Correo electrónico
-    const emailSelectors = [
-      'input[type="email"]',
-      'input[placeholder*="correo" i]',
-      'input[placeholder*="Correo" i]',
-      'input[name*="correo" i]',
-      'input[name*="email" i]',
-      'input[id*="correo" i]',
-      'input[id*="email" i]',
-    ];
+    // Correo electrónico — esperar hasta 10s a que el campo aparezca
     let emailLlenado = false;
-    for (const sel of emailSelectors) {
-      try {
-        await page.waitForSelector(sel, { visible: true, timeout: 3000 });
-        const el = await page.$(sel);
-        if (el) {
-          await el.click({ clickCount: 3 });
-          await page.keyboard.press('Delete');
-          await el.type('buzonfacturas@serviciosga.site', { delay: 60 });
-          emailLlenado = true;
-          console.log(`📧 [Rendichicas] Email llenado con selector: ${sel}`);
-          break;
+    try {
+      // Intentar por selector directo primero
+      const emailEl = await Promise.race([
+        page.waitForSelector('input[type="email"]',           { visible: true, timeout: 10000 }),
+        page.waitForSelector('input[placeholder*="orreo" i]', { visible: true, timeout: 10000 }),
+        page.waitForSelector('input[name*="correo" i]',       { visible: true, timeout: 10000 }),
+        page.waitForSelector('input[name*="email" i]',        { visible: true, timeout: 10000 }),
+        page.waitForSelector('input[id*="correo" i]',         { visible: true, timeout: 10000 }),
+      ]).catch(() => null);
+
+      if (emailEl) {
+        await emailEl.click({ clickCount: 3 });
+        await page.keyboard.press('Delete');
+        await emailEl.type('buzonfacturas@serviciosga.site', { delay: 60 });
+        emailLlenado = true;
+        console.log('📧 [Rendichicas] Email llenado');
+      } else {
+        // Fallback: buscar cualquier input vacío que no sea RFC/CP/razón social
+        const inputs = await page.$$('input[type="text"], input:not([type])');
+        for (const inp of inputs) {
+          const val = await inp.evaluate(el => el.value);
+          const ph  = await inp.evaluate(el => el.placeholder || '');
+          if (!val && !/rfc|postal|razón|nombre|razon/i.test(ph)) {
+            await inp.click({ clickCount: 3 });
+            await inp.type('buzonfacturas@serviciosga.site', { delay: 60 });
+            emailLlenado = true;
+            console.log(`📧 [Rendichicas] Email llenado (fallback input vacío, placeholder="${ph}")`);
+            break;
+          }
         }
-      } catch {}
-    }
+      }
+    } catch {}
     if (!emailLlenado) console.log('⚠️ [Rendichicas] No se encontró campo de correo');
 
     await shot('p4_correo_llenado');
