@@ -28,23 +28,24 @@ async function facturarRendichicas({
     await el.type(String(value), { delay: 50 });
   }
 
-  // Devuelve el primer botón cuyo texto coincide con el regex
+  // Encuentra el primer botón cuyo texto coincide y lo clickea
   async function clickBtn(regex, waitNav = true) {
-    const handle = await page.evaluateHandle((re) => {
-      const btns = Array.from(document.querySelectorAll('button, input[type="submit"], a.btn, a[class*="btn"]'));
-      return btns.find(b => new RegExp(re, 'i').test((b.textContent || b.value || '').trim())) || null;
-    }, regex.source);
-    const el = await handle.asElement();
-    if (!el) return false;
-    if (waitNav) {
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {}),
-        el.click(),
-      ]);
-    } else {
-      await el.click();
+    const candidatos = await page.$$('button, input[type="submit"]');
+    for (const btn of candidatos) {
+      const texto = await btn.evaluate(el => (el.textContent || el.value || '').trim());
+      if (regex.test(texto)) {
+        if (waitNav) {
+          await Promise.all([
+            page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {}),
+            btn.click(),
+          ]);
+        } else {
+          await btn.click();
+        }
+        return true;
+      }
     }
-    return true;
+    return false;
   }
 
   try {
