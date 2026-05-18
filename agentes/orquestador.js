@@ -5,7 +5,7 @@ const { generarBot, nombreArchivoDesde } = require('./generador');
 const { validarBot } = require('./validador');
 const { corregirBot } = require('./corrector');
 
-const MAX_CORRECCIONES = 3;
+const MAX_CORRECCIONES = 0; // Sin correcciones automáticas — el admin edita manualmente
 
 // Datos de prueba genéricos — el portal devolverá "ticket no encontrado"
 // pero eso demuestra que el bot cargó el portal e interactuó con el formulario
@@ -41,6 +41,12 @@ async function orquestar({ db, ticketId, portalUrl, comercioNombre, instruccione
 
   if (rows.length) {
     portalId = rows[0].id;
+    const estadoActual = rows[0].estado;
+    // Si ya está activo o pendiente de revisión, no re-correr el agente
+    if (estadoActual === 'activo' || estadoActual === 'pendiente_aprobacion') {
+      console.log(`⏭️ [Orquestador] Bot '${slug}' ya está en '${estadoActual}' — sin re-ejecución`);
+      return { ok: true, etapa: estadoActual, portalId, msg: `Bot ya existe en estado '${estadoActual}'. Edítalo manualmente desde Admin si necesitas cambios.` };
+    }
     await db.query(
       'UPDATE portales_agente SET estado=?, portal_url=?, instrucciones=?, ticket_id=?, error_msg=NULL, intentos_correccion=0, actualizado=NOW() WHERE id=?',
       ['analizando', portalUrl, instrucciones, ticketId || null, portalId]
