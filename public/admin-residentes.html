@@ -597,19 +597,22 @@
 
     async function aprobarBot(id) {
       if (!confirm('¿Activar este bot en producción?')) return;
-      const res = await fetch(`/api/admin/agente/portales/${id}/aprobar`, { method: 'POST' });
-      const data = await res.json();
-      if (data.ok) { showAlert('Bot activado correctamente', 'success'); cargarBotsGenerados(); }
-      else showAlert('Error: ' + data.msg, 'error');
+      try {
+        const res = await fetch(`/api/admin/agente/portales/${id}/aprobar`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) { alert('✅ Bot activado correctamente'); cargarBotsGenerados(); }
+        else alert('❌ Error: ' + data.msg);
+      } catch(e) { alert('❌ Error de conexión: ' + e.message); }
     }
 
     async function rechazarBot(id) {
       const notas = prompt('¿Por qué lo rechazas? (opcional)');
       if (notas === null) return;
-      await fetch(`/api/admin/agente/portales/${id}/rechazar`, { method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notas }) });
-      showAlert('Bot rechazado', 'success');
-      cargarBotsGenerados();
+      try {
+        await fetch(`/api/admin/agente/portales/${id}/rechazar`, { method: 'POST',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notas }) });
+        alert('Bot rechazado'); cargarBotsGenerados();
+      } catch(e) { alert('Error: ' + e.message); }
     }
 
     // ── 4A: Portales pendientes ───────────────────────────────────────────────
