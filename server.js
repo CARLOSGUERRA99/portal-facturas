@@ -217,7 +217,7 @@ function proximaMedianoche() {
   return d;
 }
 
-const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara'];
+const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara', 'rendichicas'];
 
 // ── LÓGICA COMPARTIDA DE FACTURACIÓN (usada por auto-facturar y endpoint manual) ──
 async function ejecutarFacturacion(ticketId, userId) {
@@ -468,7 +468,7 @@ async function procesarCola() {
       `SELECT t.id, t.user_id FROM tickets t
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'pendiente_confirmacion' AND u.rfc IS NOT NULL AND u.rfc != ''
-       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas')
+       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas')
        ORDER BY t.creado ASC LIMIT ?`,
       [slots]
     );
@@ -982,6 +982,8 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         else if (urlLow.includes("buzonfacturas") || urlLow.includes("arco")) portalDetectado = "arco";
         else if (urlLow.includes("oxxo")) portalDetectado = "oxxo";
         else if (urlLow.includes("farmaciasguadalajara")) portalDetectado = "farmaciaguadalajara";
+        else if (urlLow.includes("rendilitros") || urlLow.includes("rendichicas")) portalDetectado = "rendichicas";
+        else if (urlLow.includes("homedepot.com.mx")) portalDetectado = "homedepot";
         if (portalDetectado !== "desconocido")
           console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
         datosOCR.portalUrl = urlQR;
@@ -1050,14 +1052,26 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "ok": true
 }
 IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo debajo del código de barras principal del ticket. Léelo dígito por dígito. Si no puedes leerlo con certeza absoluta, devuelve null en folio.`,
-      desconocido: `Extrae los datos que puedas de este ticket. Responde SOLO JSON sin texto adicional:
+      rendichicas: `Extrae estos datos del ticket de gasolinera con portal Rendichicas/rendilitros. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "nombre de la estación (ej. ESTACION PIRU SA DE CV)",
+  "fecha": "DD/MM/YYYY",
+  "folio": "número de folio o ticket (el número largo impreso)",
+  "total": número sin signos,
+  "portalUrl": "URL completa del QR de facturación si aparece (debe incluir rendilitros o rendichicas), o null",
+  "portal": "rendichicas",
+  "ok": true
+}`,
+      desconocido: `Extrae los datos que puedas de este ticket. Si reconoces el portal, identifícalo.
+Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara/Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com).
+Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
   "fecha": "DD/MM/YYYY",
   "folio": "número de folio o ticket, o null",
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
-  "portal": "desconocido",
+  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|homedepot|rendichicas|desconocido",
   "ok": true
 }`,
     };
@@ -1117,6 +1131,7 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
       gasmaz:              ['portalUrl', 'referencia', 'folio', 'total'],
       farmaciaguadalajara: ['folioFactura', 'caja', 'fechaCompra', 'noTicket'],
       homedepot:           ['folio', 'fecha', 'total'],
+      rendichicas:         ['folio', 'fecha', 'total'],
       desconocido:         ['fecha', 'total'],
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;

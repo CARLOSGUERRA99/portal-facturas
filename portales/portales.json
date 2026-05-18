@@ -282,6 +282,30 @@
         "Fecha con Escape antes y después para cerrar datepicker Angular"
       ],
       "notas_desarrollo": "Bot tiene lógica correcta pero aún no tiene caso de éxito end-to-end validado"
+    },
+
+    "rendichicas": {
+      "nombre": "Rendichicas / Rendilitros",
+      "bot": "bots/rendichicasestacionpirusadecv.js",
+      "estado": "produccion",
+      "url_base": "https://facturacion.rendilitros.com/",
+      "tecnologia": "AngularJS SPA",
+      "stealth": true,
+      "comercios": ["Estacion Piru SA de CV", "Caffenio", "gasolineras con portal rendilitros.com"],
+      "deteccion": {
+        "por_portal_field": "rendichicas",
+        "por_texto_ocr": ["rendichicas", "rendilitros", "estacion piru"],
+        "por_comercio": ["rendichicas", "estacion piru"],
+        "por_url_qr": ["rendilitros.com", "rendichicas.com", "rendilitros", "rendichicas"]
+      },
+      "campos_ticket": ["folio", "fecha", "total"],
+      "campos_fiscales": ["rfc", "razonSocial", "regimenFiscal", "usoCfdi", "codigoPostal"],
+      "datos_fijos": {
+        "formaPago": "28 — Tarjeta de débito",
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site",
+        "remitente_factura": "envios@pade.mx"
+      }
     }
   }
 }
