@@ -872,7 +872,8 @@
       document.getElementById('mpn-descripcion').value = '';
       document.querySelectorAll('.mpn-check input').forEach(cb => cb.checked = false);
       document.getElementById('mpn-btn-1').disabled = true;
-      document.getElementById('mpn-btn-2').disabled = true;
+      const mpnBtn2 = document.getElementById('mpn-btn-2');
+      if (mpnBtn2) mpnBtn2.disabled = true;
       mpnMostrarPaso(1);
       document.getElementById('modal-portal-nuevo').style.display = 'flex';
     }
