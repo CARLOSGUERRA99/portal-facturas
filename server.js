@@ -1097,6 +1097,12 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
       console.log(`🏪 Portal reclasificado como OXXO por comercio Sonnet: ${datosOCR.comercio}`);
     }
 
+    // Si Pasada 2 extrajo un portal específico, tomarlo (cubre portales que Pasada 1 no reconoce visualmente)
+    if (portalDetectado === "desconocido" && datosOCR.portal && datosOCR.portal !== "desconocido") {
+      portalDetectado = datosOCR.portal;
+      console.log(`🔄 Portal reclasificado por Pasada 2: ${portalDetectado}`);
+    }
+
     // Correcciones SOLO para OXXO
     if (portalDetectado === "oxxo" || datosOCR.portal === "oxxo") {
       datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
