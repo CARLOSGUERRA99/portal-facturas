@@ -19,7 +19,8 @@ function esCFDI(subject, from) {
     f.includes('buzonfacturas') ||
     f.includes('noreply') ||
     f.includes('no-responder') ||
-    f.includes('factura')
+    f.includes('factura') ||
+    f.includes('pade.mx')  // Rendichicas envía desde envios@pade.mx
   );
 }
 
@@ -52,8 +53,8 @@ async function extraerAdjuntos(parsed) {
 }
 
 // Busca en el inbox correos CFDI sin leer desde los últimos 60 minutos
-// Retorna { xmlBuffer, pdfBuffer, subject } para que el caller pueda extraer el UUID/folio del subject
-async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
+// fromFilter (opcional): si se pasa, solo acepta correos cuyo remitente lo contenga (ej. 'envios@pade.mx')
+async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, fromFilter = null) {
   return new Promise((resolve, reject) => {
     const imap = new Imap({
       user:     process.env.IMAP_USER,
@@ -88,12 +89,12 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
                   imap.end();
                   return reject(new Error('No se encontró correo de factura'));
                 }
-                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject);
+                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject, fromFilter);
               });
             }, 15000);
             return;
           }
-          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject);
+          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, fromFilter);
         });
       });
     });
@@ -103,7 +104,7 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
   });
 }
 
-async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject) {
+async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, fromFilter = null) {
   console.log(`📨 Correos sin leer encontrados: ${uids.length} (UIDs: ${uids.join(', ')})`);
 
   // seqno → número de secuencia del mensaje para poder marcar como leído
@@ -132,6 +133,15 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject) {
           if (!pendientes && !resultados.length) {
             clearTimeout(timer); imap.end();
             reject(new Error('No se encontró correo de factura entre los disponibles'));
+          }
+          return;
+        }
+
+        if (fromFilter && !from.toLowerCase().includes(fromFilter.toLowerCase())) {
+          console.log(`   ↳ Ignorado (remitente "${from}" no coincide con filtro "${fromFilter}")`);
+          if (!pendientes && !resultados.length) {
+            clearTimeout(timer); imap.end();
+            reject(new Error(`No se encontró correo de ${fromFilter}`));
           }
           return;
         }

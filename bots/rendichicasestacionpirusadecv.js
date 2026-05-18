@@ -178,8 +178,8 @@ async function facturarRendichicas({
     }
 
     // Fallback IMAP si las descargas fallaron
-    console.log('📬 [Rendichicas] Sin archivos directos — esperando IMAP');
-    return { ok: true, procesandoCorreo: true };
+    console.log('📬 [Rendichicas] Sin archivos directos — esperando IMAP (envios@pade.mx)');
+    return { ok: true, procesandoCorreo: true, fromFilter: 'envios@pade.mx' };
 
   } catch (err) {
     await shot('error');
