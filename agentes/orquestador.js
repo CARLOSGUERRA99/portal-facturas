@@ -254,7 +254,8 @@ async function restaurarBotsDinamicos(db) {
       let updated = false;
       for (const row of rows) {
         if (portalesData.portales[row.comercio]) continue; // ya existe
-        const analisis = row.analisis ? JSON.parse(row.analisis) : {};
+        let analisis = {};
+        try { analisis = row.analisis ? JSON.parse(row.analisis) : {}; } catch {}
         portalesData.portales[row.comercio] = {
           nombre: row.nombre,
           bot: `bots/${row.nombre_archivo || row.comercio + '.js'}`,

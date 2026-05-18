@@ -65,7 +65,8 @@ async function detectarYFacturar(datos, db = null) {
 
   // Buscar bot dinámico generado por el sistema de agentes
   const slugify = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').slice(0, 30);
-  const slug = slugify(portal || comercio);
+  const portalVal = (portal && portal !== 'desconocido') ? portal : comercio;
+  const slug = slugify(portalVal);
   if (slug) {
     const candidatos = [
       path.join(__dirname, `${slug}.js`),
