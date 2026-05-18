@@ -2122,6 +2122,17 @@ app.post("/api/admin/agente/portales/:id/rechazar", requireAdmin, async (req, re
   }
 });
 
+// Editar código del bot manualmente
+app.put("/api/admin/agente/portales/:id/codigo", requireAdmin, async (req, res) => {
+  try {
+    const { bot_code } = req.body;
+    await db.query("UPDATE portales_agente SET bot_code = ? WHERE id = ?", [bot_code, req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 // Re-orquestar un portal existente (con notas corregidas)
 app.post("/api/admin/agente/portales/:id/reorquestar", requireAdmin, async (req, res) => {
   try {
