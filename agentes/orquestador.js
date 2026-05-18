@@ -167,7 +167,21 @@ async function activarBot({ db, portalId }) {
   // Actualizar portales.json con el nuevo portal
   try {
     const jsonPath = path.join(__dirname, '../portales/portales.json');
-    const portalesData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    let portalesData = { version: '1.0', actualizado: '', portales: {} };
+    if (fs.existsSync(jsonPath)) {
+      const raw = fs.readFileSync(jsonPath, 'utf8');
+      console.log(`📄 [Orquestador] portales.json leído (${raw.length} bytes)`);
+      try {
+        portalesData = JSON.parse(raw);
+      } catch (parseErr) {
+        console.log(`⚠️ [Orquestador] portales.json inválido (${parseErr.message}), se reinicia`);
+      }
+    } else {
+      console.log('📄 [Orquestador] portales.json no existe, se crea nuevo');
+    }
+    if (!portalesData.portales || typeof portalesData.portales !== 'object') {
+      portalesData.portales = {};
+    }
     const analisis = portal.analisis ? JSON.parse(portal.analisis) : {};
 
     portalesData.portales[portal.comercio] = {
@@ -207,8 +221,12 @@ async function activarBot({ db, portalId }) {
 async function restaurarBotsDinamicos(db) {
   try {
     const [rows] = await db.query(
-      "SELECT comercio, nombre_archivo, bot_code FROM portales_agente WHERE estado='activo' AND bot_code IS NOT NULL"
+      "SELECT comercio, nombre, nombre_archivo, bot_code, portal_url, analisis FROM portales_agente WHERE estado='activo' AND bot_code IS NOT NULL"
     );
+
+    if (!rows.length) return;
+
+    // Restaurar archivos .js que falten en disco
     for (const row of rows) {
       const archivo = row.nombre_archivo || `${row.comercio}.js`;
       const botPath = path.join(__dirname, '../bots', archivo);
@@ -216,6 +234,48 @@ async function restaurarBotsDinamicos(db) {
         fs.writeFileSync(botPath, row.bot_code, 'utf8');
         console.log(`✅ Bot dinámico restaurado: bots/${archivo}`);
       }
+    }
+
+    // Sincronizar portales.json con todos los bots activos
+    try {
+      const jsonPath = path.join(__dirname, '../portales/portales.json');
+      let portalesData = { version: '1.0', actualizado: '', portales: {} };
+      if (fs.existsSync(jsonPath)) {
+        try { portalesData = JSON.parse(fs.readFileSync(jsonPath, 'utf8')); } catch {}
+      }
+      if (!portalesData.portales || typeof portalesData.portales !== 'object') portalesData.portales = {};
+
+      let updated = false;
+      for (const row of rows) {
+        if (portalesData.portales[row.comercio]) continue; // ya existe
+        const analisis = row.analisis ? JSON.parse(row.analisis) : {};
+        portalesData.portales[row.comercio] = {
+          nombre: row.nombre,
+          bot: `bots/${row.nombre_archivo || row.comercio + '.js'}`,
+          estado: 'produccion',
+          url_base: row.portal_url,
+          tecnologia: analisis.tecnologia || 'Desconocida',
+          stealth: analisis.stealth_recomendado || analisis.tiene_turnstile || false,
+          comercios: [row.nombre],
+          deteccion: {
+            por_portal_field: row.comercio,
+            por_texto_ocr: [row.comercio, (row.nombre || '').toLowerCase()],
+            por_comercio: [row.comercio],
+            por_url_qr: [],
+          },
+          campos_ticket: analisis.campos || [],
+          datos_fijos: { usoCfdi: 'G03 — Gastos en general', email_captura: 'buzonfacturas@serviciosga.site' },
+        };
+        updated = true;
+        console.log(`📝 portales.json: agregado ${row.comercio}`);
+      }
+      if (updated) {
+        portalesData.actualizado = new Date().toISOString().split('T')[0];
+        fs.writeFileSync(jsonPath, JSON.stringify(portalesData, null, 2), 'utf8');
+        console.log('✅ portales.json sincronizado con bots activos');
+      }
+    } catch (e) {
+      console.log('⚠️ restaurarBotsDinamicos — portales.json:', e.message);
     }
   } catch (e) {
     console.log('⚠️ restaurarBotsDinamicos:', e.message);

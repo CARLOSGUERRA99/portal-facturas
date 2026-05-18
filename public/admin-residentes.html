@@ -221,6 +221,20 @@
       </div>
     </div>
 
+    <!-- ── Bots activos (edición y re-activación) ── -->
+    <div style="margin-top:32px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div>
+          <div class="card-title" style="font-size:1rem;font-weight:700;text-transform:none;letter-spacing:0;">Bots activos</div>
+          <div style="font-size:0.8rem;color:var(--text-muted);margin-top:4px;">Edita el código y re-activa para aplicar los cambios en producción</div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="cargarBotsActivos()">↺ Actualizar</button>
+      </div>
+      <div id="bots-activos-card">
+        <div class="card" style="padding:24px;text-align:center;color:var(--text-muted);">Cargando...</div>
+      </div>
+    </div>
+
     <!-- Generar Bot con IA -->
     <div style="margin-top:32px;" id="seccion-agentes">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
@@ -415,7 +429,7 @@
         document.getElementById('nav-avatar').textContent = initials;
         document.getElementById('nav-name').textContent   = me.nombre || '';
       } catch {}
-      await Promise.all([cargarEmpleados(), cargarResidentes(), cargarErrores(), cargarPortales(), cargarBotsGenerados()]);
+      await Promise.all([cargarEmpleados(), cargarResidentes(), cargarErrores(), cargarPortales(), cargarBotsGenerados(), cargarBotsActivos()]);
     }
 
     // ── WhatsApp ──────────────────────────────────────────────────────────────
@@ -634,6 +648,127 @@
         setTimeout(() => cargarBotsGenerados(), 1000);
       } catch(e) {
         btn.textContent = 'Error';
+        btn.disabled = false;
+      }
+    }
+
+    // ── Bots activos ──────────────────────────────────────────────────────────
+    async function cargarBotsActivos() {
+      const card = document.getElementById('bots-activos-card');
+      try {
+        const res  = await fetch('/api/admin/agente/portales');
+        const data = await res.json();
+        if (!data.ok) { card.innerHTML = '<div class="card" style="padding:20px;color:red;">Error al cargar</div>'; return; }
+
+        const activos = data.portales.filter(p => p.estado === 'activo');
+
+        if (!activos.length) {
+          card.innerHTML = `<div class="card" style="padding:28px;text-align:center;color:var(--text-muted);">
+            <div style="font-size:2rem;margin-bottom:8px;">✅</div>
+            <div style="font-weight:600;">Sin bots activos aún</div>
+          </div>`;
+          return;
+        }
+
+        card.innerHTML = activos.map(p => `
+          <div class="card" style="margin-bottom:12px;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;">
+              <div style="flex:1;min-width:0;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:700;">ACTIVO</span>
+                  <span style="font-weight:700;font-size:0.95rem;">${p.nombre || p.comercio}</span>
+                </div>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">${p.portal_url || ''} · ${p.nombre_archivo || p.comercio + '.js'}</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-shrink:0;">
+                <button class="btn btn-outline btn-sm" onclick="verCodigoBotActivo(${p.id})">Editar código</button>
+                <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="reactivarBot(${p.id}, this)">Re-activar</button>
+              </div>
+            </div>
+            <div id="codigo-activo-${p.id}" style="display:none;padding:0 20px 16px;">
+              <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;">Código del bot (editable)</div>
+              <textarea style="width:100%;height:400px;font-family:monospace;font-size:0.75rem;border:1px solid #e0e0e0;border-radius:6px;padding:10px;resize:vertical;box-sizing:border-box;" id="codigo-activo-txt-${p.id}"></textarea>
+              <div style="display:flex;gap:8px;margin-top:8px;">
+                <button class="btn btn-sm btn-outline" onclick="guardarCodigoBotActivo(${p.id}, this)">Guardar cambios</button>
+                <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="guardarYReactivar(${p.id}, this)">Guardar y re-activar</button>
+              </div>
+            </div>
+          </div>`).join('');
+      } catch(e) {
+        card.innerHTML = `<div class="card" style="padding:20px;color:red;">${e.message}</div>`;
+      }
+    }
+
+    async function verCodigoBotActivo(id) {
+      const el = document.getElementById(`codigo-activo-${id}`);
+      if (el.style.display === 'block') { el.style.display = 'none'; return; }
+      const res  = await fetch(`/api/admin/agente/portales/${id}`);
+      const data = await res.json();
+      if (data.ok) document.getElementById(`codigo-activo-txt-${id}`).value = data.portal.bot_code || '';
+      el.style.display = 'block';
+    }
+
+    async function guardarCodigoBotActivo(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      const codigo = document.getElementById(`codigo-activo-txt-${id}`).value;
+      try {
+        const res  = await fetch(`/api/admin/agente/portales/${id}/codigo`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bot_code: codigo })
+        });
+        const data = await res.json();
+        btn.textContent = data.ok ? '✅ Guardado' : '❌ Error';
+      } catch { btn.textContent = '❌ Error'; }
+      btn.disabled = false;
+    }
+
+    async function guardarYReactivar(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      const codigo = document.getElementById(`codigo-activo-txt-${id}`).value;
+      try {
+        // 1. Guardar código en DB
+        const resSave = await fetch(`/api/admin/agente/portales/${id}/codigo`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bot_code: codigo })
+        });
+        if (!(await resSave.json()).ok) throw new Error('Error al guardar');
+        // 2. Re-activar (escribe en disco)
+        btn.textContent = 'Re-activando...';
+        const resAct = await fetch(`/api/admin/agente/portales/${id}/aprobar`, { method: 'POST' });
+        const data   = await resAct.json();
+        if (data.ok) {
+          btn.textContent = '✅ Re-activado';
+          btn.style.background = '#2e7d32';
+          btn.style.color = 'white';
+        } else {
+          btn.textContent = '❌ ' + (data.msg || 'Error');
+        }
+      } catch(e) {
+        btn.textContent = '❌ ' + e.message;
+      }
+      btn.disabled = false;
+    }
+
+    async function reactivarBot(id, btn) {
+      btn.disabled = true;
+      btn.textContent = 'Re-activando...';
+      btn.style.opacity = '0.7';
+      try {
+        const res  = await fetch(`/api/admin/agente/portales/${id}/aprobar`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          btn.textContent = '✅ Re-activado';
+          btn.style.background = '#2e7d32';
+          btn.style.color = 'white';
+          btn.style.opacity = '1';
+        } else {
+          btn.textContent = '❌ ' + (data.msg || 'Error');
+          btn.style.opacity = '1';
+          btn.disabled = false;
+        }
+      } catch(e) {
+        btn.textContent = '❌ Error';
+        btn.style.opacity = '1';
         btn.disabled = false;
       }
     }
