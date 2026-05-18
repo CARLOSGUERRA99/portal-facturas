@@ -283,14 +283,7 @@ async function ejecutarFacturacion(ticketId, userId) {
 
     if (resultado.ok && resultado.procesandoCorreo) {
       await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [ticketId]);
-      // Guardar fromFilter en ocr_json para que el job IMAP filtre por remitente correcto
-      if (resultado.fromFilter) {
-        const [rows] = await db.query("SELECT ocr_json FROM tickets WHERE id = ?", [ticketId]);
-        const ocr = JSON.parse(rows[0]?.ocr_json || '{}');
-        ocr.fromFilter = resultado.fromFilter;
-        await db.query("UPDATE tickets SET ocr_json = ? WHERE id = ?", [JSON.stringify(ocr), ticketId]);
-      }
-      await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura generada — esperando correo', duracionMs);
+await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura generada — esperando correo', duracionMs);
       return { ok: true, procesandoCorreo: true };
     }
 
@@ -1903,11 +1896,10 @@ async function procesarTicketsPorCorreo() {
   for (const ticket of rows) {
     const datos = JSON.parse(ticket.ocr_json || "{}");
     const codigoTicket = datos.codigoTicket || String(ticket.id);
-    const fromFilter = datos.fromFilter || null;
-    console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo...${fromFilter ? ` (filtro: ${fromFilter})` : ''}`);
+    console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo...`);
 
     try {
-      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000, fromFilter);
+      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000);
 
       // UUID desde el contenido del XML (fuente canónica del CFDI)
       // Fallback: timestamp si el XML no está disponible
