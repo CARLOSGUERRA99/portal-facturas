@@ -3,6 +3,7 @@ const { facturarBuzonFacturas } = require('./buzonfacturas');
 const { facturarGasmaz } = require('./gasmaz');
 const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
 const { facturarHomeDepotMexico } = require('./homedepot');
+const { facturarRendichicas } = require('./rendichicasestacionpirusadecv');
 const fs = require('fs');
 const path = require('path');
 
@@ -20,6 +21,18 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Home Depot Mexico');
     return await facturarHomeDepotMexico(datos);
+  }
+
+  if (
+    portal === 'rendichicas' ||
+    portal === 'rendichicasestacionpirusadecv' ||
+    comercio.includes('rendichicas') ||
+    comercio.includes('rendi chicas') ||
+    portalUrl.includes('rendilitros') ||
+    portalUrl.includes('rendichicas')
+  ) {
+    console.log('🎯 Portal detectado: Rendichicas');
+    return await facturarRendichicas(datos);
   }
 
   if (

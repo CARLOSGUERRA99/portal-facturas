@@ -2125,6 +2125,16 @@ app.post("/api/admin/agente/portales/:id/rechazar", requireAdmin, async (req, re
   }
 });
 
+// Eliminar registro de portales_agente (limpiar bots malos)
+app.delete("/api/admin/agente/portales/:id", auth, requireAdmin, async (req, res) => {
+  try {
+    await db.query("DELETE FROM portales_agente WHERE id = ?", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
 // Editar código del bot manualmente
 app.put("/api/admin/agente/portales/:id/codigo", requireAdmin, async (req, res) => {
   try {

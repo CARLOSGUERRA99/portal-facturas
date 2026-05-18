@@ -572,6 +572,7 @@
                 <button class="btn btn-outline btn-sm" onclick="verCodigoBot(${p.id})">Ver código</button>
                 <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="activarBotGenerado(${p.id}, this)">Activar</button>
                 <button class="btn btn-sm" style="background:#fef0ef;color:#c0392b;border:1px solid #fad7d5;" onclick="rechazarBot(${p.id}, this)">Rechazar</button>
+                <button class="btn btn-sm" style="background:#fff;color:#888;border:1px solid #ddd;" onclick="eliminarBotGenerado(${p.id}, this)" title="Eliminar permanentemente">🗑</button>
               </div>
             </div>
             ${screenshot ? `<div style="padding:16px 20px;border-bottom:1px solid #f0f4ec;">
@@ -636,6 +637,17 @@
         btn.style.opacity = '1';
         btn.disabled = false;
       }
+    }
+
+    async function eliminarBotGenerado(id, btn) {
+      btn.disabled = true;
+      btn.textContent = '...';
+      try {
+        const res  = await fetch(`/api/admin/agente/portales/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.ok) setTimeout(() => cargarBotsGenerados(), 500);
+        else { btn.textContent = '❌'; btn.disabled = false; }
+      } catch { btn.textContent = '❌'; btn.disabled = false; }
     }
 
     async function rechazarBot(id, btn) {
