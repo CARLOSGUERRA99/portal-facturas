@@ -5,7 +5,9 @@ async function facturarRendichicas({
   rfc, razonSocial, regimenFiscal, usoCfdi, codigoPostal,
   folio, fecha, total, ticketId, portalUrl,
 }) {
-  const url = portalUrl || 'https://facturacion.rendilitros.com/';
+  // El QR del ticket apunta a rendichicas.com (marketing), no al portal de facturación
+  // Siempre usar la URL del portal de facturación directamente
+  const url = (portalUrl && portalUrl.includes('rendilitros')) ? portalUrl : 'https://facturacion.rendilitros.com/';
   const browser = await puppeteer.connect({
     browserWSEndpoint: `wss://production-sfo.browserless.io?token=${process.env.BROWSERLESS_TOKEN}&stealth=true`,
   });
