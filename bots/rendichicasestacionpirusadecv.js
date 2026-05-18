@@ -19,33 +19,31 @@ async function facturarRendichicas({
     } catch {}
   };
 
-  async function fillInput(selector, value) {
-    await page.waitForSelector(selector, { visible: true, timeout: 8000 });
-    const el = await page.$(selector);
-    if (!el) return;
-    await el.click({ clickCount: 3 });
+  // Llena un input AngularJS: click → seleccionar todo → escribir → disparar evento input
+  async function fillNG(selector, value) {
+    await page.waitForSelector(selector, { visible: true, timeout: 15000 });
+    await page.click(selector, { clickCount: 3 });
     await page.keyboard.press('Delete');
-    await el.type(String(value), { delay: 50 });
+    await page.keyboard.type(String(value), { delay: 40 });
+    await page.$eval(selector, el => {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   }
 
-  // Encuentra el primer botón cuyo texto coincide y lo clickea
-  async function clickBtn(regex, waitNav = true) {
-    const candidatos = await page.$$('button, input[type="submit"]');
-    for (const btn of candidatos) {
-      const texto = await btn.evaluate(el => (el.textContent || el.value || '').trim());
-      if (regex.test(texto)) {
-        if (waitNav) {
-          await Promise.all([
-            page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {}),
-            btn.click(),
-          ]);
-        } else {
-          await btn.click();
-        }
-        return true;
-      }
-    }
-    return false;
+  // Selecciona opción de un <select> AngularJS por valor
+  async function selectNG(selector, value) {
+    await page.waitForSelector(selector, { visible: true, timeout: 15000 });
+    await page.$eval(selector, (el, v) => {
+      el.value = v;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, value);
+  }
+
+  // Hace click en un botón por su ng-click
+  async function clickNG(ngClick) {
+    await page.waitForSelector(`button[ng-click="${ngClick}"], a[ng-click="${ngClick}"]`, { visible: true, timeout: 15000 });
+    await page.click(`button[ng-click="${ngClick}"], a[ng-click="${ngClick}"]`);
   }
 
   try {
@@ -54,174 +52,149 @@ async function facturarRendichicas({
     await shot('p1_carga');
 
     // ── PASO 2: Datos del ticket ─────────────────────────────────────────────
-    // Ticket (solo números)
-    try { await fillInput('input[placeholder*="ticket" i], input[placeholder*="Ticket" i]', folio); } catch {}
+    await fillNG('#form-field-Ticket', folio);
 
-    // Fecha — input type="date" requiere YYYY-MM-DD
+    // Fecha: el campo tiene onfocus que lo convierte a type="date"
+    // Necesita valor en formato YYYY-MM-DD
     const fechaISO = parseFecha(fecha);
-    try {
-      await page.waitForSelector('input[type="date"]', { timeout: 5000 });
-      await page.$eval('input[type="date"]', (el, v) => {
-        el.value = v;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      }, fechaISO);
-    } catch {}
+    await page.waitForSelector('#form-field-Fecha', { visible: true });
+    await page.$eval('#form-field-Fecha', (el, v) => {
+      el.focus(); // activa onfocus → type='date'
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.blur();
+    }, fechaISO);
 
-    // Total
-    try { await fillInput('input[placeholder*="total" i], input[placeholder*="Total" i], input[placeholder="0"]', total); } catch {}
+    await fillNG('#form-field-Importe', total);
+    await fillNG('#form-field-RFC', rfc);
 
-    // RFC
-    try { await fillInput('input[placeholder="RFC"], input[placeholder*="RFC" i]', rfc); } catch {}
+    // Forma de pago: 28 = Tarjeta de débito
+    await selectNG('#form-field-FormaPago', '28');
 
-    // Forma de pago — seleccionar tarjeta de débito
-    try {
-      await page.$eval('select', (el) => {
-        const opt = Array.from(el.options).find(o => /débito|debito/i.test(o.text))
-                 || Array.from(el.options).find(o => o.value && o.value !== '');
-        if (opt) { el.value = opt.value; el.dispatchEvent(new Event('change', { bubbles: true })); }
-      });
-    } catch {}
+    await shot('p2_ticket');
 
-    await shot('p2_formulario');
-
-    // ── PASO 3: Click "Siguiente" ────────────────────────────────────────────
-    await clickBtn(/^siguiente$/);
-    // Esperar que la página de datos fiscales cargue completamente
-    await new Promise(r => setTimeout(r, 2500));
+    // ── PASO 3: Click "Siguiente" (paso 1 → datos fiscales) ─────────────────
+    await clickNG('btnSiguienteIT()');
+    // SPA: esperar que aparezca el campo RFC de datos fiscales
+    await page.waitForSelector('#form-field-DFRFC', { visible: true, timeout: 20000 });
     await shot('p3_datos_fiscales');
 
-    // Verificar que llegamos a datos fiscales (y no a un error)
-    const texto = await page.evaluate(() => document.body.innerText).catch(() => '');
-    if (/no encontrado|no existe|inválido|invalido/i.test(texto) &&
-        !/datos fiscales|razón social|razon social/i.test(texto)) {
-      await browser.close();
-      return { ok: false, msg: 'Ticket no encontrado o datos incorrectos en Rendichicas' };
-    }
+    // ── PASO 4: Llenar datos fiscales ────────────────────────────────────────
+    // RFC (puede estar pre-llenado, lo sobreescribimos)
+    await fillNG('#form-field-DFRFC', rfc);
+    await fillNG('#form-field-Razon', razonSocial);
+    await fillNG('#form-field-CP', codigoPostal || '80140');
 
-    // ── PASO 4: Datos fiscales — el portal ya los tiene pre-llenados ─────────
-    // Solo necesitamos llenar el correo y dar Siguiente
+    // Uso CFDI: G03
+    await selectNG('#form-field-cmbUsoCFDI', usoCfdi || 'G03');
 
-    // Correo electrónico — esperar hasta 10s a que el campo aparezca
-    let emailLlenado = false;
-    try {
-      // Intentar por selector directo primero
-      const emailEl = await Promise.race([
-        page.waitForSelector('input[type="email"]',           { visible: true, timeout: 10000 }),
-        page.waitForSelector('input[placeholder*="orreo" i]', { visible: true, timeout: 10000 }),
-        page.waitForSelector('input[name*="correo" i]',       { visible: true, timeout: 10000 }),
-        page.waitForSelector('input[name*="email" i]',        { visible: true, timeout: 10000 }),
-        page.waitForSelector('input[id*="correo" i]',         { visible: true, timeout: 10000 }),
-      ]).catch(() => null);
+    // Régimen Fiscal: 601
+    await selectNG('#form-field-Regimen', regimenFiscal || '601');
 
-      if (emailEl) {
-        await emailEl.click({ clickCount: 3 });
-        await page.keyboard.press('Delete');
-        await emailEl.type('buzonfacturas@serviciosga.site', { delay: 60 });
-        emailLlenado = true;
-        console.log('📧 [Rendichicas] Email llenado');
-      } else {
-        // Fallback: buscar cualquier input vacío que no sea RFC/CP/razón social
-        const inputs = await page.$$('input[type="text"], input:not([type])');
-        for (const inp of inputs) {
-          const val = await inp.evaluate(el => el.value);
-          const ph  = await inp.evaluate(el => el.placeholder || '');
-          if (!val && !/rfc|postal|razón|nombre|razon/i.test(ph)) {
-            await inp.click({ clickCount: 3 });
-            await inp.type('buzonfacturas@serviciosga.site', { delay: 60 });
-            emailLlenado = true;
-            console.log(`📧 [Rendichicas] Email llenado (fallback input vacío, placeholder="${ph}")`);
-            break;
-          }
-        }
-      }
-    } catch {}
-    if (!emailLlenado) console.log('⚠️ [Rendichicas] No se encontró campo de correo');
+    // Correo: #form-field-Correo (type="email", ng-model="datosFiscales.correo")
+    await fillNG('#form-field-Correo', 'buzonfacturas@serviciosga.site');
 
-    await shot('p4_correo_llenado');
+    await shot('p4_datos_fiscales_llenados');
 
-    // ── PASO 5: Click "Siguiente" en datos fiscales ──────────────────────────
-    await clickBtn(/^siguiente$/);
-    await new Promise(r => setTimeout(r, 2500));
-    await shot('p5_post_siguiente_fiscal');
+    // ── PASO 5: Click "Siguiente" (datos fiscales → confirmar) ───────────────
+    await clickNG('btnSiguienteDF()');
+    // Esperar botón "Facturar" del paso de confirmación
+    await page.waitForSelector('button[ng-click="btnSiguienteCD()"]', { visible: true, timeout: 20000 });
+    await shot('p5_confirmar');
 
-    // ── PASO 6: Manejar diálogo "Actualizar datos fiscales" si aparece ───────
-    const textoPost = await page.evaluate(() => document.body.innerText).catch(() => '');
-    if (/actualizar|confirmar|¿desea/i.test(textoPost)) {
-      console.log('💬 [Rendichicas] Diálogo de confirmación detectado — aceptando');
-      const aceptado = await clickBtn(/^sí$|^si$|^aceptar$|^confirmar$|^continuar$/);
-      if (!aceptado) await clickBtn(/siguiente/); // fallback
-      await new Promise(r => setTimeout(r, 2000));
-      await shot('p6_post_dialogo');
-    }
+    // ── PASO 6: Click "Facturar" ─────────────────────────────────────────────
+    await clickNG('btnSiguienteCD()');
+    // Esperar botones de descarga
+    await page.waitForSelector('#btnPdf', { visible: true, timeout: 30000 });
+    await shot('p6_descarga');
 
-    // ── PASO 7: Página de descarga — buscar links PDF y XML ──────────────────
-    await new Promise(r => setTimeout(r, 2000));
-    await shot('p7_descarga');
-
-    let xmlUrl = null;
+    // ── PASO 7: Descargar PDF y XML ──────────────────────────────────────────
     let pdfUrl = null;
+    let xmlUrl = null;
 
-    // Buscar links visibles en la página
-    const links = await page.$$eval('a[href]', as => as.map(a => a.href)).catch(() => []);
-    for (const link of links) {
-      if (/\.xml(\?|$)/i.test(link) && !xmlUrl) {
-        try {
-          const resp = await page.goto(link, { waitUntil: 'networkidle2', timeout: 15000 });
-          if (resp && resp.ok()) {
-            const buf = Buffer.from(await resp.buffer());
-            xmlUrl = await subirArchivoR2(buf, `facturas/rendichicas_${ticketId}.xml`, 'application/xml');
-            await page.goBack({ waitUntil: 'networkidle2' }).catch(() => {});
+    // Interceptar archivos descargados via nuevas pestañas
+    const descargar = async (ngClick, ext, mime) => {
+      return new Promise(async (resolve) => {
+        const onTarget = async (target) => {
+          if (target.type() === 'page') {
+            const newPage = await target.page();
+            try {
+              await newPage.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+              const resp = await newPage.goto(newPage.url(), { waitUntil: 'networkidle2' }).catch(() => null);
+              if (resp) {
+                const buf = Buffer.from(await resp.buffer());
+                if (buf.length > 100) {
+                  const key = `facturas/rendichicas_${ticketId}.${ext}`;
+                  const uploaded = await subirArchivoR2(buf, key, mime);
+                  resolve(uploaded);
+                  return;
+                }
+              }
+              await newPage.close().catch(() => {});
+            } catch {}
+            resolve(null);
           }
-        } catch {}
-      }
-      if (/\.pdf(\?|$)/i.test(link) && !pdfUrl) {
-        try {
-          const resp = await page.goto(link, { waitUntil: 'networkidle2', timeout: 15000 });
-          if (resp && resp.ok()) {
-            const buf = Buffer.from(await resp.buffer());
-            pdfUrl = await subirArchivoR2(buf, `facturas/rendichicas_${ticketId}.pdf`, 'application/pdf');
-            await page.goBack({ waitUntil: 'networkidle2' }).catch(() => {});
-          }
-        } catch {}
-      }
-    }
+        };
+        browser.once('targetcreated', onTarget);
 
-    // Buscar botones de descarga si no había links directos
-    if (!xmlUrl || !pdfUrl) {
-      const btnXml = await page.$('a[href*="xml" i], button[onclick*="xml" i], a:has-text("XML")').catch(() => null);
-      const btnPdf = await page.$('a[href*="pdf" i], button[onclick*="pdf" i], a:has-text("PDF")').catch(() => null);
-      if (btnXml && !xmlUrl) { try { await btnXml.click(); await new Promise(r => setTimeout(r, 2000)); } catch {} }
-      if (btnPdf && !pdfUrl) { try { await btnPdf.click(); await new Promise(r => setTimeout(r, 2000)); } catch {} }
-    }
+        // También interceptar respuesta en la misma página
+        const onResp = async (response) => {
+          const ct = response.headers()['content-type'] || '';
+          if ((ext === 'pdf' && ct.includes('pdf')) || (ext === 'xml' && (ct.includes('xml') || ct.includes('octet')))) {
+            try {
+              const buf = Buffer.from(await response.buffer());
+              if (buf.length > 100) {
+                const key = `facturas/rendichicas_${ticketId}.${ext}`;
+                const uploaded = await subirArchivoR2(buf, key, mime);
+                browser.removeListener('targetcreated', onTarget);
+                resolve(uploaded);
+              }
+            } catch {}
+          }
+        };
+        page.once('response', onResp);
+
+        await page.click(`[ng-click="${ngClick}"], #btn${ext === 'pdf' ? 'Pdf' : 'Xml'}`).catch(() => {});
+
+        // Si ningún listener resuelve en 8s, resolver como null
+        setTimeout(() => {
+          browser.removeListener('targetcreated', onTarget);
+          page.removeListener('response', onResp);
+          resolve(null);
+        }, 8000);
+      });
+    };
+
+    pdfUrl = await descargar('descargarPDFStep4()', 'pdf', 'application/pdf');
+    await new Promise(r => setTimeout(r, 1000));
+    xmlUrl = await descargar('descargarXMLStep4()', 'xml', 'application/xml');
 
     await browser.close();
 
-    if (xmlUrl || pdfUrl) {
-      console.log(`✅ [Rendichicas] Factura descargada — XML: ${xmlUrl} | PDF: ${pdfUrl}`);
-      return { ok: true, xmlUrl, pdfUrl };
+    if (pdfUrl || xmlUrl) {
+      console.log(`✅ [Rendichicas] PDF: ${pdfUrl} | XML: ${xmlUrl}`);
+      return { ok: true, pdfUrl, xmlUrl };
     }
 
-    // El portal envía por correo — esperar IMAP
-    console.log('📬 [Rendichicas] Sin archivos directos — esperando correo IMAP');
+    // Fallback IMAP si las descargas fallaron
+    console.log('📬 [Rendichicas] Sin archivos directos — esperando IMAP');
     return { ok: true, procesandoCorreo: true };
 
   } catch (err) {
     await shot('error');
     try { await browser.close(); } catch {}
-    console.log(`❌ [Rendichicas] Error: ${err.message}`);
+    console.log(`❌ [Rendichicas] ${err.message}`);
     return { ok: false, msg: err.message };
   }
 }
 
-// DD/MM/YYYY o YYYY-MM-DD → YYYY-MM-DD
+// DD/MM/YYYY → YYYY-MM-DD
 function parseFecha(fecha) {
   if (!fecha) return new Date().toISOString().split('T')[0];
   if (/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return fecha;
-  const partes = fecha.split(/[\/\-]/);
-  if (partes.length === 3 && partes[2].length === 4) {
-    return `${partes[2]}-${partes[1].padStart(2, '0')}-${partes[0].padStart(2, '0')}`;
-  }
+  const p = fecha.split(/[\/\-]/);
+  if (p.length === 3 && p[2].length === 4) return `${p[2]}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`;
   return fecha;
 }
 
