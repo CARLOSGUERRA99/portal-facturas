@@ -1,0 +1,15 @@
+{
+  "referencia":       "#txtReferencia",
+  "folio":            "#txtFolio",
+  "total":            "#txtAmount",
+  "rfc":              "#txtRFC",
+  "btnBuscar":        "#btnNext",
+  "razonSocial":      "#txtName",
+  "email":            "#txtEmail",
+  "regimen":          "#selFiscalRegime",
+  "usoCfdi":          "#selVoucherUse",
+  "formaPago":        "#selPaymentWay",
+  "divDescarga":      "#divFiles",
+  "divDocumentos":    "#divDocumentsDownload",
+  "alertaYaFacturado": null
+}

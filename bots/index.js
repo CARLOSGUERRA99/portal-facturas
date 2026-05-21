@@ -4,6 +4,7 @@ const { facturarGasmaz } = require('./gasmaz');
 const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
 const { facturarHomeDepotMexico } = require('./homedepot');
 const { facturarRendichicas } = require('./rendichicasestacionpirusadecv');
+const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
 
@@ -12,6 +13,33 @@ async function detectarYFacturar(datos, db = null) {
   const comercio = (datos.comercio || '').toLowerCase();
   const portalUrl = (datos.portalUrl || '').toLowerCase();
   const portal = (datos.portal || '').toLowerCase();
+
+  // ── ENGINE EXPERIMENTAL — intenta primero con el portal declarativo ───────
+  // Fallback automático al bot legacy en caso de cualquier excepción.
+  // En esta fase de validación: OK→retorna engine, error→retorna engine, excepción→legacy.
+  if (portal && tieneEngine(portal)) {
+    console.log(`[ENGINE][${portal}] Iniciando engine declarativo...`);
+    try {
+      const resultado = await facturarConEngine(portal, datos);
+      if (resultado === null) {
+        // null = engine no tiene flow para este portal (no debería pasar si tieneEngine=true)
+        console.log(`[ENGINE FALLBACK][${portal}] Engine retornó null inesperado — usando bot legacy`);
+      } else {
+        // Resultado controlado (ok:true o ok:false) — lo retornamos directamente.
+        // No re-intentar con legacy: si el engine dijo "ya_facturado" o "datos_invalidos",
+        // legacy también fallará. Si el engine dijo "ok:true", ya terminamos.
+        const estado = resultado.ok ? '✅ OK' : `❌ ${resultado.error_code}`;
+        console.log(`[ENGINE][${portal}] Resultado: ${estado}`);
+        return resultado;
+      }
+    } catch (err) {
+      // Excepción inesperada en el engine (bug en hooks.js, acción faltante, etc.)
+      // Caemos al bot legacy para proteger producción.
+      console.error(`[ENGINE FALLBACK][${portal}] Excepción no controlada: ${err.message}`);
+      console.error(`[ENGINE FALLBACK][${portal}] Stack: ${err.stack}`);
+      // Continúa al fallback legacy abajo
+    }
+  }
 
   if (
     portal === 'homedepot' ||
@@ -72,7 +100,7 @@ async function detectarYFacturar(datos, db = null) {
     portalUrl.includes('gasmaz') ||
     comercio.includes('gasmaz')
   ) {
-    console.log('🎯 Portal detectado: Gasmaz/NexusFuel');
+    console.log('[LEGACY][gasmaz] Ejecutando bot legacy NexusFuel/Gasmaz');
     return await facturarGasmaz(datos);
   }
 

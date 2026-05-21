@@ -142,6 +142,18 @@ const db = mysql.createPool({
   database: process.env.DB_DATABASE,
 });
 
+// ── MODO MANTENIMIENTO ──
+// Activar/desactivar desde Railway: variable MANTENIMIENTO=true
+// Bypass para admin: agregar ?bypass=gpnadmin a cualquier URL
+if (process.env.MANTENIMIENTO === 'true') {
+  app.use((req, res, next) => {
+    if (req.query.bypass === 'gpnadmin') return next();
+    if (req.path === '/mantenimiento.html') return next();
+    if (req.path.startsWith('/api/whatsapp')) return next(); // webhook siempre activo
+    res.status(503).sendFile(path.join(__dirname, 'public', 'mantenimiento.html'));
+  });
+}
+
 app.use(express.static(path.join(__dirname, "public")));
 
 const facturasDir = path.join(__dirname, "facturas");
