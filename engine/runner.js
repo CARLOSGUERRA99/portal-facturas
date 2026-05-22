@@ -46,7 +46,7 @@ function buildContext(datos, config, selectors) {
 
   return {
     ticketId:    String(datos.ticketId || ''),
-    portal:      datos.portal || config.id || '',
+    portal:      config.id || datos.portal || '',
     url: (datos.portalUrl && config.dominio && datos.portalUrl.includes(config.dominio))
            ? datos.portalUrl
            : (config.url_base || ''),
