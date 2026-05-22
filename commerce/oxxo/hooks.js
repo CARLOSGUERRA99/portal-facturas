@@ -131,32 +131,22 @@ async function llenarDatosFactura(page, context) {
           codigoPostal, regimenFiscal, usoCfdi, config } = context;
   const estadoVal = estado || config.defaults?.estado || 'SONORA';
 
-  // Continuar usa AJAX parcial PrimeFaces — no hay navegación completa
-  await page.click('#form\\:continuar');
+  // Loguear todos los elementos que dicen "Continuar" para identificar el correcto
+  const continurBtns = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('button, a, input[type="submit"], span'))
+      .filter(el => el.textContent?.trim().toLowerCase().includes('continuar'))
+      .map(el => ({ tag: el.tagName, id: el.id, class: el.className, disabled: el.disabled, text: el.textContent.trim().substring(0, 30) }))
+  ).catch(() => []);
+  console.log('[OXXO][DEBUG] Botones Continuar encontrados:', JSON.stringify(continurBtns));
+
+  // Click Continuar via evaluate (ignora overlays como el chatbot GINA)
+  await page.evaluate(() => {
+    const btn = document.querySelector('#form\\:continuar');
+    if (btn) btn.click();
+  });
   await page.waitForTimeout(2000);
 
-  // Seleccionar País (México) — esto dispara el AJAX que habilita RFC y demás campos
-  // El portal usa cascading form: País → habilita RFC → blur RFC → habilita RegFis/CFDI
-  const paisLabel = await page.$('#form\\:selectOneMenuPais_label').catch(() => null);
-  if (paisLabel) {
-    await page.click('#form\\:selectOneMenuPais_label');
-    await page.waitForTimeout(500);
-    await page.evaluate(() => {
-      const items = document.querySelectorAll('#form\\:selectOneMenuPais_panel li.ui-selectonemenu-item');
-      for (const item of items) {
-        if (item.textContent.trim().toUpperCase().includes('MEXICO') ||
-            item.textContent.trim().toUpperCase().includes('MÉXICO')) {
-          item.click(); return;
-        }
-      }
-      // Si no hay panel abierto, disparar change en el input oculto
-      const focus = document.querySelector('#form\\:selectOneMenuPais_focus');
-      if (focus) focus.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-    await page.waitForTimeout(1500);
-  }
-
-  // RFC — polling hasta que se habilite (el AJAX del País lo activa)
+  // RFC — polling hasta que se habilite (el AJAX del Continuar lo activa)
   let rfcSel = null;
   for (let i = 0; i < 40; i++) {
     rfcSel = await page.evaluate(() => {
