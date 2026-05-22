@@ -135,50 +135,49 @@ async function llenarDatosFactura(page, context) {
   await page.click('#form\\:continuar');
   await page.waitForTimeout(2000);
 
-  // Cerrar chatbot GINA si apareció (bloquea visualmente pero no el DOM)
-  await page.evaluate(() => {
-    const closeBtns = document.querySelectorAll(
-      '[class*="close"][class*="chat"], [aria-label*="close"], [title*="Cerrar"], button[class*="minimiz"]'
-    );
-    closeBtns.forEach(b => b.click());
-  }).catch(() => {});
+  // Seleccionar País (México) — esto dispara el AJAX que habilita RFC y demás campos
+  // El portal usa cascading form: País → habilita RFC → blur RFC → habilita RegFis/CFDI
+  const paisLabel = await page.$('#form\\:selectOneMenuPais_label').catch(() => null);
+  if (paisLabel) {
+    await page.click('#form\\:selectOneMenuPais_label');
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const items = document.querySelectorAll('#form\\:selectOneMenuPais_panel li.ui-selectonemenu-item');
+      for (const item of items) {
+        if (item.textContent.trim().toUpperCase().includes('MEXICO') ||
+            item.textContent.trim().toUpperCase().includes('MÉXICO')) {
+          item.click(); return;
+        }
+      }
+      // Si no hay panel abierto, disparar change en el input oculto
+      const focus = document.querySelector('#form\\:selectOneMenuPais_focus');
+      if (focus) focus.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForTimeout(1500);
+  }
 
-  // Loguear todos los inputs visibles para diagnóstico
-  const inputIds = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('input')).map(el => ({
-      id: el.id, name: el.name, disabled: el.disabled, type: el.type
-    }))
-  ).catch(() => []);
-  console.log('[OXXO][DEBUG] inputs en página tras Continuar:', JSON.stringify(inputIds.slice(0, 20)));
-
-  // RFC — polling flexible con múltiples selectores (el id real puede variar)
+  // RFC — polling hasta que se habilite (el AJAX del País lo activa)
   let rfcSel = null;
   for (let i = 0; i < 40; i++) {
     rfcSel = await page.evaluate(() => {
       window.scrollBy(0, 1); window.scrollBy(0, -1);
-      const sels = ['#form\\:rfc', 'input[id$="rfc"]', 'input[id*=":rfc"]',
-                    'input[placeholder*="RFC"]', 'input[maxlength="13"]',
-                    'input[name*="rfc"]'];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el && !el.disabled) return { sel: s, id: el.id };
-      }
+      const el = document.querySelector('#form\\:rfc');
+      if (el && !el.disabled) return '#form\\:rfc';
       return null;
     });
     if (rfcSel) break;
     await page.waitForTimeout(300);
   }
-  if (!rfcSel) throw new Error('Campo RFC no encontrado ni habilitado tras Continuar');
-  console.log('[OXXO][DEBUG] RFC selector encontrado:', JSON.stringify(rfcSel));
+  if (!rfcSel) throw new Error('Campo RFC no se habilitó tras seleccionar País');
 
-  await page.click(rfcSel.sel, { clickCount: 3 });
+  await page.click(rfcSel, { clickCount: 3 });
   await page.keyboard.type(rfc, { delay: 100 });
   await page.evaluate((sel) => {
     const el = document.querySelector(sel);
     if (!el) return;
     el.dispatchEvent(new Event('change', { bubbles: true }));
     el.dispatchEvent(new Event('blur',   { bubbles: true }));
-  }, rfcSel.sel);
+  }, rfcSel);
   await page.waitForTimeout(2000);
 
   // Razón Social — polling hasta que se habilite
