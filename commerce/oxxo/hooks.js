@@ -131,12 +131,9 @@ async function llenarDatosFactura(page, context) {
           codigoPostal, regimenFiscal, usoCfdi, config } = context;
   const estadoVal = estado || config.defaults?.estado || 'SONORA';
 
-  // Click Continuar — puede ser submit completo o AJAX, esperar ambos casos
-  await Promise.all([
-    page.waitForNavigation({ waitUntil: 'load', timeout: 20000 }).catch(() => {}),
-    page.click('#form\\:continuar'),
-  ]);
-  await page.waitForTimeout(1500);
+  // Continuar usa AJAX parcial PrimeFaces — no hay navegación completa
+  await page.click('#form\\:continuar');
+  await page.waitForTimeout(1000);
 
   // RFC + blur para disparar carga de Régimen y Razón Social
   await page.waitForFunction(
