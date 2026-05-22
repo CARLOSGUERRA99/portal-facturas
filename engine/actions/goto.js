@@ -15,16 +15,19 @@ async function goto(page, params) {
   const { url } = params;
   if (!url) throw new Error('[goto] url requerida');
 
+  // Chrome HTTPS-First mode bloquea http:// con ERR_BLOCKED_BY_CLIENT
+  const safeUrl = url.replace(/^http:\/\//, 'https://');
+
   try {
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    await page.goto(safeUrl, { waitUntil: 'networkidle2' });
     return;
   } catch (firstErr) {
     if (!firstErr.message.includes('ERR_NAME_NOT_RESOLVED')) throw firstErr;
-    console.log(`[goto] DNS falló en Browserless (${url}) — intentando fallback via IP...`);
+    console.log(`[goto] DNS falló en Browserless (${safeUrl}) — intentando fallback via IP...`);
   }
 
   // Fallback: resolver IP desde Node.js y navegar directo al IP
-  const { hostname } = new URL(url);
+  const { hostname } = new URL(safeUrl);
   let ip;
   try {
     const res = await lookup(hostname);
@@ -55,7 +58,7 @@ async function goto(page, params) {
     }
   });
 
-  const ipUrl = new URL(url);
+  const ipUrl = new URL(safeUrl);
   ipUrl.hostname = ip;
   await page.goto(ipUrl.toString(), { waitUntil: 'networkidle2' });
 }
