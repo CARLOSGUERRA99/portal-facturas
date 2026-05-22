@@ -130,7 +130,8 @@ function renderParams(params, context) {
 // ─────────────────────────────────────────────
 async function run({ datos, config, selectors, flow, hooksPath, telemetry }) {
   const context = buildContext(datos, config, selectors);
-  const log = makeLog(config.id || context.portal, context.ticketId);
+  const portalId = config.id || context.portal; // usa config.id (ej. 'ramsa') no datos.portal ('gasmaz')
+  const log = makeLog(portalId, context.ticketId);
 
   const hooks = hooksPath
     ? (() => { try { return require(hooksPath); } catch(e) { log.error('No se pudo cargar hooks.js', e); return {}; } })()
@@ -269,7 +270,7 @@ async function run({ datos, config, selectors, flow, hooksPath, telemetry }) {
         try {
           const buf = await page.screenshot({ fullPage: false });
           const { subirArchivoR2 } = require('../storage/r2');
-          const key = `debug/${context.portal}_${context.ticketId}_ERROR_step${i}_${action}_${Date.now()}.png`;
+          const key = `debug/${portalId}_${context.ticketId}_ERROR_step${i}_${action}_${Date.now()}.png`;
           const url = await subirArchivoR2(buf, key, 'image/png');
           log.error(`Action "${action}" falló en step ${i} — screenshot: ${url}`, actionErr);
         } catch {
@@ -299,7 +300,7 @@ async function run({ datos, config, selectors, flow, hooksPath, telemetry }) {
     try {
       const buf = await page.screenshot({ fullPage: false });
       const { subirArchivoR2 } = require('../storage/r2');
-      const key = `debug/${context.portal}_${context.ticketId}_crash_${Date.now()}.png`;
+      const key = `debug/${portalId}_${context.ticketId}_crash_${Date.now()}.png`;
       await subirArchivoR2(buf, key, 'image/png');
       log.info(`Screenshot de crash subido: ${key}`);
     } catch {}
