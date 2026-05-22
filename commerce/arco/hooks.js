@@ -176,10 +176,11 @@ async function generarFactura(page) {
 
 // ── Descargar XML + PDF via interceptación de nueva pestaña ──────────────────
 async function descargarArchivos(page, context) {
+  // El click en btnCorreo puede causar navegación — ignorar si el contexto fue destruido
   await page.evaluate(() => {
     document.querySelectorAll('input[type="submit"], a, button')
       .forEach(b => { if (b.removeAttribute) b.removeAttribute('disabled'); });
-  });
+  }).catch(() => {});
 
   const browser = page.browser();
 
