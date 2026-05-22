@@ -1,3 +1,5 @@
+const { subirArchivoR2 } = require('../../storage/r2');
+
 // ── Cerrar popup inicial si aparece ─────────────────────────────────────────
 async function cerrarPopup(page) {
   try {
@@ -251,28 +253,44 @@ async function llenarDatosFactura(page, context) {
 }
 
 // ── Generar Factura, enviar por correo → procesandoCorreo ────────────────────
-async function generarYEnviar(page) {
-  await page.click('#form\\:generarFactura');
+async function generarYEnviar(page, context) {
+  const ticketId = context?.ticketId || 'unknown';
+  const snap = async (label) => {
+    try {
+      const buf = await page.screenshot({ fullPage: false });
+      const url = await subirArchivoR2(buf, `debug/oxxo_${ticketId}_${label}_${Date.now()}.png`, 'image/png');
+      console.log(`[OXXO] Screenshot ${label}:`, url);
+    } catch {}
+  };
+
+  // Click via evaluate — ignora overlay GINA
+  await page.evaluate(() => {
+    const btn = document.querySelector('#form\\:generarFactura');
+    if (btn) btn.click();
+  });
   await page.waitForTimeout(5000);
 
+  // Esperar diálogo con opciones (email / PDF / XML)
   await page.waitForFunction(() => {
     const body = document.body.innerText;
     return body.includes('Descargar PDF') || body.includes('Descargar XML') ||
-           body.includes('Enviar correo')  || body.includes('Envía o descarga');
-  }, { timeout: 20000 });
+           body.includes('Enviar correo')  || body.includes('Envía o descarga') ||
+           body.includes('correo electrónico') || body.includes('enviar');
+  }, { timeout: 25000 });
 
-  await page.waitForTimeout(2000);
+  await page.waitForTimeout(1500);
+  await snap('generacion_dialogo');
 
-  // Enviar por correo IMAP como respaldo principal
+  // Llenar email y enviar
   const emailInput = await page.$(
-    'input[type="email"], input[placeholder*="correo"], input[placeholder*="CORREO"]'
+    'input[type="email"], input[placeholder*="orreo"], input[placeholder*="ORREO"], input[id*="mail"]'
   );
   if (emailInput) {
     await emailInput.click({ clickCount: 3 });
     await emailInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
     await page.waitForTimeout(500);
     await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('a, button, input[type="submit"]'));
+      const btns = Array.from(document.querySelectorAll('a, button, input[type="submit"], span'));
       const btn = btns.find(b =>
         b.textContent?.toLowerCase().includes('enviar') ||
         b.value?.toLowerCase().includes('enviar')
@@ -280,6 +298,35 @@ async function generarYEnviar(page) {
       if (btn) btn.click();
     });
     await page.waitForTimeout(3000);
+    await snap('generacion_postenvio');
+  } else {
+    await snap('generacion_sin_emailinput');
+  }
+
+  // Intentar también descargar PDF y XML si están en el mismo diálogo
+  // (pueden abrirse en nueva pestaña; si fallan, IMAP cubre el correo)
+  const browser = page.browser();
+  const newTabPromise = new Promise(resolve => {
+    browser.once('targetcreated', async t => {
+      try {
+        const p = await t.page();
+        await p.waitForTimeout(2000);
+        const xmlBuf = await p.evaluate(() => document.body.innerText).catch(() => null);
+        resolve({ page: p, text: xmlBuf });
+      } catch { resolve(null); }
+    });
+    setTimeout(() => resolve(null), 8000);
+  });
+
+  await page.evaluate(() => {
+    const links = Array.from(document.querySelectorAll('a, button'));
+    const xml = links.find(l => l.textContent?.includes('XML') || l.href?.includes('.xml'));
+    if (xml) xml.click();
+  });
+
+  const newTab = await newTabPromise;
+  if (newTab?.page) {
+    try { await newTab.page.close(); } catch {}
   }
 
   return { ok: true, procesandoCorreo: true };
