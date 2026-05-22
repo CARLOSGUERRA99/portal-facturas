@@ -24,6 +24,9 @@ async function detectarYFacturar(datos, db = null) {
   if (portal === 'arco' || portalUrl.includes('buzonfacturas.com')) {
     enginePortal = 'arco';
   }
+  if (portal === 'oxxo' || texto.includes('oxxo') || comercio.includes('oxxo')) {
+    enginePortal = 'oxxo';
+  }
 
   // Fallback automático al bot legacy en caso de cualquier excepción.
   // En esta fase de validación: OK→retorna engine, error→retorna engine, excepción→legacy.

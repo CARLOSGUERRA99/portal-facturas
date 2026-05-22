@@ -1,0 +1,23 @@
+{
+  "fechaInput":    "#form\\:fecha_input",
+  "folio":         "#form\\:folio",
+  "venta":         "#form\\:venta",
+  "total":         "#form\\:total",
+  "continuar":     "#form\\:continuar",
+  "rfc":           "#form\\:rfc",
+  "razon":         "#form\\:razon",
+  "calle":         "#form\\:calle",
+  "ext":           "#form\\:ext",
+  "int":           "#form\\:int",
+  "colonia":       "#form\\:colonia",
+  "dele":          "#form\\:dele",
+  "codigo":        "#form\\:codigo",
+  "estadoLabel":   "#form\\:estado_label",
+  "estadoPanel":   "#form\\:estado_panel li.ui-selectonemenu-item",
+  "regimenLabel":  "#form\\:selectOneMenuRegFis_label",
+  "regimenPanel":  "#form\\:selectOneMenuRegFis_panel li.ui-selectonemenu-item",
+  "cfdiLabel":     "#form\\:selectOneMenuCFDI_label",
+  "cfdiPanel":     "#form\\:selectOneMenuCFDI_panel li.ui-selectonemenu-item",
+  "generarBtn":    "#form\\:generarFactura",
+  "popupClose":    ".ui-dialog-titlebar-close"
+}

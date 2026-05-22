@@ -59,6 +59,13 @@ function buildContext(datos, config, selectors) {
     folio:         String(datos.folio || ''),
     referencia:    String(datos.referencia || datos.folio || ''), // Gasmaz: referencia = folio
     codigoTicket:  String(datos.codigoTicket || ''), // ARCO/BuzonFacturas
+    idVenta:       String(datos.idVenta || ''),      // OXXO
+    calle:         String(datos.calle     || ''),
+    ext:           String(datos.ext       || 'S/N'),
+    int:           String(datos.int       || ''),
+    colonia:       String(datos.colonia   || ''),
+    municipio:     String(datos.municipio || ''),
+    estado:        String(datos.estado    || config.defaults?.estado || ''),
     total:        String(datos.total || ''),
     totalDecimal: totalRaw.toFixed(2),
     fecha:        fechaISO,
