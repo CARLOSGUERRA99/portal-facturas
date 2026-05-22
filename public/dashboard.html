@@ -643,9 +643,17 @@
           limpiarUpload();
           abrirModalPortalNuevo(data.ticketId, data.comercio, data.urlQR);
           cargarDatos();
-        } else if (data.ok) {
+        } else if (data.ok && data.autoFacturando) {
           limpiarUpload();
-          abrirModalConfirmacion(data.ticketId, data.datos, data.campos);
+          btn.disabled = false;
+          btn.textContent = 'Analizar con IA';
+          alert.className = 'alert alert-success';
+          alert.textContent = '✅ Imagen clara — facturando automáticamente. Revisa "Mis Tickets" en un momento.';
+          alert.style.display = 'block';
+          cargarDatos();
+        } else if (data.ok && data.necesitaConfirmacion) {
+          limpiarUpload();
+          abrirModalConfirmacion(data.ticketId, data.datos, data.campos, data.campos_dudosos);
           cargarDatos();
         } else {
           alert.className = 'alert alert-error';
@@ -732,23 +740,32 @@
     let modalTicketId = null;
     let modalCampos = [];
 
-    function abrirModalConfirmacion(ticketId, datos, campos) {
+    function abrirModalConfirmacion(ticketId, datos, campos, camposDudosos) {
       modalTicketId = ticketId;
       modalCampos = campos || CAMPOS_POR_PORTAL[datos.portal] || CAMPOS_POR_PORTAL.desconocido;
+      const dudosos = Array.isArray(camposDudosos) ? camposDudosos : [];
 
       const container = document.getElementById('modal-campos-container');
-      container.innerHTML = modalCampos.map(campo => `
+      container.innerHTML = modalCampos.map(campo => {
+        const esDudoso = dudosos.includes(campo);
+        const borderColor = esDudoso ? '#F97316' : '#e0e7d9';
+        const hint = esDudoso ? `<span style="font-size:0.72rem;color:#c2410c;margin-left:6px;">⚠️ incierto</span>` : '';
+        return `
         <div>
-          <label style="font-size:0.78rem;font-weight:600;color:#555;display:block;margin-bottom:4px;">${LABELES[campo] || campo}</label>
+          <label style="font-size:0.78rem;font-weight:600;color:${esDudoso ? '#c2410c' : '#555'};display:block;margin-bottom:4px;">${LABELES[campo] || campo}${hint}</label>
           <input id="modal-campo-${campo}" type="text"
                  placeholder="${LABELES[campo] || campo}"
                  value="${(datos[campo] != null ? datos[campo] : '') + ''}"
-                 style="width:100%;border:1.5px solid #e0e7d9;border-radius:10px;padding:9px 12px;font-size:0.88rem;box-sizing:border-box;outline:none;${INPUT_EXTRA[campo] || ''}">
-        </div>`).join('');
+                 style="width:100%;border:1.5px solid ${borderColor};border-radius:10px;padding:9px 12px;font-size:0.88rem;box-sizing:border-box;outline:none;${esDudoso ? 'background:#FFF7ED;' : ''}${INPUT_EXTRA[campo] || ''}">
+        </div>`;
+      }).join('');
 
-      const faltantes = modalCampos.filter(c => !datos[c]);
       const warn = document.getElementById('modal-ocr-warning');
-      if (faltantes.length > 0) {
+      const faltantes = modalCampos.filter(c => !datos[c]);
+      if (dudosos.length > 0) {
+        warn.textContent = `⚠️ Revisa los campos marcados en naranja — la IA no está segura de su valor.`;
+        warn.style.display = 'block';
+      } else if (faltantes.length > 0) {
         warn.textContent = `⚠️ No se detectaron: ${faltantes.map(c => LABELES[c] || c).join(', ')}. Por favor complétalos.`;
         warn.style.display = 'block';
       } else {
@@ -823,7 +840,7 @@
           msgEl.style.background = '#f0faf0';
           msgEl.style.color = '#3B6D11';
           msgEl.style.border = '1px solid #c3e6c3';
-          msgEl.textContent = '✅ Datos confirmados. El ticket está listo para facturar en "Mis Tickets".';
+          msgEl.textContent = '⏳ Facturando... Revisa el estado en "Mis Tickets" en un momento.';
           msgEl.style.display = 'block';
           btn.textContent = '¡Listo!';
           cargarDatos();
@@ -976,11 +993,12 @@
         fetch(`/api/tickets/${confirmarId}`)
           .then(r => r.json())
           .then(data => {
-            if (data.ok && data.ticket && data.ticket.status === 'pendiente_confirmacion') {
+            if (data.ok && data.ticket && data.ticket.status === 'pendiente_confirmacion' && data.ticket.requiere_confirmacion) {
               let datos = {};
               try { datos = JSON.parse(data.ticket.ocr_json || '{}'); } catch {}
               const campos = CAMPOS_POR_PORTAL[datos.portal] || CAMPOS_POR_PORTAL.desconocido;
-              abrirModalConfirmacion(confirmarId, datos, campos);
+              const camposDudosos = Array.isArray(datos.campos_dudosos) ? datos.campos_dudosos : [];
+              abrirModalConfirmacion(confirmarId, datos, campos, camposDudosos);
             }
           })
           .catch(() => {});

@@ -479,7 +479,8 @@ async function procesarCola() {
     const [enCola] = await db.query(
       `SELECT t.id, t.user_id FROM tickets t
        JOIN users u ON t.user_id = u.id
-       WHERE t.status = 'pendiente_confirmacion' AND u.rfc IS NOT NULL AND u.rfc != ''
+       WHERE t.status = 'pendiente_confirmacion' AND t.requiere_confirmacion = 0
+       AND u.rfc IS NOT NULL AND u.rfc != ''
        AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas')
        ORDER BY t.creado ASC LIMIT ?`,
       [slots]
@@ -587,6 +588,10 @@ async function initDB() {
 
   try {
     await db.query("ALTER TABLE tickets ADD COLUMN error_msg TEXT NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN requiere_confirmacion TINYINT(1) NOT NULL DEFAULT 0");
   } catch(e) { /* columna ya existe */ }
 
   try {
@@ -1011,6 +1016,18 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
     }
 
     // ── PASADA 2: Extracción dirigida (Sonnet) ──
+    // Instrucción de confianza que se agrega al final de cada prompt
+    const INSTRUCCION_CONFIANZA = `
+"confianza": "alta|media|baja",
+"campos_dudosos": [],
+"ok": true
+}
+Reglas de confianza:
+- alta: todos los campos requeridos están claros y legibles sin ambigüedad.
+- media: corregiste caracteres ambiguos (O/0, I/1, S/5) pero estás bastante seguro del resultado.
+- baja: algún campo requerido es ilegible, parcialmente visible o muy incierto.
+campos_dudosos: lista los nombres exactos de los campos con incertidumbre (array vacío si confianza=alta).`;
+
     const promptsPorPortal = {
       oxxo: `Extrae estos datos del ticket OXXO. Responde SOLO JSON sin texto adicional:
 {
@@ -1020,8 +1037,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "idVenta": "código después de ID= — corrige O→0 S→5 I→1 en posiciones 0,1,5,6 — formato 2dig+3let+2dig+alfanum+1dig",
   "total": número sin signos,
   "portal": "oxxo",
-  "ok": true
-}`,
+${INSTRUCCION_CONFIANZA}`,
       arco: `Extrae estos datos del ticket ARCO/BuzonFacturas. Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre exacto de la gasolinera ARCO",
@@ -1029,8 +1045,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "codigoTicket": "número de barcode o código grande impreso para facturación (bajo el código de barras o etiquetado como Código/Folio)",
   "total": número sin signos,
   "portal": "arco",
-  "ok": true
-}`,
+${INSTRUCCION_CONFIANZA}`,
       gasmaz: `Extrae estos datos del ticket GASMAZ/NexusFuel. Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre de la gasolinera",
@@ -1040,8 +1055,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "total": número sin signos,
   "portalUrl": "URL COMPLETA del QR de facturación (debe incluir nexusfuel.mx), o null",
   "portal": "gasmaz",
-  "ok": true
-}`,
+${INSTRUCCION_CONFIANZA}`,
       farmaciaguadalajara: `Extrae estos datos del ticket de Farmacias Guadalajara. Responde SOLO JSON sin texto adicional:
 {
   "comercio": "Farmacias Guadalajara",
@@ -1052,18 +1066,15 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   "noTicket": "número de ticket",
   "total": número sin signos,
   "portal": "farmaciaguadalajara",
-  "ok": true
-}`,
+${INSTRUCCION_CONFIANZA}`,
       homedepot: `Extrae estos datos del ticket de The Home Depot México. Responde SOLO JSON sin texto adicional:
 {
   "comercio": "Home Depot Mexico",
   "fecha": "DD/MM/YYYY",
-  "folio": "EL NÚMERO BAJO EL CÓDIGO DE BARRAS — es el código numérico más largo del ticket, entre 18 y 23 dígitos. Lee cada dígito con cuidado: NO omitas ni agregues dígitos. Si hay ambigüedad entre 0 y O, usa 0.",
+  "folio": "EL NÚMERO BAJO EL CÓDIGO DE BARRAS — es el código numérico más largo del ticket, entre 18 y 23 dígitos. Lee cada dígito con cuidado: NO omitas ni agregues dígitos. Si hay ambigüedad entre 0 y O, usa 0. Si no puedes leerlo con certeza, devuelve null.",
   "total": número sin signos,
   "portal": "homedepot",
-  "ok": true
-}
-IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo debajo del código de barras principal del ticket. Léelo dígito por dígito. Si no puedes leerlo con certeza absoluta, devuelve null en folio.`,
+${INSTRUCCION_CONFIANZA}`,
       rendichicas: `Extrae estos datos del ticket de gasolinera con portal Rendichicas/rendilitros. Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre de la estación (ej. ESTACION PIRU SA DE CV)",
@@ -1072,8 +1083,7 @@ IMPORTANTE: El folio es el dato más crítico. Es el número largo impreso justo
   "total": número sin signos,
   "portalUrl": "URL completa del QR de facturación si aparece (debe incluir rendilitros o rendichicas), o null",
   "portal": "rendichicas",
-  "ok": true
-}`,
+${INSTRUCCION_CONFIANZA}`,
       desconocido: `Extrae los datos que puedas de este ticket. Si reconoces el portal, identifícalo.
 Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara/Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com).
 Responde SOLO JSON sin texto adicional:
@@ -1084,8 +1094,7 @@ Responde SOLO JSON sin texto adicional:
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
   "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|homedepot|rendichicas|desconocido",
-  "ok": true
-}`,
+${INSTRUCCION_CONFIANZA}`,
     };
 
     console.log(`🔍 Pasada 2: extracción Sonnet para portal '${portalDetectado}'...`);
@@ -1093,7 +1102,7 @@ Responde SOLO JSON sin texto adicional:
     try {
       const resp2 = await anthropic.messages.create({
         model: "claude-sonnet-4-6",
-        max_tokens: 500,
+        max_tokens: 600,
         messages: [{
           role: "user",
           content: [
@@ -1148,22 +1157,28 @@ Responde SOLO JSON sin texto adicional:
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
 
-    console.log(`💾 Insertando ticket — portal: ${portalDetectado}, residente_id: ${residente_id}, usuario: ${req.session.userId}`);
+    const confianza = datosOCR.confianza || 'media';
+    const camposDudosos = Array.isArray(datosOCR.campos_dudosos) ? datosOCR.campos_dudosos : [];
+    const requiereConfirmacion = (portalDetectado !== 'desconocido') && (confianza !== 'alta' || camposDudosos.length > 0) ? 1 : 0;
+
+    console.log(`💾 Insertando ticket — portal: ${portalDetectado}, confianza: ${confianza}, requiere_confirmacion: ${requiereConfirmacion}`);
     const [insertResult] = await db.query(
-      "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, datosOCR.portalUrl || portalUrl || null]
+      "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url, requiere_confirmacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, datosOCR.portalUrl || portalUrl || null, requiereConfirmacion]
     );
     const ticketId = insertResult.insertId;
     console.log(`✅ Ticket #${ticketId} insertado — enviando respuesta al cliente`);
 
     if (portalDetectado === 'desconocido') {
-      // Los agentes arrancan DESPUÉS de que el residente llene el cuestionario (tiene el link del portal)
       return res.json({ ok: true, agenteActivado: true, comercio: datosOCR.comercio || 'este comercio', urlQR: datosOCR.portalUrl || null, ticketId });
     }
 
-    // Portal conocido: auto-facturar en background inmediatamente
-    setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
-    res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
+    if (!requiereConfirmacion) {
+      setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
+      return res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
+    }
+
+    res.json({ ok: true, necesitaConfirmacion: true, confianza, campos_dudosos: camposDudosos, ticketId, datos: datosOCR, campos });
   } catch (err) {
     console.error("❌ Error:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
@@ -1183,8 +1198,8 @@ app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
     if (tickets.length === 0) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = tickets[0];
 
-    if (ticket.status !== 'pendiente_confirmacion') {
-      return res.json({ ok: false, msg: "El ticket no está en estado de confirmación" });
+    if (ticket.status !== 'pendiente_confirmacion' || !ticket.requiere_confirmacion) {
+      return res.json({ ok: false, msg: "El ticket no está esperando confirmación" });
     }
 
     if (accion === 'rechazar') {
@@ -1208,11 +1223,12 @@ app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
     console.log(`📋 CONFIRMAR #${ticketId} — datosConfirmados (a guardar):`, JSON.stringify(datosConfirmados));
 
     await db.query(
-      "UPDATE tickets SET ocr_json = ?, status = 'pendiente' WHERE id = ?",
+      "UPDATE tickets SET ocr_json = ?, requiere_confirmacion = 0 WHERE id = ?",
       [JSON.stringify(datosConfirmados), ticketId]
     );
 
-    res.json({ ok: true, msg: "Datos confirmados", ticketId });
+    setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
+    res.json({ ok: true, autoFacturando: true, ticketId });
   } catch (err) {
     console.error("❌ Error confirmar:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
