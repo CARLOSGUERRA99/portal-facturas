@@ -19,7 +19,7 @@ async function goto(page, params) {
   const safeUrl = url.replace(/^http:\/\//, 'https://');
 
   try {
-    await page.goto(safeUrl, { waitUntil: 'networkidle2' });
+    await page.goto(safeUrl, { waitUntil: 'load' });
     return;
   } catch (firstErr) {
     if (!firstErr.message.includes('ERR_NAME_NOT_RESOLVED')) throw firstErr;
@@ -60,7 +60,7 @@ async function goto(page, params) {
 
   const ipUrl = new URL(safeUrl);
   ipUrl.hostname = ip;
-  await page.goto(ipUrl.toString(), { waitUntil: 'networkidle2' });
+  await page.goto(ipUrl.toString(), { waitUntil: 'load' });
 }
 
 module.exports = { goto };
