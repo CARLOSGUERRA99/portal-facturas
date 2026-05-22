@@ -15,28 +15,35 @@ async function detectarYFacturar(datos, db = null) {
   const portal = (datos.portal || '').toLowerCase();
 
   // ── ENGINE EXPERIMENTAL — intenta primero con el portal declarativo ───────
+  // Resolver variante NexusFuel: gasmaz (gasmazfactura) vs ramsa (redmaxfactura).
+  // Mismo mecanismo, diferente url_base en config.json.
+  let enginePortal = portal;
+  if (portal === 'gasmaz' || portalUrl.includes('nexusfuel') || portalUrl.includes('redmaxfactura') || portalUrl.includes('gasmaz')) {
+    enginePortal = portalUrl.includes('redmaxfactura') ? 'ramsa' : 'gasmaz';
+  }
+
   // Fallback automático al bot legacy en caso de cualquier excepción.
   // En esta fase de validación: OK→retorna engine, error→retorna engine, excepción→legacy.
-  if (portal && tieneEngine(portal)) {
-    console.log(`[ENGINE][${portal}] Iniciando engine declarativo...`);
+  if (enginePortal && tieneEngine(enginePortal)) {
+    console.log(`[ENGINE][${enginePortal}] Iniciando engine declarativo...`);
     try {
-      const resultado = await facturarConEngine(portal, datos);
+      const resultado = await facturarConEngine(enginePortal, datos);
       if (resultado === null) {
         // null = engine no tiene flow para este portal (no debería pasar si tieneEngine=true)
-        console.log(`[ENGINE FALLBACK][${portal}] Engine retornó null inesperado — usando bot legacy`);
+        console.log(`[ENGINE FALLBACK][${enginePortal}] Engine retornó null inesperado — usando bot legacy`);
       } else {
         // Resultado controlado (ok:true o ok:false) — lo retornamos directamente.
         // No re-intentar con legacy: si el engine dijo "ya_facturado" o "datos_invalidos",
         // legacy también fallará. Si el engine dijo "ok:true", ya terminamos.
         const estado = resultado.ok ? '✅ OK' : `❌ ${resultado.error_code}`;
-        console.log(`[ENGINE][${portal}] Resultado: ${estado}`);
+        console.log(`[ENGINE][${enginePortal}] Resultado: ${estado}`);
         return resultado;
       }
     } catch (err) {
       // Excepción inesperada en el engine (bug en hooks.js, acción faltante, etc.)
       // Caemos al bot legacy para proteger producción.
-      console.error(`[ENGINE FALLBACK][${portal}] Excepción no controlada: ${err.message}`);
-      console.error(`[ENGINE FALLBACK][${portal}] Stack: ${err.stack}`);
+      console.error(`[ENGINE FALLBACK][${enginePortal}] Excepción no controlada: ${err.message}`);
+      console.error(`[ENGINE FALLBACK][${enginePortal}] Stack: ${err.stack}`);
       // Continúa al fallback legacy abajo
     }
   }

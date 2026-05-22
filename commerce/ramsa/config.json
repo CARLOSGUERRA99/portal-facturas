@@ -1,0 +1,23 @@
+{
+  "id": "ramsa",
+  "nombre": "RAMSA / RedMax / NexusFuel",
+  "url_base": "https://redmaxfactura.nexusfuel.mx/",
+  "dominio": "nexusfuel.mx",
+  "stealth": true,
+  "timeout": 30000,
+  "datos_fijos": {
+    "email": "buzonfacturas@serviciosga.site"
+  },
+  "defaults": {
+    "regimenFiscal": "601",
+    "usoCfdi": "G03",
+    "formaPago": "debito"
+  },
+  "cfdi_keywords": {
+    "G01": ["Adquisición de mercancias", "Adquisicion de mercancias"],
+    "G02": ["Devoluciones, descuentos"],
+    "G03": ["Gastos en general"],
+    "S01": ["Sin efectos fiscales"],
+    "CP01": ["Pagos"]
+  }
+}

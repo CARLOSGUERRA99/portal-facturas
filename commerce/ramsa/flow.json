@@ -1,0 +1,68 @@
+[
+  { "action": "goto",       "url": "{{url}}" },
+  { "action": "waitFor",    "selector": "{{selectors.referencia}}" },
+  { "action": "screenshot", "name": "p1_carga" },
+
+  { "action": "fill", "selector": "{{selectors.referencia}}", "value": "{{referencia}}" },
+  { "action": "fill", "selector": "{{selectors.folio}}",      "value": "{{folio}}" },
+  { "action": "fill", "selector": "{{selectors.total}}",      "value": "{{totalDecimal}}" },
+  { "action": "fill", "selector": "{{selectors.rfc}}",        "value": "{{rfc}}" },
+  { "action": "screenshot", "name": "p2_campos" },
+
+  { "action": "click",      "selector": "{{selectors.btnBuscar}}" },
+
+  {
+    "action": "waitForAny",
+    "saveAs": "resultadoBuscar",
+    "selectors": {
+      "paso2":        "{{selectors.razonSocial}}",
+      "ya_facturado": "{{selectors.divDocumentos}}"
+    },
+    "timeout": 15000
+  },
+  { "action": "screenshot", "name": "p3_post_buscar" },
+
+  {
+    "action": "on",
+    "value": "resultadoBuscar",
+    "equals": "ya_facturado",
+    "steps": [
+      { "action": "hook", "name": "descargarExistente" }
+    ]
+  },
+
+  { "action": "fill", "selector": "{{selectors.razonSocial}}", "value": "{{razonSocial}}" },
+  { "action": "fill", "selector": "{{selectors.email}}",       "value": "{{email}}" },
+
+  { "action": "hook", "name": "seleccionarRegimen" },
+  { "action": "hook", "name": "seleccionarCfdi" },
+  { "action": "hook", "name": "seleccionarFormaPago" },
+  { "action": "screenshot", "name": "p4_datos_fiscales" },
+
+  { "action": "hook", "name": "clickFacturar" },
+
+  {
+    "action": "waitForAny",
+    "saveAs": "resultadoFacturar",
+    "selectors": {
+      "descarga": "{{selectors.divDescarga}}",
+      "error":    ".alert-danger, .alert-error"
+    },
+    "timeout": 25000,
+    "retries": 1
+  },
+  { "action": "screenshot", "name": "p5_post_facturar" },
+
+  {
+    "action": "on",
+    "value": "resultadoFacturar",
+    "equals": "error",
+    "steps": [
+      { "action": "exit", "result": { "ok": false, "error_code": "datos_invalidos", "msg": "El portal rechazó los datos ingresados" }}
+    ]
+  },
+
+  { "action": "waitFor", "selector": "{{selectors.divDescarga}}", "timeout": 20000 },
+  { "action": "screenshot", "name": "p6_descarga" },
+  { "action": "hook", "name": "descargarArchivos" }
+]
