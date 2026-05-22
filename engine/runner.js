@@ -130,7 +130,7 @@ function renderParams(params, context) {
 // ─────────────────────────────────────────────
 async function run({ datos, config, selectors, flow, hooksPath, telemetry }) {
   const context = buildContext(datos, config, selectors);
-  const log = makeLog(context.portal, context.ticketId);
+  const log = makeLog(config.id || context.portal, context.ticketId);
 
   const hooks = hooksPath
     ? (() => { try { return require(hooksPath); } catch(e) { log.error('No se pudo cargar hooks.js', e); return {}; } })()
