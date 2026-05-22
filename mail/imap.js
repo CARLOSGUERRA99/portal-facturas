@@ -105,7 +105,7 @@ async function procesarCorreos(imap, seqnos, ticketCode, timer, resolve, reject)
 
   // Recolectar todos los mensajes antes de procesar para poder hacer addFlags
   // y esperar confirmación antes de cerrar la conexión (evita condición de carrera)
-  const fetch = imap.fetch(seqnos, { bodies: '' });
+  const fetch = imap.seq.fetch(seqnos, { bodies: '' });
   const mensajes = [];
   let pendientes = seqnos.length;
 
@@ -149,7 +149,7 @@ async function procesarCorreos(imap, seqnos, ticketCode, timer, resolve, reject)
 
         // Marcar como leído y ESPERAR confirmación antes de cerrar la conexión
         await new Promise((res) => {
-          imap.addFlags(encontrado.seqno, ['\\Seen'], (flagErr) => {
+          imap.seq.addFlags(encontrado.seqno, ['\\Seen'], (flagErr) => {
             if (flagErr) console.log(`⚠️ No se pudo marcar como leído (seqno ${encontrado.seqno}):`, flagErr.message);
             else console.log(`📭 Correo marcado como leído (seqno: ${encontrado.seqno})`);
             res();
