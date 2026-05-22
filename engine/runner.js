@@ -1,4 +1,7 @@
 const Mustache = require('mustache');
+// Engine templates (flow.json) NO son HTML — deshabilitar escaping de entidades.
+// Sin esto, {{url}} convierte https://foo.com/ en https:&#x2F;&#x2F;foo.com&#x2F;
+Mustache.escape = String;
 const { abrirBrowser } = require('./browser');
 const { goto }       = require('./actions/goto');
 const { fill }       = require('./actions/fill');

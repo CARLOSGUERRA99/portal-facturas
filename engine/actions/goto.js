@@ -1,9 +1,11 @@
 /**
  * action: goto
  * Navega a una URL y espera a que la red esté idle.
+ *
  * Si Browserless no puede resolver el DNS, cae a un fallback via IP:
- * resuelve el hostname desde Node.js y navega directo a la IP con
- * CDP Security.setIgnoreCertificateErrors + request interception.
+ * resuelve el hostname desde Node.js (Railway sí puede), luego navega
+ * directo a la IP con CDP Security.setIgnoreCertificateErrors +
+ * request interception para preservar el Host header (requerido por Cloudflare).
  *
  * Params: { url }
  */
@@ -18,27 +20,26 @@ async function goto(page, params) {
     return;
   } catch (firstErr) {
     if (!firstErr.message.includes('ERR_NAME_NOT_RESOLVED')) throw firstErr;
-    console.log('[goto] DNS falló en Browserless — intentando fallback via IP...');
+    console.log(`[goto] DNS falló en Browserless (${url}) — intentando fallback via IP...`);
   }
 
-  // Fallback: resolver IP desde Node (Railway sí puede) y navegar directo
-  const parsed = new URL(url);
-  const hostname = parsed.hostname;
+  // Fallback: resolver IP desde Node.js y navegar directo al IP
+  const { hostname } = new URL(url);
   let ip;
   try {
     const res = await lookup(hostname);
     ip = res.address;
     console.log(`[goto] ${hostname} → ${ip} (Node DNS)`);
   } catch (dnsErr) {
-    throw new Error(`[goto] ERR_NAME_NOT_RESOLVED — también falló desde Node: ${dnsErr.message}`);
+    throw new Error(`[goto] ERR_NAME_NOT_RESOLVED — Node tampoco resolvió "${hostname}": ${dnsErr.message}`);
   }
 
   // Deshabilitar validación SSL via CDP (funciona en runtime, sin flags de Chrome)
   const cdp = await page.createCDPSession();
   await cdp.send('Security.setIgnoreCertificateErrors', { ignore: true });
 
-  // Interceptar TODAS las requests: reescribir hostname → IP, preservar Host header
-  // para que el servidor (Cloudflare) entienda qué vhost servir
+  // Interceptar todas las requests: reescribir hostname → IP, preservar Host header
+  // para que Cloudflare enrute al vhost correcto
   await page.setRequestInterception(true);
   page.on('request', (req) => {
     try {
@@ -54,8 +55,9 @@ async function goto(page, params) {
     }
   });
 
-  parsed.hostname = ip;
-  await page.goto(parsed.toString(), { waitUntil: 'networkidle2' });
+  const ipUrl = new URL(url);
+  ipUrl.hostname = ip;
+  await page.goto(ipUrl.toString(), { waitUntil: 'networkidle2' });
 }
 
 module.exports = { goto };
