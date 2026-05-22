@@ -1,0 +1,15 @@
+{
+  "id": "arco",
+  "nombre": "BuzonFacturas / ARCO",
+  "url_base": "https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0",
+  "dominio": "buzonfacturas.com",
+  "stealth": false,
+  "timeout": 30000,
+  "defaults": {
+    "formaPago": "28",
+    "usoCfdi": "G03"
+  },
+  "datos_fijos": {
+    "email": "buzonfacturas@serviciosga.site"
+  }
+}

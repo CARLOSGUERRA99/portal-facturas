@@ -1,0 +1,11 @@
+{
+  "rfc":               "input#RFC",
+  "btnRfc":            "button[type='submit'].btn-info",
+  "btnGuardar":        "button[name='btn'][value='GenerarFactura']",
+  "codigoFacturacion": "input#CodigoFacturacion",
+  "btnVerificar":      "button#btnVerificar",
+  "formaPago":         "select#FormaDePago",
+  "usoCfdi":           "select#UsoCFDI",
+  "correo":            "input#correo",
+  "btnCorreo":         "button[name='btn'][value='btnCorreo']"
+}

@@ -21,6 +21,9 @@ async function detectarYFacturar(datos, db = null) {
   if (portal === 'gasmaz' || portalUrl.includes('nexusfuel') || portalUrl.includes('redmaxfactura') || portalUrl.includes('gasmaz')) {
     enginePortal = portalUrl.includes('redmaxfactura') ? 'ramsa' : 'gasmaz';
   }
+  if (portal === 'arco' || portalUrl.includes('buzonfacturas.com')) {
+    enginePortal = 'arco';
+  }
 
   // Fallback automático al bot legacy en caso de cualquier excepción.
   // En esta fase de validación: OK→retorna engine, error→retorna engine, excepción→legacy.

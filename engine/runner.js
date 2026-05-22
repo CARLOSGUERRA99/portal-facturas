@@ -56,8 +56,9 @@ function buildContext(datos, config, selectors) {
     usoCfdi:       String(datos.usoCfdi       || config.defaults?.usoCfdi       || 'G03'),
     codigoPostal:  String(datos.codigoPostal  || config.defaults?.codigoPostal  || ''),
     email:         String(datos.email         || config.datos_fijos?.email      || ''),
-    folio:        String(datos.folio || ''),
-    referencia:   String(datos.referencia || datos.folio || ''), // Gasmaz: referencia = folio
+    folio:         String(datos.folio || ''),
+    referencia:    String(datos.referencia || datos.folio || ''), // Gasmaz: referencia = folio
+    codigoTicket:  String(datos.codigoTicket || ''), // ARCO/BuzonFacturas
     total:        String(datos.total || ''),
     totalDecimal: totalRaw.toFixed(2),
     fecha:        fechaISO,

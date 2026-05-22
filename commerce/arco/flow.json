@@ -1,0 +1,25 @@
+[
+  { "action": "goto",       "url": "{{url}}" },
+  { "action": "waitFor",    "selector": "{{selectors.rfc}}", "timeout": 15000 },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p1_carga" },
+  { "action": "fill",       "selector": "{{selectors.rfc}}", "value": "{{rfc}}" },
+  { "action": "hook",       "name": "clickRfcYContinuar" },
+  { "action": "hook",       "name": "clickGuardarYContinuar" },
+  { "action": "waitFor",    "selector": "{{selectors.codigoFacturacion}}", "timeout": 15000 },
+  { "action": "fill",       "selector": "{{selectors.codigoFacturacion}}", "value": "{{codigoTicket}}" },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p2_codigo" },
+  { "action": "hook",       "name": "verificarCodigo" },
+  {
+    "action": "on",
+    "value": "resultadoVerificar",
+    "equals": "ya_facturado",
+    "steps": [
+      { "action": "hook", "name": "recuperarExistente" }
+    ]
+  },
+  { "action": "hook",       "name": "configurarFormaPago" },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p3_datos_fiscales" },
+  { "action": "hook",       "name": "generarFactura" },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p4_post_generar" },
+  { "action": "hook",       "name": "descargarArchivos" }
+]
