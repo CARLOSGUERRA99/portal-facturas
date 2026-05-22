@@ -1,24 +1,67 @@
-Diagnostica por qué falló este bot de facturación y dame el fix exacto.
+Diagnostica por qué falló este ticket de facturación y dame el fix exacto.
 
-Antes de analizar, lee el archivo del bot correspondiente en `bots/` para tener el código completo en contexto.
+Antes de analizar, determina si falló el ENGINE o el bot LEGACY:
+- Si los logs de Railway muestran `[ENGINE][portal]` → es fallo del engine
+- Si muestran `[LEGACY][portal]` o no tienen prefijo `[ENGINE]` → es fallo del bot legacy
+- Si muestran `[ENGINE FALLBACK][portal]` → el engine crasheó con excepción y cayó a legacy
 
-Con los screenshots de R2 y/o los logs de Railway que te estoy pasando, responde:
+Lee el código correspondiente:
+- Engine: `engine/runner.js`, `commerce/{portal}/flow.json`, `commerce/{portal}/hooks.js`
+- Legacy: `bots/{portal}.js`
 
-## 1. Paso donde falló
-Indica exactamente en qué paso del flujo se detuvo (ej: "Paso 4 — esperando #selVoucherUse").
+---
+
+## 1. Diagnóstico inicial
+
+Con los logs de Railway y/o screenshots de R2 que te paso, identifica:
+
+**Si es ENGINE:**
+- ¿Qué step del flow.json falló? (número de step + action)
+- ¿Qué error_code retornó? (`timeout | ya_facturado | datos_invalidos | captcha | portal_caido | descarga_fallida | hook_error | desconocido`)
+- URL del screenshot de debug: `debug/{portal}_{ticketId}_ERROR_step{N}_{action}_{ts}.png`
+
+**Si es LEGACY:**
+- ¿En qué línea aproximada falló? (buscar en el stack trace o screenshot)
+- ¿Qué selector dejó de funcionar o qué timeout expiró?
+
+---
 
 ## 2. Causa probable
+
 Categoriza el error:
-- **Selector inválido** — el portal cambió el ID/clase del elemento
-- **Timeout** — el elemento no apareció en el tiempo esperado
-- **Modal inesperado** — apareció un popup no manejado
-- **AJAX no esperado** — opciones que cargan dinámicamente sin espera
-- **Navegación inesperada** — el portal redirigió a una URL no contemplada
-- **Portal caído** — el sitio no responde
-- **Datos incorrectos** — el portal rechazó RFC, folio u otro campo
+
+| Categoría | Señales |
+|---|---|
+| **Selector inválido** | `waitFor timeout` en un selector que antes funcionaba |
+| **AJAX no esperado** | Select con opciones vacías, `options.length === 1` |
+| **Modal/popup inesperado** | Screenshot muestra overlay antes del formulario |
+| **Portal caído** | `ERR_NAME_NOT_RESOLVED` o `net::ERR_CONNECTION` |
+| **Datos incorrectos** | Portal muestra mensaje de error tras buscar folio |
+| **Ya facturado** | Portal muestra sección de descarga antes del formulario paso 2 |
+| **Bug en hook** | `[ENGINE FALLBACK]` con stack trace de `hooks.js` |
+| **Timeout de descarga** | `hook_error` o `descarga_fallida` después de generar la factura |
+
+---
 
 ## 3. Fix concreto
-Dame el código exacto a cambiar: archivo, número de línea aproximado, código anterior vs código nuevo. Si el selector cambió, dame el nuevo selector CSS correcto.
 
-## 4. ¿Requiere intervención manual?
-Indica si este ticket específico se puede reprocesar automáticamente con el fix, o si necesita que el admin lo facture a mano esta vez.
+**Para ENGINE:** indica el archivo y cambio exacto:
+- `commerce/{portal}/selectors.json` — selector anterior vs nuevo
+- `commerce/{portal}/flow.json` — step a modificar (número + action completa)
+- `commerce/{portal}/hooks.js` — función a corregir con código antes/después
+
+**Para LEGACY:** indica archivo, número de línea aproximado, código anterior vs nuevo.
+
+Si el fix es en `hooks.js` o `flow.json`, el cambio se despliega automáticamente al hacer push.
+Si el fix es en `selectors.json`, verifica primero con `scripts/validate-selectors-{portal}.js`.
+
+---
+
+## 4. ¿El ticket se puede reprocesar?
+
+- Si el error fue `portal_caido` o `timeout` → sí, reprocesar cuando el portal esté estable
+- Si fue `ya_facturado` → buscar los archivos en R2 (`facturas/{portal}_{ticketId}.*`)
+- Si fue `datos_invalidos` → necesita corrección manual del folio/total antes de reprocesar
+- Si fue `descarga_fallida` → la factura SÍ se generó, buscarla en el correo IMAP o pedir al portal
+
+Para reprocesar: llamar `POST /api/tickets/{id}/facturar` o usar el MCP tool `reprocesar_ticket`.

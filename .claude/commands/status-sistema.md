@@ -1,21 +1,47 @@
-Revisa el estado actual del sistema de facturación consultando la base de datos y los archivos del proyecto.
+Revisa el estado completo del sistema de facturación y presenta un resumen ejecutivo.
 
-Ejecuta estas consultas y acciones en orden:
+Usa los MCP tools disponibles en este orden:
 
-1. **Tickets por status** — cuenta cuántos hay en cada estado (pendiente_confirmacion, facturando, completado, error, procesando_correo)
+1. **`estado_sistema`** — tickets por status, atascados, errores recientes, portales pendientes
 
-2. **Tickets atascados** — tickets en `procesando_correo` o `facturando` con más de 30 minutos sin actualizar
+2. **`logs_railway`** (limite: 100) — logs recientes de Railway. Filtra por:
+   - `[ENGINE]` → ver qué portales están corriendo por el engine
+   - `[ENGINE FALLBACK]` → excepción en engine que cayó a legacy (requiere atención)
+   - `[LEGACY]` → portales corriendo por bot legacy (normal mientras no estén migrados)
+   - `error` → cualquier error no capturado
 
-3. **Errores recientes** — últimos 5 tickets con status `error`, muestra comercio y mensaje de error del ocr_json
+3. **`estado_r2`** — confirma que el storage de archivos está operativo
 
-4. **Portales pendientes** — comercios en la tabla `portales_pendientes` que aún no tienen bot configurado, con su cuestionario si existe
+4. Lee `commerce/` para listar portales en el engine y su estado:
+   - Qué portales tienen `flow.json` (engine activo)
+   - Compara con la tabla de portales en `CLAUDE.md`
 
-5. **Bots activos** — lista los archivos en `bots/` y su estado según `portales/portales.json`
+---
 
-Presenta el resultado como un resumen ejecutivo con:
-- ✅ Lo que está funcionando bien
-- ⚠️ Lo que necesita atención
-- ❌ Lo que está roto o bloqueado
-- 📋 Acción recomendada para cada problema
+Presenta el resultado así:
 
-Si hay tickets atascados, indica exactamente qué endpoint llamar para reprocesarlos.
+## ✅ Funcionando bien
+- Portales con engine activo y sin errores recientes
+- Tickets procesados exitosamente
+- R2 y IMAP operativos
+
+## ⚠️ Necesita atención
+- Portales con `[ENGINE FALLBACK]` reciente (engine crasheó → legacy tomó control)
+- Tickets en `procesando_correo` por más de 30 min
+- Portales pendientes sin bot ni engine configurado
+
+## ❌ Roto o bloqueado
+- Tickets atascados en `facturando` por más de 30 min
+- Errores repetidos del mismo portal
+- R2 o IMAP caídos
+
+## 📋 Acciones recomendadas
+Para cada problema, indica exactamente qué hacer:
+- Qué endpoint llamar para reprocesar tickets atascados
+- Qué archivo corregir si hay un selector roto
+- Si hay `[ENGINE FALLBACK]` repetido: qué función de `hooks.js` revisar y con qué screenshot de debug
+
+---
+
+**Si hay tickets atascados**, indica el comando exacto:
+`POST /api/tickets/{id}/facturar` o MCP tool `reprocesar_ticket` con el ticket_id.

@@ -1,12 +1,14 @@
-Analiza el portal de facturación que te acabo de mostrar (screenshot o URL) y extrae toda la información necesaria para automatizarlo con Puppeteer.
+Analiza el portal de facturación que te acabo de mostrar (screenshot o URL) y extrae toda la
+información necesaria para automatizarlo.
 
-Lee primero `portales/portales.json` para entender el formato esperado y los portales que ya tenemos.
+Lee primero `CLAUDE.md` para entender la arquitectura actual (engine declarativo + bots legacy).
 
 Responde con este JSON exacto (sin texto extra):
 
 ```json
 {
   "nombre": "nombre del portal o empresa",
+  "url": "URL del portal",
   "tecnologia": "JSF|Angular|React|ASP.NET|otro",
   "flujo": "single-page|multi-step",
   "captcha": false,
@@ -23,8 +25,19 @@ Responde con este JSON exacto (sin texto extra):
   "detectar_exito": "selector o texto que indica factura generada",
   "detectar_error": "selector o texto que indica error",
   "casos_especiales": ["ticket vencido", "ya facturado", "etc"],
-  "notas": "comportamientos especiales, popups, redirecciones, AJAX, etc."
+  "notas": "comportamientos especiales, AJAX, popups, redirecciones, iframes, etc."
 }
 ```
 
-Después de dar el JSON, añade una sección **"Similitud con portales existentes"** indicando si este portal se parece a alguno ya implementado (OXXO/JSF, BuzonFacturas/ASP.NET, Gasmaz/NexusFuel) y en qué porcentaje podríamos reusar código.
+Después del JSON, añade dos secciones:
+
+**"Similitud con portales existentes"**
+Indica si este portal se parece a alguno ya implementado (NexusFuel/RAMSA, OXXO/JSF,
+BuzonFacturas/ASP.NET) y en qué porcentaje podríamos reusar código.
+
+**"Recomendación: Engine o Legacy"**
+- **Engine** si: formulario estándar, flujo lineal, selects comunes, descarga directa de XML/PDF
+- **Legacy** si: estado complejo entre páginas, iframes, CAPTCHAs, lógica muy dinámica
+
+Explica la recomendación en 2 oraciones. Si es engine, indica qué portal de `commerce/`
+usar como plantilla base.
