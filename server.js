@@ -1926,7 +1926,7 @@ async function procesarTicketsPorCorreo() {
     }
 
     [rows] = await db.query(
-      `SELECT t.id, t.ocr_json, t.comercio, t.user_id, u.email, u.nombre AS user_nombre
+      `SELECT t.id, t.ocr_json, t.comercio, t.portal, t.user_id, u.email, u.nombre AS user_nombre
        FROM tickets t
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'procesando_correo'

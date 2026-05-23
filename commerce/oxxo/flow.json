@@ -11,7 +11,7 @@
     "value":  "resultadoValidacion",
     "equals": "folio_no_disponible",
     "steps":  [
-      { "action": "exit", "result": { "ok": false, "error_code": "datos_invalidos", "msg": "El folio no está disponible en OXXO. Verifica los datos del ticket." } }
+      { "action": "hook", "name": "reimprimir" }
     ]
   },
   { "action": "hook",       "name": "llenarDatosFactura" },

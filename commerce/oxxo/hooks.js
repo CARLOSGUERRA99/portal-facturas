@@ -332,4 +332,81 @@ async function generarYEnviar(page, context) {
   return { ok: true, procesandoCorreo: true };
 }
 
-module.exports = { cerrarPopup, seleccionarFecha, llenarTicket, validarTicket, llenarDatosFactura, generarYEnviar };
+// ── Recuperador: reimpresión de factura ya generada ──────────────────────────
+async function reimprimir(page, context) {
+  const { folio, idVenta, totalDecimal, ticketId } = context;
+
+  console.log(`[OXXO][reimprimir] Navegando a reimpresión para folio ${folio}`);
+  await page.goto(
+    'https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/reimpresionFactura.do',
+    { waitUntil: 'load', timeout: 30000 }
+  );
+  await page.waitForTimeout(1500);
+
+  // Fecha — reutilizar misma lógica del datepicker
+  await seleccionarFecha(page, context);
+
+  // Folio, Venta, Total
+  await page.click('#form\\:folio', { clickCount: 3 });
+  await page.type('#form\\:folio', String(folio), { delay: 60 });
+  await page.click('#form\\:venta', { clickCount: 3 });
+  await page.type('#form\\:venta', String(idVenta).toUpperCase(), { delay: 60 });
+  await page.click('#form\\:total', { clickCount: 3 });
+  await page.type('#form\\:total', totalDecimal, { delay: 60 });
+  await page.waitForTimeout(300);
+
+  // Verificar — buscar botón por texto (el id j_idt* cambia con cada deploy)
+  await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll('button, input[type="submit"], span'))
+      .find(b => b.textContent?.trim() === 'Verificar' || b.value?.includes('Verificar'));
+    if (btn) btn.click();
+  });
+
+  // Portal tarda ~10s en encontrar la factura
+  await page.waitForTimeout(10000);
+
+  // Screenshot para diagnóstico
+  try {
+    const buf = await page.screenshot({ fullPage: false });
+    const url = await subirArchivoR2(buf, `debug/oxxo_${ticketId}_reimprimir_${Date.now()}.png`, 'image/png');
+    console.log('[OXXO][reimprimir] Screenshot:', url);
+  } catch {}
+
+  const encontrado = await page.evaluate(() => {
+    const body = document.body.innerText;
+    return body.includes('ha sido encontrada') || body.includes('Enviar correo') ||
+           body.includes('Descargar PDF') || body.includes('Descargar XML');
+  });
+
+  if (!encontrado) {
+    console.log('[OXXO][reimprimir] Factura no encontrada — folio inválido');
+    return { ok: false, error_code: 'datos_invalidos', msg: 'Folio no encontrado en OXXO (ni en reimpresión).' };
+  }
+
+  console.log('[OXXO][reimprimir] Factura encontrada — enviando correo');
+
+  // Llenar email y enviar
+  const emailInput = await page.$('input[placeholder*="correo"], input[placeholder*="dominio"], input[type="email"]');
+  if (emailInput) {
+    await emailInput.click({ clickCount: 3 });
+    await emailInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
+    await page.waitForTimeout(300);
+    await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('button, a, span'))
+        .find(b => b.textContent?.toLowerCase().includes('enviar correo') ||
+                   b.textContent?.toLowerCase().trim() === 'enviar');
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(2000);
+
+    try {
+      const buf2 = await page.screenshot({ fullPage: false });
+      const url2 = await subirArchivoR2(buf2, `debug/oxxo_${ticketId}_reimprimir_enviado_${Date.now()}.png`, 'image/png');
+      console.log('[OXXO][reimprimir] Screenshot post-envío:', url2);
+    } catch {}
+  }
+
+  return { ok: true, procesandoCorreo: true };
+}
+
+module.exports = { cerrarPopup, seleccionarFecha, llenarTicket, validarTicket, llenarDatosFactura, generarYEnviar, reimprimir };
