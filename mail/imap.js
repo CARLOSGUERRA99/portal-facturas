@@ -29,7 +29,7 @@ async function extraerAdjuntos(parsed) {
   let xmlBuffer = null, pdfBuffer = null;
   const attachments = parsed.attachments || [];
 
-  console.log(`📎 Adjuntos (${attachments.length}):`, attachments.map(a => a.filename || a.contentType));
+  console.log(`📎 Adjuntos (${attachments.length}):`, attachments.map(a => ({ filename: a.filename, ct: a.contentType, size: a.content?.length })));
 
   for (const att of attachments) {
     const isZip = att.filename?.endsWith('.zip') || att.contentType?.includes('zip');
@@ -113,7 +113,11 @@ async function procesarCorreos(imap, seqnos, ticketCode, timer, resolve, reject)
     msg.on('body', (stream) => {
       simpleParser(stream, async (err, parsed) => {
         pendientes--;
-        if (!err) mensajes.push({ parsed, seqno });
+        if (err) {
+          console.log(`⚠️ IMAP simpleParser error (seqno ${seqno}):`, err.message);
+        } else {
+          mensajes.push({ parsed, seqno });
+        }
 
         if (pendientes > 0) return;
 
@@ -164,6 +168,7 @@ async function procesarCorreos(imap, seqnos, ticketCode, timer, resolve, reject)
   });
 
   fetch.once('error', (err) => {
+    console.log(`⚠️ IMAP fetch error:`, err.message);
     clearTimeout(timer); imap.end(); reject(err);
   });
 }
