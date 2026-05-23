@@ -256,9 +256,10 @@
                 ? `<a href="/dashboard?confirmar=${t.id}" class="btn btn-primary btn-sm">Revisar datos</a>`
                 : isInactive
                   ? `<button class="btn btn-primary btn-sm" disabled style="opacity:0.4;cursor:not-allowed;">${btnLabel}</button>`
-                  : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>`
+                  : isError
+                    ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="abrirEditar(${t.id}, ${JSON.stringify(JSON.stringify(datos))})">${btnLabel}</button>`
+                    : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>`
               }
-              ${isError ? `<button class="btn btn-sm" onclick="abrirEditar(${t.id}, ${JSON.stringify(JSON.stringify(datos))})" style="background:#f0f4ff;color:#3b5bdb;border:1.5px solid #c5d0fa;">Editar datos</button>` : ''}
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
             </div>
           </div>`;

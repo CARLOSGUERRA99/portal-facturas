@@ -84,16 +84,38 @@ async function seleccionarFecha(page, context) {
   }
 }
 
+// ── Corrección de ID de Venta según formato oficial OXXO ─────────────────────
+// Formato: NN LLL NN AAA N  (11 caracteres)
+//   Pos 0-1 : solo dígitos   → letra→dígito  (O→0, I/L→1, S→5, B→8)
+//   Pos 2-4 : solo letras    → dígito→letra  (0→O, 1→I, 5→S, 8→B)
+//   Pos 5-6 : solo dígitos   → letra→dígito
+//   Pos 7-9 : alfanumérico   → sin corrección
+//   Pos 10  : solo dígito    → letra→dígito
+function corregirIdVenta(raw) {
+  const s = String(raw || '').toUpperCase().replace(/\s/g, '');
+  if (s.length !== 11) return s;
+  const c = s.split('');
+  const L2D = { O:'0', I:'1', L:'1', S:'5', B:'8', G:'6', Z:'2' };
+  const D2L = { '0':'O','1':'I','5':'S','8':'B','6':'G','2':'Z' };
+  for (const i of [0,1,5,6,10]) c[i] = L2D[c[i]] ?? c[i];
+  for (const i of [2,3,4])      c[i] = D2L[c[i]] ?? c[i];
+  return c.join('');
+}
+
 // ── Folio, ID Venta y Total ───────────────────────────────────────────────────
 async function llenarTicket(page, context) {
-  const { folio, idVenta, totalDecimal } = context;
+  const { folio, totalDecimal } = context;
+  const idVenta = corregirIdVenta(context.idVenta);
+  if (idVenta !== context.idVenta) {
+    console.log(`[OXXO] idVenta corregido: "${context.idVenta}" → "${idVenta}"`);
+  }
 
   await page.click('#form\\:folio', { clickCount: 3 });
   await page.type('#form\\:folio', String(folio), { delay: 60 });
   await page.waitForTimeout(150);
 
   await page.click('#form\\:venta', { clickCount: 3 });
-  await page.type('#form\\:venta', String(idVenta).toUpperCase(), { delay: 60 });
+  await page.type('#form\\:venta', idVenta, { delay: 60 });
   await page.waitForTimeout(150);
 
   await page.click('#form\\:total', { clickCount: 3 });
