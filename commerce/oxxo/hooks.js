@@ -388,29 +388,80 @@ async function reimprimir(page, context) {
     return { ok: false, error_code: 'datos_invalidos', msg: 'Folio no encontrado en OXXO (ni en reimpresión).' };
   }
 
-  console.log('[OXXO][reimprimir] Factura encontrada — enviando correo');
+  console.log('[OXXO][reimprimir] Factura encontrada — descargando XML y PDF');
 
-  // Llenar email y enviar
+  const browser = page.browser();
+
+  // Interceptar nueva pestaña para XML/PDF
+  const interceptar = async (clickFn) => {
+    const newPagePromise = new Promise(resolve =>
+      browser.once('targetcreated', target => resolve(target.page()))
+    );
+    await clickFn();
+    const newPage = await Promise.race([
+      newPagePromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+    ]).catch(() => null);
+    if (!newPage) return null;
+    await newPage.waitForTimeout(1500);
+    const res = await newPage.waitForResponse(r => r.status() === 200, { timeout: 10000 }).catch(() => null);
+    const buf = res ? await res.buffer().catch(() => null) : null;
+    await newPage.close().catch(() => {});
+    return buf;
+  };
+
+  // Plan A: descargar XML y PDF (se abren en nueva pestaña)
+  const xmlBuf = await interceptar(() =>
+    page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('a, button'))
+        .find(el => el.textContent?.includes('Descargar XML') || el.href?.includes('.xml'));
+      if (btn) { btn.scrollIntoView(); btn.click(); }
+    })
+  ).catch(() => null);
+
+  const pdfBuf = await interceptar(() =>
+    page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll('a, button'))
+        .find(el => el.textContent?.includes('Descargar PDF') || el.href?.includes('.pdf'));
+      if (btn) { btn.scrollIntoView(); btn.click(); }
+    })
+  ).catch(() => null);
+
+  if (xmlBuf || pdfBuf) {
+    const extraerUUID = (buf) => {
+      try {
+        const xml = buf.toString('utf8');
+        const m = xml.match(/UUID="([^"]+)"/i) || xml.match(/uuid="([^"]+)"/i);
+        return m ? m[1].toLowerCase() : null;
+      } catch { return null; }
+    };
+    const uuid = xmlBuf ? extraerUUID(xmlBuf) : null;
+    const prefijo = `facturas/${uuid || Date.now()}`;
+    const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `${prefijo}.xml`, 'application/xml').catch(() => null) : null;
+    const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `${prefijo}.pdf`, 'application/pdf').catch(() => null) : null;
+    console.log(`[OXXO][reimprimir] Plan A OK — xml: ${xmlUrl} pdf: ${pdfUrl}`);
+    return { ok: true, xmlUrl, pdfUrl };
+  }
+
+  // Plan B: enviar por correo si no se pudieron interceptar los archivos
+  console.log('[OXXO][reimprimir] Plan A falló — Plan B: enviar correo');
   const emailInput = await page.$('input[placeholder*="correo"], input[placeholder*="dominio"], input[type="email"]');
   if (emailInput) {
     await emailInput.click({ clickCount: 3 });
     await emailInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
     await page.waitForTimeout(300);
     await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button, a, span'))
-        .find(b => b.textContent?.toLowerCase().includes('enviar correo') ||
-                   b.textContent?.toLowerCase().trim() === 'enviar');
+      const btn = Array.from(document.querySelectorAll('button, a'))
+        .find(b => b.textContent?.toLowerCase().includes('enviar correo'));
       if (btn) btn.click();
     });
     await page.waitForTimeout(2000);
-
     try {
       const buf2 = await page.screenshot({ fullPage: false });
-      const url2 = await subirArchivoR2(buf2, `debug/oxxo_${ticketId}_reimprimir_enviado_${Date.now()}.png`, 'image/png');
-      console.log('[OXXO][reimprimir] Screenshot post-envío:', url2);
+      const url2 = await subirArchivoR2(buf2, `debug/oxxo_${ticketId}_reimprimir_correo_${Date.now()}.png`, 'image/png');
+      console.log('[OXXO][reimprimir] Screenshot Plan B:', url2);
     } catch {}
   }
-
   return { ok: true, procesandoCorreo: true };
 }
 
