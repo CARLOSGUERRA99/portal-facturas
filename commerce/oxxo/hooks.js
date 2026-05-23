@@ -419,40 +419,63 @@ async function reimprimir(page, context) {
 
   const browser = page.browser();
 
-  // Interceptar nueva pestaña para XML/PDF
-  const interceptar = async (clickFn) => {
-    const newPagePromise = new Promise(resolve =>
-      browser.once('targetcreated', target => resolve(target.page()))
-    );
-    await clickFn();
-    const newPage = await Promise.race([
-      newPagePromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
-    ]).catch(() => null);
-    if (!newPage) return null;
-    await newPage.waitForTimeout(1500);
-    const res = await newPage.waitForResponse(r => r.status() === 200, { timeout: 10000 }).catch(() => null);
-    const buf = res ? await res.buffer().catch(() => null) : null;
-    await newPage.close().catch(() => {});
-    return buf;
-  };
+  // Interceptar descarga por dos vías simultáneas:
+  // 1. Response en la página actual (PrimeFaces fileDownload = POST response con Content-Disposition)
+  // 2. Nueva pestaña con contenido XML visible
+  const interceptarDescarga = (textoBuscar) => new Promise(async (resolve) => {
+    const timer = setTimeout(() => { cleanup(); resolve(null); }, 12000);
+    let resuelto = false;
+    const done = (val) => {
+      if (resuelto) return;
+      resuelto = true;
+      cleanup();
+      resolve(val);
+    };
 
-  // Plan A: descargar XML y PDF (se abren en nueva pestaña)
-  const xmlBuf = await interceptar(() =>
-    page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('a, button'))
-        .find(el => el.textContent?.includes('Descargar XML') || el.href?.includes('.xml'));
-      if (btn) { btn.scrollIntoView(); btn.click(); }
-    })
-  ).catch(() => null);
+    const responseHandler = async (resp) => {
+      const ct  = resp.headers()['content-type'] || '';
+      const cd  = resp.headers()['content-disposition'] || '';
+      if (ct.includes('xml') || ct.includes('pdf') || ct.includes('octet-stream') || cd.includes('attachment')) {
+        try { done(await resp.buffer()); } catch {}
+      }
+    };
+    page.on('response', responseHandler);
 
-  const pdfBuf = await interceptar(() =>
-    page.evaluate(() => {
+    const tabHandler = async (target) => {
+      try {
+        const p = await target.page();
+        if (!p) return;
+        await p.waitForTimeout(2000);
+        const content = await p.evaluate(() => {
+          const ct = document.contentType || '';
+          if (ct.includes('xml') || document.xmlVersion != null) {
+            return new XMLSerializer().serializeToString(document);
+          }
+          const text = document.documentElement?.outerHTML || document.body?.innerText || '';
+          return (text.includes('<?xml') || text.includes('<cfdi:')) ? text : null;
+        }).catch(() => null);
+        await p.close().catch(() => {});
+        if (content) done(Buffer.from(content, 'utf8'));
+      } catch {}
+    };
+    browser.once('targetcreated', tabHandler);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      page.off('response', responseHandler);
+      browser.off('targetcreated', tabHandler);
+    };
+
+    await page.evaluate((texto) => {
       const btn = Array.from(document.querySelectorAll('a, button'))
-        .find(el => el.textContent?.includes('Descargar PDF') || el.href?.includes('.pdf'));
+        .find(el => el.textContent?.trim().includes(texto));
       if (btn) { btn.scrollIntoView(); btn.click(); }
-    })
-  ).catch(() => null);
+    }, textoBuscar).catch(() => {});
+  });
+
+  // Plan A: descargar XML y PDF
+  const xmlBuf = await interceptarDescarga('Descargar XML').catch(() => null);
+  const pdfBuf = await interceptarDescarga('Descargar PDF').catch(() => null);
 
   if (xmlBuf || pdfBuf) {
     const extraerUUID = (buf) => {

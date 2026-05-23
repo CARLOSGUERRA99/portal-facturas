@@ -2005,13 +2005,9 @@ async function procesarTicketsPorCorreo() {
         (ticket.comercio || "").toLowerCase().includes("arco");
 
       if (!esArco) {
-        console.log(`⚠️ Estrategia B omitida — portal "${portalDelTicket}" no es arco/buzonfacturas`);
-        await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticket.id]);
-        await crearNotificacion(
-          ticket.user_id,
-          "factura_error",
-          `No se pudieron recuperar los archivos de tu factura de ${ticket.comercio || "comercio"}. Por favor intenta de nuevo o contacta al administrador.`
-        );
+        // Dejar en procesando_correo para que el próximo ciclo (2 min) reintente.
+        // El expirador de 30 min convertirá a error si el correo nunca llega.
+        console.log(`⚠️ IMAP: correo no encontrado aún para ticket #${ticket.id} (${portalDelTicket}) — reintentará en siguiente ciclo`);
         continue;
       }
 
