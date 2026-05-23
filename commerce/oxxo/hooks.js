@@ -417,65 +417,70 @@ async function reimprimir(page, context) {
 
   console.log('[OXXO][reimprimir] Factura encontrada — descargando XML y PDF');
 
-  const browser = page.browser();
+  // Loguear info de los botones de descarga para diagnóstico
+  const botonesDescarga = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('a, button'))
+      .filter(el => el.textContent?.includes('Descargar'))
+      .map(el => ({
+        tag: el.tagName, id: el.id, href: el.href || null,
+        form: el.closest('form')?.id || null,
+        formAction: el.closest('form')?.action || null,
+        name: el.name || null, text: el.textContent?.trim().substring(0, 40),
+      }))
+  ).catch(() => []);
+  console.log('[OXXO][reimprimir] Botones descarga:', JSON.stringify(botonesDescarga));
 
-  // Interceptar descarga por dos vías simultáneas:
-  // 1. Response en la página actual (PrimeFaces fileDownload = POST response con Content-Disposition)
-  // 2. Nueva pestaña con contenido XML visible
-  const interceptarDescarga = (textoBuscar) => new Promise(async (resolve) => {
-    const timer = setTimeout(() => { cleanup(); resolve(null); }, 12000);
-    let resuelto = false;
-    const done = (val) => {
-      if (resuelto) return;
-      resuelto = true;
-      cleanup();
-      resolve(val);
-    };
-
-    const responseHandler = async (resp) => {
-      const ct  = resp.headers()['content-type'] || '';
-      const cd  = resp.headers()['content-disposition'] || '';
-      if (ct.includes('xml') || ct.includes('pdf') || ct.includes('octet-stream') || cd.includes('attachment')) {
-        try { done(await resp.buffer()); } catch {}
-      }
-    };
-    page.on('response', responseHandler);
-
-    const tabHandler = async (target) => {
-      try {
-        const p = await target.page();
-        if (!p) return;
-        await p.waitForTimeout(2000);
-        const content = await p.evaluate(() => {
-          const ct = document.contentType || '';
-          if (ct.includes('xml') || document.xmlVersion != null) {
-            return new XMLSerializer().serializeToString(document);
-          }
-          const text = document.documentElement?.outerHTML || document.body?.innerText || '';
-          return (text.includes('<?xml') || text.includes('<cfdi:')) ? text : null;
-        }).catch(() => null);
-        await p.close().catch(() => {});
-        if (content) done(Buffer.from(content, 'utf8'));
-      } catch {}
-    };
-    browser.once('targetcreated', tabHandler);
-
-    const cleanup = () => {
-      clearTimeout(timer);
-      page.off('response', responseHandler);
-      browser.off('targetcreated', tabHandler);
-    };
-
-    await page.evaluate((texto) => {
+  // Plan A: descarga vía fetch() en contexto de página (mismas cookies/sesión JSF).
+  // Funciona para links directos y para form POST (PrimeFaces fileDownload).
+  // El browser nativo trataría esto como "descarga" y Puppeteer no lo capturaría,
+  // pero fetch() sí devuelve el cuerpo del response.
+  const descargarViaFetch = async (textoBuscar) => {
+    const arr = await page.evaluate(async (texto) => {
       const btn = Array.from(document.querySelectorAll('a, button'))
         .find(el => el.textContent?.trim().includes(texto));
-      if (btn) { btn.scrollIntoView(); btn.click(); }
-    }, textoBuscar).catch(() => {});
-  });
+      if (!btn) return null;
+
+      try {
+        // Link directo con href navegable
+        if (btn.tagName === 'A' && btn.href && !btn.href.startsWith('javascript')) {
+          const resp = await fetch(btn.href, { credentials: 'include' });
+          if (!resp.ok) return null;
+          const ct = resp.headers.get('content-type') || '';
+          const cd = resp.headers.get('content-disposition') || '';
+          if (!ct.includes('xml') && !ct.includes('pdf') && !ct.includes('octet') && !cd.includes('attach')) return null;
+          return Array.from(new Uint8Array(await resp.arrayBuffer()));
+        }
+
+        // Botón en formulario JSF — POST con todos los campos + identificador del botón
+        const form = btn.closest('form');
+        if (form) {
+          const fd = new FormData(form);
+          if (btn.name) fd.set(btn.name, btn.value || '');
+          const resp = await fetch(form.action || window.location.href, {
+            method: 'POST',
+            body: fd,
+            credentials: 'include',
+          });
+          if (!resp.ok) return null;
+          const ct = resp.headers.get('content-type') || '';
+          const cd = resp.headers.get('content-disposition') || '';
+          if (!ct.includes('xml') && !ct.includes('pdf') && !ct.includes('octet') && !cd.includes('attach')) return null;
+          return Array.from(new Uint8Array(await resp.arrayBuffer()));
+        }
+      } catch (e) {
+        console.error('[fetch descarga]', e.message);
+      }
+      return null;
+    }, textoBuscar).catch(() => null);
+
+    return arr ? Buffer.from(arr) : null;
+  };
 
   // Plan A: descargar XML y PDF
-  const xmlBuf = await interceptarDescarga('Descargar XML').catch(() => null);
-  const pdfBuf = await interceptarDescarga('Descargar PDF').catch(() => null);
+  const xmlBuf = await descargarViaFetch('Descargar XML').catch(() => null);
+  console.log(`[OXXO][reimprimir] XML Plan A: ${xmlBuf ? xmlBuf.length + ' bytes' : 'null'}`);
+  const pdfBuf = await descargarViaFetch('Descargar PDF').catch(() => null);
+  console.log(`[OXXO][reimprimir] PDF Plan A: ${pdfBuf ? pdfBuf.length + ' bytes' : 'null'}`);
 
   if (xmlBuf || pdfBuf) {
     const extraerUUID = (buf) => {
