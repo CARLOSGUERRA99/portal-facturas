@@ -494,12 +494,16 @@ setInterval(procesarCola, 30 * 1000);
 
 function corregirIdVentaOxxo(id) {
   if (!id) return id;
-  const map = { T:'1', t:'1', I:'1', i:'1', O:'0', o:'0', S:'5', s:'5' };
-  const result = id.split('');
-  [0, 1, 5, 6].forEach(i => {
-    if (result[i]) result[i] = result[i].replace(/[TtIiOoSs]/g, c => map[c] || c);
-  });
-  return result.join('').toUpperCase();
+  const s = String(id).toUpperCase().replace(/\s/g, '');
+  if (s.length !== 11) return s;
+  const c = s.split('');
+  // Posiciones de DÍGITO (0,1,5,6,10): letra confundible → dígito
+  const L2D = { O:'0', I:'1', L:'1', T:'1', S:'5', B:'8', G:'6', Z:'2' };
+  // Posiciones de LETRA (2,3,4): dígito confundible → letra
+  const D2L = { '0':'O', '1':'I', '5':'S', '8':'B', '6':'G', '2':'Z' };
+  for (const i of [0, 1, 5, 6, 10]) c[i] = L2D[c[i]] ?? c[i];
+  for (const i of [2, 3, 4])        c[i] = D2L[c[i]] ?? c[i];
+  return c.join('');
 }
 
 function corregirFolioOxxo(folio) {
@@ -1034,7 +1038,7 @@ campos_dudosos: lista los nombres exactos de los campos con incertidumbre (array
   "comercio": "OXXO",
   "fecha": "DD/MM/YYYY",
   "folio": "SOLO dígitos después de Fol_Vta: — corrige O→0 S→5 I→1 T→1",
-  "idVenta": "código después de ID= — corrige O→0 S→5 I→1 en posiciones 0,1,5,6 — formato 2dig+3let+2dig+alfanum+1dig",
+  "idVenta": "código después de ID= — formato exacto: 2dígitos + 3LETRAS + 2dígitos + 3alfanum + 1dígito (11 chars). En posiciones 1-2 y 6-7 y 11 (dígito): O→0 I→1 S→5. En posiciones 3-5 (SOLO LETRAS): 0→O 1→I 5→S. Ejemplo: '100BR50UZD1' → '10OBR50UZD1' porque pos 3 debe ser letra",
   "total": número sin signos,
   "portal": "oxxo",
 ${INSTRUCCION_CONFIANZA}`,
