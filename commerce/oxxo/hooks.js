@@ -115,6 +115,11 @@ async function validarTicket(page, context) {
       { timeout: 15000 }
     ).then(() => 'continuar'),
     page.waitForFunction(
+      () => /ya fue facturado|ya facturado|ya tiene factura|ticket.*ya.*factur|folio.*ya.*factur/i
+            .test(document.body.innerText || ''),
+      { timeout: 15000 }
+    ).then(() => 'ya_facturado'),
+    page.waitForFunction(
       () => /no tuvo éxito|no encontr|folio.*no.*valid|favor de volver/i.test(document.body.innerText || ''),
       { timeout: 15000 }
     ).then(() => 'folio_no_disponible'),
