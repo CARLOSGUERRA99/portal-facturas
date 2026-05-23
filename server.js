@@ -1926,7 +1926,7 @@ async function procesarTicketsPorCorreo() {
     }
 
     [rows] = await db.query(
-      `SELECT t.id, t.ocr_json, t.comercio, t.portal, t.user_id, u.email, u.nombre AS user_nombre
+      `SELECT t.id, t.ocr_json, t.comercio, t.user_id, u.email, u.nombre AS user_nombre
        FROM tickets t
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'procesando_correo'
@@ -2000,12 +2000,12 @@ async function procesarTicketsPorCorreo() {
       console.log(`⚠️ Job IMAP: no llegó correo para ticket #${ticket.id} — intentando Estrategia B...`);
 
       // Estrategia B solo aplica para BuzonFacturas/ARCO
-      const portalDelTicket = (ticket.portal || "").toLowerCase();
+      const portalDelTicket = (datos.portal || ticket.comercio || "").toLowerCase();
       const esArco = portalDelTicket === "arco" || portalDelTicket === "buzonfacturas" ||
         (ticket.comercio || "").toLowerCase().includes("arco");
 
       if (!esArco) {
-        console.log(`⚠️ Estrategia B omitida — portal "${ticket.portal}" no es arco/buzonfacturas`);
+        console.log(`⚠️ Estrategia B omitida — portal "${portalDelTicket}" no es arco/buzonfacturas`);
         await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticket.id]);
         await crearNotificacion(
           ticket.user_id,

@@ -341,15 +341,27 @@ async function generarYEnviar(page, context) {
 async function reimprimir(page, context) {
   const { folio, idVenta, totalDecimal, ticketId } = context;
 
+  const snap = async (label) => {
+    try {
+      const buf = await page.screenshot({ fullPage: false });
+      const url = await subirArchivoR2(buf, `debug/oxxo_${ticketId}_reimprimir_${label}_${Date.now()}.png`, 'image/png');
+      console.log(`[OXXO][reimprimir] Screenshot ${label}:`, url);
+    } catch (e) {
+      console.log(`[OXXO][reimprimir] Screenshot ${label} error:`, e.message);
+    }
+  };
+
   console.log(`[OXXO][reimprimir] Navegando a reimpresión para folio ${folio}`);
   await page.goto(
     'https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/reimpresionFactura.do',
     { waitUntil: 'load', timeout: 30000 }
   );
   await page.waitForTimeout(1500);
+  await snap('01_llegada');
 
   // Fecha — reutilizar misma lógica del datepicker
   await seleccionarFecha(page, context);
+  await page.waitForTimeout(300);
 
   // Folio, Venta, Total
   await page.click('#form\\:folio', { clickCount: 3 });
@@ -359,23 +371,38 @@ async function reimprimir(page, context) {
   await page.click('#form\\:total', { clickCount: 3 });
   await page.type('#form\\:total', totalDecimal, { delay: 60 });
   await page.waitForTimeout(300);
+  await snap('02_datos_llenados');
 
   // Verificar — buscar botón por texto (el id j_idt* cambia con cada deploy)
+  // Busca solo en <button> e <input submit>, no en <span>, para evitar falsos positivos PrimeFaces
+  const btnInfo = await page.evaluate(() => {
+    const candidatos = Array.from(document.querySelectorAll('button, input[type="submit"]'));
+    const found = candidatos.find(b =>
+      (b.textContent || '').trim().includes('Verificar') ||
+      (b.value || '').includes('Verificar')
+    );
+    if (found) {
+      found.scrollIntoView();
+      return { found: true, tag: found.tagName, id: found.id, text: (found.textContent || '').trim().substring(0, 50) };
+    }
+    return { found: false, all: candidatos.map(b => ({ tag: b.tagName, id: b.id, text: (b.textContent || '').trim().substring(0, 30) })) };
+  });
+  console.log('[OXXO][reimprimir] Botón Verificar info:', JSON.stringify(btnInfo));
+
+  if (!btnInfo.found) {
+    await snap('03_sin_boton_verificar');
+    throw new Error('Botón Verificar no encontrado en página de reimpresión');
+  }
+
   await page.evaluate(() => {
-    const btn = Array.from(document.querySelectorAll('button, input[type="submit"], span'))
-      .find(b => b.textContent?.trim() === 'Verificar' || b.value?.includes('Verificar'));
-    if (btn) btn.click();
+    const btn = Array.from(document.querySelectorAll('button, input[type="submit"]'))
+      .find(b => (b.textContent || '').trim().includes('Verificar') || (b.value || '').includes('Verificar'));
+    if (btn) { btn.scrollIntoView(); btn.click(); }
   });
 
   // Portal tarda ~10s en encontrar la factura
   await page.waitForTimeout(10000);
-
-  // Screenshot para diagnóstico
-  try {
-    const buf = await page.screenshot({ fullPage: false });
-    const url = await subirArchivoR2(buf, `debug/oxxo_${ticketId}_reimprimir_${Date.now()}.png`, 'image/png');
-    console.log('[OXXO][reimprimir] Screenshot:', url);
-  } catch {}
+  await snap('03_post_verificar');
 
   const encontrado = await page.evaluate(() => {
     const body = document.body.innerText;
