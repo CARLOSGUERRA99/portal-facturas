@@ -894,7 +894,18 @@ app.get('/api/residentes/mis-residentes', auth, async (req, res) => {
       GROUP BY r.id, r.nombre
       ORDER BY r.nombre
     `, [req.session.userId, req.session.userId]);
-    res.json({ ok: true, residentes: rows });
+
+    // Contar tickets/facturas sin asignar (residente_id IS NULL)
+    const [[sinAsignar]] = await db.query(`
+      SELECT
+        COUNT(DISTINCT t.id)  AS sin_tickets,
+        COUNT(DISTINCT f.id)  AS sin_facturas
+      FROM tickets t
+      LEFT JOIN facturas f ON f.ticket_id = t.id
+      WHERE t.user_id = ? AND t.residente_id IS NULL
+    `, [req.session.userId]);
+
+    res.json({ ok: true, residentes: rows, sin_asignar: sinAsignar });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }
@@ -1352,9 +1363,11 @@ app.delete("/api/tickets/:id", auth, async (req, res) => {
 app.get("/api/tickets", auth, async (req, res) => {
   try {
     const { residente_id } = req.query;
-    let query = "SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id FROM tickets WHERE user_id = ?";
+    let query = "SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id, error_msg FROM tickets WHERE user_id = ?";
     const params = [req.session.userId];
-    if (residente_id) {
+    if (residente_id === 'sin_asignar') {
+      query += " AND residente_id IS NULL";
+    } else if (residente_id) {
       query += " AND residente_id = ?";
       params.push(residente_id);
     }
@@ -1366,13 +1379,29 @@ app.get("/api/tickets", auth, async (req, res) => {
   }
 });
 
+// ── REASIGNAR TICKET A RESIDENTE ──
+app.put("/api/tickets/:id/residente", auth, async (req, res) => {
+  try {
+    const rid = req.body.residente_id || null;
+    await db.query(
+      "UPDATE tickets SET residente_id = ? WHERE id = ? AND user_id = ?",
+      [rid, req.params.id, req.session.userId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, msg: e.message });
+  }
+});
+
 // ── LISTAR FACTURAS ──
 app.get("/api/facturas", auth, async (req, res) => {
   try {
     const { residente_id } = req.query;
-    let query = "SELECT f.id, f.comercio, f.status, f.xml_url, f.pdf_url, f.creado, t.ocr_json FROM facturas f LEFT JOIN tickets t ON f.ticket_id = t.id";
+    let query = "SELECT f.id, f.comercio, f.status, f.xml_url, f.pdf_url, f.creado, t.ocr_json, t.id AS ticket_id, t.residente_id FROM facturas f LEFT JOIN tickets t ON f.ticket_id = t.id";
     const params = [req.session.userId];
-    if (residente_id) {
+    if (residente_id === 'sin_asignar') {
+      query += " WHERE f.user_id = ? AND (t.residente_id IS NULL OR t.id IS NULL)";
+    } else if (residente_id) {
       query += " WHERE f.user_id = ? AND t.residente_id = ?";
       params.push(residente_id);
     } else {

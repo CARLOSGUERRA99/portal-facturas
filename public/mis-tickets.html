@@ -28,6 +28,8 @@
     .modal-field input { width:100%; padding:9px 12px; border:1.5px solid #e5e7eb; border-radius:8px; font-size:0.9rem; outline:none; box-sizing:border-box; }
     .modal-field input:focus { border-color:var(--green); }
     .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+    .asignar-select { font-size:0.75rem; padding:4px 8px; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; color:var(--text); cursor:pointer; outline:none; max-width:140px; }
+    .asignar-select:focus { border-color:var(--green); }
   </style>
 </head>
 <body>
@@ -125,6 +127,7 @@
   <script>
     let activeResidenteId = sessionStorage.getItem('activeResidenteId') || null;
     let activeResidenteNombre = sessionStorage.getItem('activeResidenteNombre') || 'Todos';
+    let _misResidentes = []; // lista global para los selects de reasignación
 
     async function initNav() {
       try {
@@ -176,6 +179,9 @@
       const res = await fetch('/api/residentes/mis-residentes');
       const data = await res.json();
       if (!data.ok || data.residentes.length <= 1) return;
+
+      _misResidentes = data.residentes; // guardar para los selects de reasignación
+
       const tabsEl = document.getElementById('residente-tabs');
       tabsEl.style.display = 'flex';
       const total = data.residentes.reduce((a, r) => a + Number(r.ticket_count), 0);
@@ -183,7 +189,14 @@
       const rTabs = data.residentes.map(r =>
         `<button class="residente-tab ${activeResidenteId == r.id ? 'active' : ''}" data-rid="${r.id}" onclick="selectTab(${r.id},'${r.nombre.replace(/'/g,"\\'")}',this)">${r.nombre} <span class="tab-badge">${r.ticket_count}</span></button>`
       );
-      tabsEl.innerHTML = [allTab, ...rTabs].join('');
+
+      // Tab "Sin asignar" para tickets sin residente
+      const sinN = data.sin_asignar ? Number(data.sin_asignar.sin_tickets) : 0;
+      const sinTab = sinN > 0
+        ? `<button class="residente-tab ${activeResidenteId === 'sin_asignar' ? 'active' : ''}" data-rid="sin_asignar" onclick="selectTab('sin_asignar','Sin asignar',this)" style="color:#c97b00;border-color:rgba(201,123,0,0.4);">Sin asignar <span class="tab-badge" style="background:#fff8e6;color:#c97b00;">${sinN}</span></button>`
+        : '';
+
+      tabsEl.innerHTML = [allTab, ...rTabs, sinTab].join('');
     }
 
     function selectTab(id, nombre, btn) {
@@ -294,6 +307,13 @@
         const btnLabel = t.status === 'procesado' ? 'Facturado' : isError ? 'Reintentar' : 'Facturar';
         const isInactive = ['procesando', 'procesando_correo', 'procesado'].includes(t.status);
 
+        // Select de reasignación (visible solo si hay residentes configurados)
+        const residenteSelect = _misResidentes.length > 0 ? `
+          <select class="asignar-select" onchange="asignarResidente(${t.id},this.value)" title="Asignar a residente">
+            <option value="">Sin asignar</option>
+            ${_misResidentes.map(r => `<option value="${r.id}" ${t.residente_id == r.id ? 'selected' : ''}>${r.nombre}</option>`).join('')}
+          </select>` : '';
+
         return `
           <div class="ticket-row" id="ticket-${t.id}">
             <div class="ticket-main">
@@ -314,6 +334,7 @@
                     : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>`
               }
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
+              ${residenteSelect}
             </div>
           </div>`;
       }).join('');
@@ -360,6 +381,21 @@
         alertEl.style.display = 'block';
         btn.disabled = false;
         btn.textContent = 'Reintentar';
+      }
+    }
+
+    async function asignarResidente(ticketId, residenteId) {
+      const res = await fetch(`/api/tickets/${ticketId}/residente`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ residente_id: residenteId || null }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        await cargarTabs();    // actualizar conteos
+        await cargarTickets(); // refrescar lista
+      } else {
+        alert('Error al asignar: ' + (data.msg || 'intenta de nuevo'));
       }
     }
 

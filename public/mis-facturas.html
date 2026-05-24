@@ -33,6 +33,8 @@
       background: #fef0ef; color: var(--error); border-color: #fad7d5;
     }
     .btn-pdf:hover { background: #fad7d5; }
+    .asignar-select { font-size:0.75rem; padding:4px 8px; border:1.5px solid #e5e7eb; border-radius:8px; background:#fff; color:var(--text); cursor:pointer; outline:none; max-width:140px; }
+    .asignar-select:focus { border-color:var(--green); }
   </style>
 </head>
 <body>
@@ -116,6 +118,7 @@
   <script>
     let activeResidenteId = sessionStorage.getItem('activeResidenteId') || null;
     let activeResidenteNombre = sessionStorage.getItem('activeResidenteNombre') || 'Todos';
+    let _misResidentes = []; // lista global para los selects de reasignación
 
     async function initNav() {
       try {
@@ -167,6 +170,9 @@
       const res = await fetch('/api/residentes/mis-residentes');
       const data = await res.json();
       if (!data.ok || data.residentes.length <= 1) return;
+
+      _misResidentes = data.residentes; // guardar para los selects de reasignación
+
       const tabsEl = document.getElementById('residente-tabs');
       tabsEl.style.display = 'flex';
       const total = data.residentes.reduce((a, r) => a + Number(r.factura_count), 0);
@@ -174,7 +180,14 @@
       const rTabs = data.residentes.map(r =>
         `<button class="residente-tab ${activeResidenteId == r.id ? 'active' : ''}" data-rid="${r.id}" onclick="selectTab(${r.id},'${r.nombre.replace(/'/g,"\\'")}',this)">${r.nombre} <span class="tab-badge">${r.factura_count}</span></button>`
       );
-      tabsEl.innerHTML = [allTab, ...rTabs].join('');
+
+      // Tab "Sin asignar" para facturas sin residente
+      const sinN = data.sin_asignar ? Number(data.sin_asignar.sin_facturas) : 0;
+      const sinTab = sinN > 0
+        ? `<button class="residente-tab ${activeResidenteId === 'sin_asignar' ? 'active' : ''}" data-rid="sin_asignar" onclick="selectTab('sin_asignar','Sin asignar',this)" style="color:#c97b00;border-color:rgba(201,123,0,0.4);">Sin asignar <span class="tab-badge" style="background:#fff8e6;color:#c97b00;">${sinN}</span></button>`
+        : '';
+
+      tabsEl.innerHTML = [allTab, ...rTabs, sinTab].join('');
     }
 
     function selectTab(id, nombre, btn) {
@@ -209,6 +222,21 @@
       _todasFacturas = data.facturas || [];
       poblarFiltroMes(_todasFacturas);
       renderFacturas();
+    }
+
+    async function asignarResidente(ticketId, residenteId) {
+      const res = await fetch(`/api/tickets/${ticketId}/residente`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ residente_id: residenteId || null }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        await cargarTabs();     // actualizar conteos
+        await cargarFacturas(); // refrescar lista
+      } else {
+        alert('Error al asignar: ' + (data.msg || 'intenta de nuevo'));
+      }
     }
 
     function poblarFiltroMes(facturas) {
@@ -277,6 +305,13 @@
 
         const meta = [fecha, folioTicket ? `Folio ${folioTicket}` : '', total].filter(Boolean).join(' · ');
 
+        // Select de reasignación (visible solo si hay residentes configurados y la factura tiene ticket_id)
+        const residenteSelect = (_misResidentes.length > 0 && f.ticket_id) ? `
+          <select class="asignar-select" onchange="asignarResidente(${f.ticket_id},this.value)" title="Asignar a residente">
+            <option value="">Sin asignar</option>
+            ${_misResidentes.map(r => `<option value="${r.id}" ${f.residente_id == r.id ? 'selected' : ''}>${r.nombre}</option>`).join('')}
+          </select>` : '';
+
         return `
           <div class="factura-row">
             <div class="factura-main">
@@ -286,6 +321,7 @@
             <div class="factura-right">
               ${xmlBtn}
               ${pdfBtn}
+              ${residenteSelect}
             </div>
           </div>`;
       }).join('');
