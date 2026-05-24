@@ -104,18 +104,30 @@ async function fillReactNth(page, nth, value) {
 // Busca el select por texto del label superior, hace click, espera el menú
 // y selecciona la opción cuyo texto contiene optionText.
 async function selectMUI(page, labelText, optionText) {
-  const clicked = await page.evaluate((lbl) => {
+  // 1. Scroll al select antes de hacer click
+  await page.evaluate((lbl) => {
     const normalize = s => s.toLowerCase().replace(':', '').trim();
-    const labels = document.querySelectorAll(
-      'label, p, .MuiInputLabel-root, .MuiFormLabel-root'
-    );
+    const labels = document.querySelectorAll('label, p, .MuiFormLabel-root, .MuiInputLabel-root');
     for (const l of labels) {
       if (normalize(l.textContent).includes(normalize(lbl))) {
-        const ctrl =
-          l.closest('.MuiFormControl-root') ||
-          l.parentElement?.parentElement;
+        const ctrl = l.closest('.MuiFormControl-root') || l.parentElement?.parentElement;
+        if (ctrl) { ctrl.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+      }
+    }
+  }, labelText);
+  await page.waitForTimeout(400);
+
+  // 2. Click en el select — MUI v5 usa role="combobox"; v4 usa role="button"; fallback .MuiSelect-select
+  const clicked = await page.evaluate((lbl) => {
+    const normalize = s => s.toLowerCase().replace(':', '').trim();
+    const labels = document.querySelectorAll('label, p, .MuiFormLabel-root, .MuiInputLabel-root');
+    for (const l of labels) {
+      if (normalize(l.textContent).includes(normalize(lbl))) {
+        const ctrl = l.closest('.MuiFormControl-root') || l.parentElement?.parentElement;
         if (ctrl) {
-          const sel = ctrl.querySelector('[role="button"], .MuiSelect-select');
+          const sel = ctrl.querySelector(
+            '[role="combobox"], [role="button"], .MuiSelect-select, .MuiInputBase-input'
+          );
           if (sel) { sel.click(); return true; }
         }
       }
@@ -123,19 +135,44 @@ async function selectMUI(page, labelText, optionText) {
     return false;
   }, labelText);
 
+  // Fallback: buscar el primer MUI Select vacío (sin texto) y abrirlo
   if (!clicked) {
-    console.log(`⚠️ MUI Select "${labelText}": label no encontrado`);
-    return false;
+    console.log(`⚠️ MUI Select "${labelText}": label no encontrado — intentando fallback por valor vacío`);
+    await page.evaluate(() => {
+      const sels = document.querySelectorAll(
+        '[role="combobox"], [role="button"].MuiSelect-select, .MuiSelect-select'
+      );
+      for (const sel of sels) {
+        const txt = sel.textContent.replace(/​/g, '').trim();
+        if (!txt) { sel.click(); return; }
+      }
+    });
   }
 
+  // 3. Esperar que aparezca el menú desplegable
   await page.waitForSelector(
-    'ul[role="listbox"], .MuiMenu-list, [role="option"]',
-    { visible: true, timeout: 5000 }
-  );
+    'ul[role="listbox"], .MuiMenu-list, [role="option"], .MuiMenuItem-root',
+    { visible: true, timeout: 6000 }
+  ).catch(() => {
+    console.log(`⚠️ MUI Select "${labelText}": menú no apareció, reintentando click...`);
+  });
 
+  // Reintento de apertura si el menú no apareció
+  const menuVisible = await page.$('ul[role="listbox"], .MuiMenu-list').then(el => !!el).catch(() => false);
+  if (!menuVisible) {
+    // Click directo via Puppeteer en el primer select visible sin valor
+    const emptySelect = await page.$('.MuiSelect-select:not([aria-disabled])');
+    if (emptySelect) await emptySelect.click();
+    await page.waitForSelector(
+      'ul[role="listbox"], .MuiMenu-list, [role="option"]',
+      { visible: true, timeout: 5000 }
+    ).catch(() => {});
+  }
+
+  // 4. Click en la opción correcta
   const selected = await page.evaluate((optText) => {
     const items = document.querySelectorAll(
-      'ul[role="listbox"] li, .MuiMenu-list li, [role="option"]'
+      'ul[role="listbox"] li, .MuiMenu-list li, [role="option"], .MuiMenuItem-root'
     );
     for (const item of items) {
       if (item.textContent.toLowerCase().includes(optText.toLowerCase())) {
@@ -146,7 +183,7 @@ async function selectMUI(page, labelText, optionText) {
     return null;
   }, optionText);
 
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(500);
   console.log(`📝 MUI Select[${labelText}]: "${selected || 'NO ENCONTRADO'}"`);
   return !!selected;
 }
@@ -386,14 +423,17 @@ async function facturarPanama({
       return { ok: false, error_code: 'datos_invalidos', msg: `Panamá: RFC no encontrado (${rfc})` };
     }
 
-    // Esperar que los datos fiscales se carguen (nombre fiscal con valor)
+    // Esperar que los datos fiscales se carguen — el nombre fiscal (razonSocial) debe aparecer
     console.log("⏳ Esperando carga de datos fiscales...");
     await page.waitForFunction(() => {
-      const inputs = Array.from(document.querySelectorAll('input'));
-      return inputs.some(i => i.value && i.value.length > 3 && !i.disabled);
-    }, { timeout: 10000 }).catch(() => {
+      // El nombre fiscal es un input de texto con valor largo (>5 chars) y no disabled
+      const inputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
+      return inputs.some(i => i.value && i.value.length > 5 && !i.disabled && !i.readOnly);
+    }, { timeout: 12000 }).catch(() => {
       console.log("⚠️ Timeout esperando datos fiscales, continuando...");
     });
+    // Pausa extra para que React termine de renderizar todos los selects (régimen, CFDI)
+    await page.waitForTimeout(1000);
     await screenshot("p7_datos_cargados");
 
     // ── PASO 8 — Forma de Pago → Efectivo (MUI Select) ───────────────────
@@ -426,14 +466,19 @@ async function facturarPanama({
 
     // ── PASO 9 — Correo ───────────────────────────────────────────────────
     console.log("📧 Ingresando correo...");
+    // Scroll al fondo del formulario para asegurar que el campo correo sea visible
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(400);
+
     const correoOk = await fillReact(page, "Correo", "buzonfacturas@serviciosga.site");
     if (!correoOk) {
-      // Fallback: último input editable (el correo siempre es el último campo)
+      // Fallback: último input editable visible (correo es siempre el último campo)
       await page.evaluate((val) => {
         const inputs = Array.from(document.querySelectorAll('input'))
           .filter(i => !i.disabled && !i.readOnly && i.type !== 'checkbox');
         const inp = inputs[inputs.length - 1];
         if (!inp) return;
+        inp.scrollIntoView({ block: 'center' });
         const setter = Object.getOwnPropertyDescriptor(
           window.HTMLInputElement.prototype, 'value'
         )?.set;
@@ -445,7 +490,7 @@ async function facturarPanama({
       }, "buzonfacturas@serviciosga.site");
       console.log("📝 Correo (fallback): buzonfacturas@serviciosga.site");
     }
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
     await screenshot("p8_facturacion_llenada");
 
     // ── PASO 10 — SIGUIENTE → Confirmación ───────────────────────────────
