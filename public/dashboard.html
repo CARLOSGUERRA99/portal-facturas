@@ -7,8 +7,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <script src="/notificaciones.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <style>
+<style>
     .greeting-card {
       background: var(--green);
       border-radius: var(--card-radius);
@@ -187,37 +186,55 @@
     <!-- Upload + Chart -->
     <div class="two-col">
 
-      <!-- Versículo del día -->
-      <div style="background:linear-gradient(145deg,#1e4208 0%,#2d5c10 50%,#3d7a18 100%);border-radius:var(--card-radius);padding:30px 28px;display:flex;flex-direction:column;min-height:300px;position:relative;overflow:hidden;box-shadow:0 6px 24px rgba(30,66,8,0.35);">
-        <!-- marca de agua decorativa -->
-        <div style="position:absolute;right:-10px;top:-20px;font-size:160px;line-height:1;color:rgba(255,255,255,0.04);font-family:Georgia,serif;user-select:none;pointer-events:none;">"</div>
-        <div style="position:absolute;bottom:10px;left:14px;width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,0.03);pointer-events:none;"></div>
-
-        <div style="font-size:0.7rem;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:22px;">✝ Palabra del día</div>
-
-        <div id="versiculo-texto" style="font-size:1.08rem;color:white;line-height:1.7;font-weight:400;flex:1;font-style:italic;z-index:1;">
-          &ldquo;Cargando...&rdquo;
+      <!-- Upload -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Subir ticket</div>
         </div>
 
-        <div style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-          <div id="versiculo-ref" style="font-size:0.82rem;color:rgba(255,255,255,0.6);font-weight:700;letter-spacing:0.02em;"></div>
-          <button onclick="siguienteVersiculo()" style="flex-shrink:0;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.18);color:rgba(255,255,255,0.85);font-size:0.75rem;font-weight:600;padding:7px 15px;border-radius:20px;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.22)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">Otro →</button>
+        <div style="background:#FFF7ED;border:1px solid #F97316;border-radius:10px;padding:9px 13px;font-size:0.78rem;color:#c2410c;margin-bottom:10px;">
+          ⚠️ Solo se acepta <strong>1 ticket a la vez</strong> — la carga masiva no está habilitada por el momento.
+        </div>
+
+        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('ticketFile').click()">
+          <div class="upload-icon">📷</div>
+          <div class="upload-text">Selecciona o arrastra tu ticket</div>
+          <div class="upload-sub">JPG, PNG, HEIC, PDF — foto o imagen del ticket</div>
+        </div>
+        <input type="file" id="ticketFile" accept="image/*,application/pdf" style="display:none" onchange="onFileSelected()">
+
+        <img class="preview-img" id="preview-img">
+
+        <div id="upload-actions" style="display:none; margin-top:14px;">
+          <button class="btn btn-primary btn-full" id="btn-procesar" onclick="subirTicket()">
+            Analizar con IA
+          </button>
+        </div>
+
+        <div id="upload-alert" class="alert" style="margin-top:12px;"></div>
+
+        <div class="result-card" id="result-card">
+          <div class="result-card-title">Datos detectados</div>
+          <div class="result-row"><span class="result-label">Comercio</span><span class="result-value" id="res-comercio">—</span></div>
+          <div class="result-row"><span class="result-label">Fecha</span><span class="result-value" id="res-fecha">—</span></div>
+          <div class="result-row"><span class="result-label">Folio</span><span class="result-value" id="res-folio">—</span></div>
+          <div class="result-row"><span class="result-label">Total</span><span class="result-value" id="res-total">—</span></div>
+          <div style="margin-top:14px;">
+            <a href="/mis-tickets" class="btn btn-outline btn-sm">Ver mis tickets →</a>
+          </div>
         </div>
       </div>
 
-      <!-- Chart -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Gastos por categoría</div>
-          <span id="chart-total" style="font-size:0.8rem;color:var(--text-muted);font-weight:600;"></span>
+      <!-- Versículo del día -->
+      <div style="background:linear-gradient(145deg,#1e4208 0%,#2d5c10 50%,#3d7a18 100%);border-radius:var(--card-radius);padding:30px 28px;display:flex;flex-direction:column;min-height:300px;position:relative;overflow:hidden;box-shadow:0 6px 24px rgba(30,66,8,0.35);">
+        <div style="position:absolute;right:-10px;top:-20px;font-size:160px;line-height:1;color:rgba(255,255,255,0.04);font-family:Georgia,serif;user-select:none;pointer-events:none;">"</div>
+        <div style="font-size:0.7rem;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:22px;">✝ Palabra del día</div>
+        <div id="versiculo-texto" style="font-size:1.08rem;color:white;line-height:1.7;font-weight:400;flex:1;font-style:italic;z-index:1;">
+          &ldquo;Cargando...&rdquo;
         </div>
-        <div class="chart-wrap">
-          <canvas id="gastos-chart"></canvas>
-        </div>
-        <div id="chart-empty" class="empty-state" style="display:none;padding:32px 0;">
-          <div class="empty-icon">📊</div>
-          <div class="empty-title">Sin datos aún</div>
-          <div class="empty-desc">Sube tu primer ticket para ver tus gastos</div>
+        <div style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div id="versiculo-ref" style="font-size:0.82rem;color:rgba(255,255,255,0.6);font-weight:700;letter-spacing:0.02em;"></div>
+          <button onclick="siguienteVersiculo()" style="flex-shrink:0;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.18);color:rgba(255,255,255,0.85);font-size:0.75rem;font-weight:600;padding:7px 15px;border-radius:20px;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.22)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">Otro →</button>
         </div>
       </div>
 
@@ -412,10 +429,6 @@
     mostrarVersiculo();
     let residenteChart = null;
 
-    const MONTHS = { '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun',
-                     '07':'Jul','08':'Ago','09':'Sep','10':'Oct','11':'Nov','12':'Dic' };
-
-    let gastoChart = null;
     let activeResidenteId = sessionStorage.getItem('activeResidenteId') || null;
     let activeResidenteNombre = sessionStorage.getItem('activeResidenteNombre') || 'Todos';
 
@@ -453,7 +466,6 @@
       const facturasSuffix = facturas.length === 1 ? '1 factura automatizada' : `${facturas.length} facturas automatizadas`;
       document.getElementById('greeting-sub').textContent = `${facturasSuffix} · ${pendientes} ticket${pendientes !== 1 ? 's' : ''} pendiente${pendientes !== 1 ? 's' : ''}`;
 
-      buildChart(tickets);
       await cargarResumenResidentes(tickets);
     }
 
@@ -535,92 +547,73 @@
       }
     }
 
-    const CATEGORIAS = ['Gasolina', 'Alimentos', 'Medicamentos', 'Hogar', 'Otros'];
-    const CAT_COLORS = {
-      Gasolina:     { bg: 'rgba(59,109,17,0.75)',  border: '#3B6D11' },
-      Alimentos:    { bg: 'rgba(249,115,22,0.75)', border: '#F97316' },
-      Medicamentos: { bg: 'rgba(59,130,246,0.75)', border: '#3B82F6' },
-      Hogar:        { bg: 'rgba(139,92,246,0.75)', border: '#8B5CF6' },
-      Otros:        { bg: 'rgba(156,163,175,0.6)', border: '#9CA3AF' },
-    };
-
-    function clasificarCategoria(comercio) {
-      const c = (comercio || '').toLowerCase();
-      if (c.includes('arco') || c.includes('gasmaz') || c.includes('ramsa') || c.includes('rendichicas') || c.includes('piru') || c.includes('joya') || c.includes('gasolinera') || c.includes('nexusfuel') || c.includes('combustible') || c.includes('petro') || c.includes('caffenio')) return 'Gasolina';
-      if (c.includes('oxxo') || c.includes('seven') || c.includes('walmart') || c.includes('chedraui') || c.includes('soriana') || c.includes('costco') || c.includes('super')) return 'Alimentos';
-      if (c.includes('farmacia') || c.includes('guadalajara') || c.includes('benavides') || c.includes('medica') || c.includes('salud') || c.includes('similar') || c.includes('cruz verde')) return 'Medicamentos';
-      if (c.includes('homedepot') || c.includes('home depot') || c.includes('depot') || c.includes('ferreteria') || c.includes('construrama') || c.includes('acabados') || c.includes('cemex')) return 'Hogar';
-      return 'Otros';
+    function limpiarUpload() {
+      document.getElementById('ticketFile').value = '';
+      const img = document.getElementById('preview-img');
+      img.src = ''; img.style.display = 'none';
+      document.getElementById('upload-actions').style.display = 'none';
+      document.getElementById('upload-alert').style.display = 'none';
     }
 
-    function buildChart(tickets) {
-      const monthly = {};
-      tickets.forEach(t => {
-        try {
-          const d = JSON.parse(t.ocr_json || '{}');
-          if (!d.total || !d.fecha) return;
-          const parts = d.fecha.split('/');
-          if (parts.length !== 3) return;
-          const key = `${parts[2]}-${parts[1].padStart(2, '0')}`;
-          const cat = clasificarCategoria(t.comercio || d.comercio);
-          if (!monthly[key]) monthly[key] = {};
-          monthly[key][cat] = (monthly[key][cat] || 0) + parseFloat(d.total);
-        } catch {}
-      });
+    function onFileSelected() {
+      const file = document.getElementById('ticketFile').files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = document.getElementById('preview-img');
+        img.src = e.target.result; img.style.display = 'block';
+        document.getElementById('upload-actions').style.display = 'block';
+        document.getElementById('result-card').style.display = 'none';
+        document.getElementById('upload-alert').style.display = 'none';
+      };
+      reader.readAsDataURL(file);
+      const zone = document.getElementById('upload-zone');
+      zone.querySelector('.upload-text').textContent = file.name;
+      zone.querySelector('.upload-sub').textContent = `${(file.size / 1024).toFixed(0)} KB`;
+    }
 
-      const keys = Object.keys(monthly).sort();
+    const uploadZone = document.getElementById('upload-zone');
+    uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+    uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+    uploadZone.addEventListener('drop', e => {
+      e.preventDefault(); uploadZone.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file) { const dt = new DataTransfer(); dt.items.add(file); document.getElementById('ticketFile').files = dt.files; onFileSelected(); }
+    });
 
-      if (keys.length === 0) {
-        document.getElementById('chart-empty').style.display = 'block';
-        document.getElementById('gastos-chart').style.display = 'none';
-        return;
-      }
-
-      const labels = keys.map(k => {
-        const [y, m] = k.split('-');
-        return `${MONTHS[m] || m} ${y}`;
-      });
-
-      let total = 0;
-      keys.forEach(k => CATEGORIAS.forEach(c => { total += monthly[k][c] || 0; }));
-      document.getElementById('chart-total').textContent = `Total: $${total.toFixed(2)}`;
-
-      const datasets = CATEGORIAS
-        .filter(cat => keys.some(k => (monthly[k][cat] || 0) > 0))
-        .map(cat => ({
-          label: cat,
-          data: keys.map(k => parseFloat((monthly[k][cat] || 0).toFixed(2))),
-          backgroundColor: CAT_COLORS[cat].bg,
-          borderColor: CAT_COLORS[cat].border,
-          borderWidth: 1.5,
-          borderRadius: 4,
-          borderSkipped: false,
-        }));
-
-      const ctx = document.getElementById('gastos-chart').getContext('2d');
-      if (gastoChart) gastoChart.destroy();
-      gastoChart = new Chart(ctx, {
-        type: 'bar',
-        data: { labels, datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: true,
-              position: 'bottom',
-              labels: { font: { family: 'Inter', size: 11 }, padding: 10, boxWidth: 12, boxHeight: 12 }
-            },
-            tooltip: {
-              callbacks: { label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}` }
-            }
-          },
-          scales: {
-            x: { stacked: true, grid: { display: false }, ticks: { font: { family: 'Inter', size: 12 }, color: '#6b7c5e' } },
-            y: { stacked: true, grid: { color: '#f0f4ec' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#6b7c5e', callback: v => `$${v}` } }
-          }
+    async function subirTicket() {
+      const file = document.getElementById('ticketFile').files[0];
+      if (!file) return;
+      const alertEl = document.getElementById('upload-alert');
+      const btn = document.getElementById('btn-procesar');
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Analizando con IA...';
+      alertEl.style.display = 'none';
+      const formData = new FormData();
+      formData.append('ticket', file);
+      if (activeResidenteId) formData.append('residente_id', activeResidenteId);
+      try {
+        const res = await fetch('/upload-ticket', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.ok && (data.agenteActivado || data.sinPortal)) {
+          limpiarUpload(); abrirModalPortalNuevo(data.ticketId, data.comercio, data.urlQR); cargarDatos();
+        } else if (data.ok && data.autoFacturando) {
+          limpiarUpload(); btn.disabled = false; btn.textContent = 'Analizar con IA';
+          alertEl.className = 'alert alert-success';
+          alertEl.textContent = '✅ Imagen clara — facturando automáticamente. Revisa "Mis Tickets" en un momento.';
+          alertEl.style.display = 'block'; cargarDatos();
+        } else if (data.ok && data.necesitaConfirmacion) {
+          limpiarUpload(); abrirModalConfirmacion(data.ticketId, data.datos, data.campos, data.campos_dudosos); cargarDatos();
+        } else {
+          alertEl.className = 'alert alert-error';
+          alertEl.textContent = data.msg || 'Error al procesar el ticket';
+          alertEl.style.display = 'block';
         }
-      });
+      } catch {
+        alertEl.className = 'alert alert-error';
+        alertEl.textContent = 'Error de conexión. Intenta de nuevo.';
+        alertEl.style.display = 'block';
+      }
+      btn.disabled = false; btn.textContent = 'Analizar con IA';
     }
 
     async function initResidenteSelector() {
