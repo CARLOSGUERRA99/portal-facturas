@@ -37,6 +37,14 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     enginePortal = 'rendichicas';
   }
+  if (
+    portal === 'benavides' ||
+    portal === 'farmaciasbenavides' ||
+    comercio.includes('benavides') ||
+    portalUrl.includes('e-facturate.com/benavides')
+  ) {
+    enginePortal = 'benavides';
+  }
 
   // Fallback automático al bot legacy en caso de cualquier excepción.
   // En esta fase de validación: OK→retorna engine, error→retorna engine, excepción→legacy.

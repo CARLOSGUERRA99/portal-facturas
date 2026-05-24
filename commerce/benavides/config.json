@@ -1,0 +1,15 @@
+{
+  "id": "benavides",
+  "nombre": "Farmacias Benavides",
+  "url_base": "https://e-facturate.com/benavides/",
+  "dominio": "e-facturate.com",
+  "stealth": false,
+  "timeout": 30000,
+  "defaults": {
+    "usoCfdi": "G03",
+    "regimenFiscal": "601"
+  },
+  "datos_fijos": {
+    "email": "buzonfacturas@serviciosga.site"
+  }
+}

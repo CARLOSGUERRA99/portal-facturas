@@ -1,0 +1,9 @@
+{
+  "referencia":    "#referencia, input[name='referencia']",
+  "monto":         "#monto, input[name='monto']",
+  "rfcCliente":    "#rfc, input[name='rfc']",
+  "usoCfdi":       "input[placeholder*='cat']",
+  "regimenFiscal": "select[name*='egimen'], select[id*='egimen']",
+  "correo":        "input[name='correo'], input[id*='orreo']",
+  "btnSiguiente":  "input[type='submit'][value='Siguiente'], #btnSiguiente, button[id*='iguiente']"
+}
