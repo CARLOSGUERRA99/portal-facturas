@@ -174,14 +174,6 @@
         <span id="residente-resumen-mes" style="font-size:0.8rem;color:var(--text-muted);font-weight:600;"></span>
       </div>
       <div class="residente-mini-grid" id="residente-mini-cards"></div>
-      <div class="card" id="residente-chart-wrap" style="display:none;">
-        <div class="card-header">
-          <div class="card-title">Gasto por residente este mes</div>
-        </div>
-        <div style="position:relative;height:200px;">
-          <canvas id="residente-chart"></canvas>
-        </div>
-      </div>
     </div>
 
     <!-- Upload + Chart -->
@@ -504,7 +496,7 @@
         const gasto = gastoMes[String(r.id)] || 0;
         return `
           <div class="residente-mini-card">
-            <div class="rmc-icon">🏠</div>
+            <div class="rmc-icon">👷</div>
             <div class="rmc-name">${r.nombre}</div>
             <div class="rmc-tickets">${r.ticket_count}</div>
             <div class="rmc-label">ticket${Number(r.ticket_count) !== 1 ? 's' : ''} subido${Number(r.ticket_count) !== 1 ? 's' : ''}</div>
@@ -513,39 +505,6 @@
           </div>`;
       }).join('');
 
-      const chartValues = data.residentes.map(r => parseFloat((gastoMes[String(r.id)] || 0).toFixed(2)));
-      if (chartValues.some(v => v > 0)) {
-        document.getElementById('residente-chart-wrap').style.display = 'block';
-        const ctx = document.getElementById('residente-chart').getContext('2d');
-        if (residenteChart) residenteChart.destroy();
-        residenteChart = new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: data.residentes.map(r => r.nombre),
-            datasets: [{
-              label: 'Gasto ($)',
-              data: chartValues,
-              backgroundColor: 'rgba(59,109,17,0.18)',
-              borderColor: '#3B6D11',
-              borderWidth: 2,
-              borderRadius: 8,
-              borderSkipped: false,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: { callbacks: { label: ctx => ` $${ctx.parsed.y.toFixed(2)}` } }
-            },
-            scales: {
-              x: { grid: { display: false }, ticks: { font: { family: 'Inter', size: 12 }, color: '#6b7c5e' } },
-              y: { grid: { color: '#f0f4ec' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#6b7c5e', callback: v => `$${v}` } }
-            }
-          }
-        });
-      }
     }
 
     function limpiarUpload() {
