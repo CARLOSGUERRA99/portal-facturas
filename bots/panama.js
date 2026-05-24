@@ -3,37 +3,6 @@ const { subirArchivoR2 } = require("../storage/r2");
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-// fillInput: para inputs HTML estándar (click + ctrl+a + delete + type)
-async function fillInput(page, selector, value) {
-  await page.click(selector);
-  await page.waitForTimeout(150);
-  await page.keyboard.down("Control");
-  await page.keyboard.press("a");
-  await page.keyboard.up("Control");
-  await page.keyboard.press("Delete");
-  await page.waitForTimeout(80);
-  await page.keyboard.type(String(value), { delay: 60 });
-  await page.waitForTimeout(150);
-  const actual = await page.$eval(selector, el => el.value).catch(() => "?");
-  console.log(`📝 ${selector}: "${actual}"`);
-}
-
-// selectByText: para <select> nativos
-async function selectByText(page, selector, keywords) {
-  const found = await page.$eval(selector, (el, kws) => {
-    const opt = Array.from(el.options).find(o =>
-      kws.some(k => o.text.toLowerCase().includes(k.toLowerCase()))
-    );
-    if (!opt) return null;
-    el.value = opt.value;
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-    el.dispatchEvent(new Event("input",  { bubbles: true }));
-    return opt.text;
-  }, keywords);
-  console.log(`📝 ${selector}: "${found || "NO ENCONTRADO"}"`);
-  return !!found;
-}
-
 // fillReact: para inputs React controlados (Next.js + MUI) — sin IDs fijos.
 // Busca el input por texto de label o placeholder y usa el native setter
 // para que React detecte el onChange del componente controlado.
@@ -100,11 +69,13 @@ async function fillReactNth(page, nth, value) {
   console.log(`📝 React[nth=${nth}]: "${value}"`);
 }
 
-// selectMUI: para MUI Select (div[role="button"] que abre popover con li).
-// Busca el select por texto del label superior, hace click, espera el menú
-// y selecciona la opción cuyo texto contiene optionText.
+// selectMUI: para MUI Select en portales Next.js + MUI v5.
+// Usa Puppeteer elementHandle.click() (eventos de mouse reales) en vez de
+// el.click() desde evaluate(), que no dispara los listeners de MUI/React.
 async function selectMUI(page, labelText, optionText) {
-  // 1. Scroll al select antes de hacer click
+  console.log(`🎯 selectMUI: buscando "${labelText}" → "${optionText}"`);
+
+  // 1. Scroll al select
   await page.evaluate((lbl) => {
     const normalize = s => s.toLowerCase().replace(':', '').trim();
     const labels = document.querySelectorAll('label, p, .MuiFormLabel-root, .MuiInputLabel-root');
@@ -115,10 +86,10 @@ async function selectMUI(page, labelText, optionText) {
       }
     }
   }, labelText);
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(500);
 
-  // 2. Click en el select — MUI v5 usa role="combobox"; v4 usa role="button"; fallback .MuiSelect-select
-  const clicked = await page.evaluate((lbl) => {
+  // 2. Obtener el handle del elemento select para poder hacer click real (no evaluate)
+  const selectHandle = await page.evaluateHandle((lbl) => {
     const normalize = s => s.toLowerCase().replace(':', '').trim();
     const labels = document.querySelectorAll('label, p, .MuiFormLabel-root, .MuiInputLabel-root');
     for (const l of labels) {
@@ -128,64 +99,65 @@ async function selectMUI(page, labelText, optionText) {
           const sel = ctrl.querySelector(
             '[role="combobox"], [role="button"], .MuiSelect-select, .MuiInputBase-input'
           );
-          if (sel) { sel.click(); return true; }
+          if (sel) return sel;
         }
       }
     }
-    return false;
+    return null;
   }, labelText);
 
-  // Fallback: buscar el primer MUI Select vacío (sin texto) y abrirlo
-  if (!clicked) {
-    console.log(`⚠️ MUI Select "${labelText}": label no encontrado — intentando fallback por valor vacío`);
-    await page.evaluate(() => {
-      const sels = document.querySelectorAll(
-        '[role="combobox"], [role="button"].MuiSelect-select, .MuiSelect-select'
-      );
-      for (const sel of sels) {
-        const txt = sel.textContent.replace(/​/g, '').trim();
-        if (!txt) { sel.click(); return; }
-      }
-    });
-  }
+  const selectEl = selectHandle ? selectHandle.asElement() : null;
 
-  // 3. Esperar que aparezca el menú desplegable
-  await page.waitForSelector(
-    'ul[role="listbox"], .MuiMenu-list, [role="option"], .MuiMenuItem-root',
-    { visible: true, timeout: 6000 }
-  ).catch(() => {
-    console.log(`⚠️ MUI Select "${labelText}": menú no apareció, reintentando click...`);
-  });
-
-  // Reintento de apertura si el menú no apareció
-  const menuVisible = await page.$('ul[role="listbox"], .MuiMenu-list').then(el => !!el).catch(() => false);
-  if (!menuVisible) {
-    // Click directo via Puppeteer en el primer select visible sin valor
-    const emptySelect = await page.$('.MuiSelect-select:not([aria-disabled])');
-    if (emptySelect) await emptySelect.click();
-    await page.waitForSelector(
-      'ul[role="listbox"], .MuiMenu-list, [role="option"]',
-      { visible: true, timeout: 5000 }
-    ).catch(() => {});
-  }
-
-  // 4. Click en la opción correcta
-  const selected = await page.evaluate((optText) => {
-    const items = document.querySelectorAll(
-      'ul[role="listbox"] li, .MuiMenu-list li, [role="option"], .MuiMenuItem-root'
-    );
-    for (const item of items) {
-      if (item.textContent.toLowerCase().includes(optText.toLowerCase())) {
-        item.click();
-        return item.textContent.trim();
-      }
+  if (selectEl) {
+    // Click real via Puppeteer — dispara mousedown/mouseup/click que MUI escucha
+    await selectEl.click();
+    console.log(`   → Click en select (Puppeteer handle)`);
+  } else {
+    // Fallback: primer MUI Select vacío
+    console.log(`⚠️ selectMUI: label "${labelText}" no hallado — fallback por select vacío`);
+    const fallback = await page.$('.MuiSelect-select:not([aria-disabled])');
+    if (fallback) {
+      await fallback.click();
+    } else {
+      console.log(`⚠️ selectMUI: ningún select disponible para "${labelText}"`);
+      return false;
     }
-    return null;
-  }, optionText);
+  }
 
-  await page.waitForTimeout(500);
-  console.log(`📝 MUI Select[${labelText}]: "${selected || 'NO ENCONTRADO'}"`);
-  return !!selected;
+  // 3. Esperar el popover/listbox
+  try {
+    await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 6000 });
+  } catch {
+    // Reintento: el click puede haber fallado (elemento en posición off-screen, etc.)
+    console.log(`⚠️ selectMUI: listbox no apareció, reintentando...`);
+    if (selectEl) await selectEl.click().catch(() => {});
+    else {
+      const fb2 = await page.$('.MuiSelect-select:not([aria-disabled])');
+      if (fb2) await fb2.click().catch(() => {});
+    }
+    await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 5000 })
+      .catch(() => { console.log(`❌ selectMUI: listbox no apareció tras reintento`); });
+  }
+
+  // 4. Loguear opciones disponibles (muy útil para debugging)
+  const optHandles = await page.$$('ul[role="listbox"] li, .MuiMenuItem-root');
+  const optTexts = await Promise.all(
+    optHandles.map(h => h.evaluate(el => el.textContent.trim()).catch(() => ''))
+  );
+  console.log(`   → Opciones disponibles: [${optTexts.join(' | ')}]`);
+
+  // 5. Click en la opción correcta usando Puppeteer handle
+  for (let i = 0; i < optHandles.length; i++) {
+    if (optTexts[i].toLowerCase().includes(optionText.toLowerCase())) {
+      await optHandles[i].click();
+      console.log(`📝 MUI Select["${labelText}"]: seleccionado "${optTexts[i]}"`);
+      await page.waitForTimeout(600);
+      return true;
+    }
+  }
+
+  console.log(`⚠️ MUI Select["${labelText}"]: opción "${optionText}" no encontrada en lista`);
+  return false;
 }
 
 // clickSiguiente: espera que el botón SIGUIENTE esté habilitado y lo pulsa.
@@ -198,16 +170,19 @@ async function clickSiguiente(page, timeoutMs = 15000) {
     return btn && !btn.disabled;
   }, { timeout: timeoutMs });
 
-  const clicked = await page.evaluate(() => {
+  // Obtener handle real para el click
+  const btnHandle = await page.evaluateHandle(() => {
     const btns = Array.from(document.querySelectorAll('button'));
-    const btn = btns.find(b =>
-      b.textContent.trim().toUpperCase().includes('SIGUIENTE')
+    return btns.find(b =>
+      b.textContent.trim().toUpperCase().includes('SIGUIENTE') && !b.disabled
     );
-    if (btn && !btn.disabled) { btn.click(); return true; }
-    return false;
   });
-
-  if (!clicked) throw new Error("Panamá: botón SIGUIENTE no encontrado o deshabilitado");
+  const el = btnHandle ? btnHandle.asElement() : null;
+  if (el) {
+    await el.click();
+  } else {
+    throw new Error("Panamá: botón SIGUIENTE no encontrado o deshabilitado");
+  }
   await page.waitForTimeout(1200);
 }
 
@@ -235,13 +210,32 @@ async function facturarPanama({
   console.log(`   ID: ${idFacturacion} | Total: ${total} | RFC: ${rfc} | Comercio: ${comercio}`);
 
   const token = process.env.BROWSERLESS_TOKEN;
-  if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
+  if (!token) {
+    console.error("❌ BROWSERLESS_TOKEN no definido");
+    return { ok: false, msg: "BROWSERLESS_TOKEN no definido" };
+  }
 
-  const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true`,
-  });
+  // ── Conexión Browserless — en su propio try-catch ─────────────────────
+  let browser;
+  try {
+    browser = await puppeteer.connect({
+      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true`,
+    });
+    console.log("✅ Browserless conectado");
+  } catch (connErr) {
+    console.error("❌ Panamá: Error conectando a Browserless:", connErr.message);
+    return { ok: false, msg: `Browserless connection failed: ${connErr.message}` };
+  }
 
-  const page = await browser.newPage();
+  let page;
+  try {
+    page = await browser.newPage();
+  } catch (pageErr) {
+    console.error("❌ Panamá: Error abriendo página:", pageErr.message);
+    try { await browser.close(); } catch {}
+    return { ok: false, msg: `newPage failed: ${pageErr.message}` };
+  }
+
   await page.setViewport({ width: 1280, height: 900 });
   await page.setUserAgent(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -259,7 +253,9 @@ async function facturarPanama({
         "image/png"
       );
       console.log(`📸 [${label}]: ${u}`);
-    } catch {}
+    } catch (e) {
+      console.log(`⚠️ screenshot fallido [${label}]: ${e.message}`);
+    }
   }
 
   try {
@@ -273,18 +269,25 @@ async function facturarPanama({
 
     // ── PASO 1 — Click en "Generar Factura" ───────────────────────────────
     console.log("🖱️ Click en Generar Factura...");
-    await page.evaluate(() => {
+    const gfHandle = await page.evaluateHandle(() => {
       const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-      const btn = btns.find(b =>
-        b.textContent.trim().toLowerCase().includes('generar factura')
-      );
-      if (btn) btn.click();
+      return btns.find(b => b.textContent.trim().toLowerCase().includes('generar factura')) || null;
     });
+    const gfEl = gfHandle ? gfHandle.asElement() : null;
+    if (gfEl) {
+      await gfEl.click();
+    } else {
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
+        const btn = btns.find(b => b.textContent.trim().toLowerCase().includes('generar factura'));
+        if (btn) btn.click();
+      });
+    }
     await page.waitForTimeout(800);
     await screenshot("p1_generar_factura");
 
-    // ── PASO 1b — Click SIGUIENTE (selección de operación → Lugar de consumo) ──
-    // "Generar Factura" solo selecciona la opción; SIGUIENTE la confirma y avanza.
+    // ── PASO 1b — SIGUIENTE (selección de operación → Lugar de consumo) ──
+    // "Generar Factura" solo selecciona la tarjeta; SIGUIENTE avanza al paso real.
     console.log("➡️ Click SIGUIENTE para avanzar a Lugar de consumo...");
     await clickSiguiente(page, 8000);
 
@@ -296,6 +299,15 @@ async function facturarPanama({
       () => document.querySelectorAll('input[type="radio"]').length > 0,
       { timeout: 10000 }
     );
+
+    // Loguear radios disponibles para debugging
+    const radioLabels = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('input[type="radio"]')).map(r => {
+        const w = r.closest('label') || r.closest('.MuiFormControlLabel-root') || r.parentElement?.parentElement;
+        return w ? w.textContent.trim() : '(sin label)';
+      });
+    });
+    console.log(`   → Radio buttons disponibles: [${radioLabels.join(' | ')}]`);
 
     const ciudadSel = await page.evaluate((targetCity) => {
       const normalize = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -333,32 +345,46 @@ async function facturarPanama({
       { timeout: 10000 }
     );
 
-    // ID de Facturación — label text o primer input editable
+    // Log inputs disponibles para debugging
+    const inputsInfo = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input'))
+        .filter(i => !i.disabled && !i.readOnly && i.type !== 'checkbox')
+        .map(i => `[placeholder="${i.placeholder || ''}"]`)
+    );
+    console.log(`   → Inputs editables: ${inputsInfo.join(', ')}`);
+
     const idOk = await fillReact(page, "ID Facturación", String(idFacturacion).trim());
     if (!idOk) await fillReactNth(page, 0, String(idFacturacion).trim());
 
     await page.waitForTimeout(300);
 
-    // Total de compra — label text o segundo input editable
-    const totalOk = await fillReact(page, "Total de compra", parseFloat(total).toFixed(2));
-    if (!totalOk) await fillReactNth(page, 1, parseFloat(total).toFixed(2));
+    const totalStr = parseFloat(total).toFixed(2);
+    const totalOk = await fillReact(page, "Total de compra", totalStr);
+    if (!totalOk) await fillReactNth(page, 1, totalStr);
 
     await screenshot("p4_ticket_llenado");
 
     // ── PASO 5 — Consultar ticket + validación AJAX ───────────────────────
     console.log("🔍 Consultando ticket...");
-    await page.evaluate(() => {
+    const ctHandle = await page.evaluateHandle(() => {
       const btns = Array.from(document.querySelectorAll('button'));
-      const btn = btns.find(b =>
-        b.textContent.trim().toLowerCase().includes('consultar ticket')
-      );
-      if (btn) btn.click();
+      return btns.find(b => b.textContent.trim().toLowerCase().includes('consultar ticket')) || null;
     });
+    const ctEl = ctHandle ? ctHandle.asElement() : null;
+    if (ctEl) {
+      await ctEl.click();
+    } else {
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button'));
+        const btn = btns.find(b => b.textContent.trim().toLowerCase().includes('consultar ticket'));
+        if (btn) btn.click();
+      });
+    }
     await page.waitForTimeout(2500);
 
     const errorConsulta = await page.evaluate(() => {
       const body = document.body.innerText;
-      if (/ya fue facturado|ya facturado|ya exist/i.test(body))              return 'YA_FACTURADO';
+      if (/ya fue facturado|ya facturado|ya exist/i.test(body))                       return 'YA_FACTURADO';
       if (/no encontrado|no existe|inv[aá]lido|incorrecto|no v[aá]lido/i.test(body)) return 'DATOS_INVALIDOS';
       return null;
     });
@@ -377,9 +403,7 @@ async function facturarPanama({
     console.log("⏳ Esperando validación del ticket...");
     await page.waitForFunction(() => {
       const btns = Array.from(document.querySelectorAll('button'));
-      const btn = btns.find(b =>
-        b.textContent.trim().toUpperCase().includes('SIGUIENTE')
-      );
+      const btn = btns.find(b => b.textContent.trim().toUpperCase().includes('SIGUIENTE'));
       return btn && !btn.disabled;
     }, { timeout: 15000 }).catch(() => {
       throw new Error('Panamá: SIGUIENTE no se habilitó — ticket inválido o sin respuesta');
@@ -403,19 +427,25 @@ async function facturarPanama({
     await page.waitForTimeout(400);
 
     console.log("🔍 Click en Buscar cliente...");
-    await page.evaluate(() => {
+    const bcHandle = await page.evaluateHandle(() => {
       const btns = Array.from(document.querySelectorAll('button'));
-      const btn = btns.find(b =>
-        b.textContent.trim().toLowerCase().includes('buscar cliente')
-      );
-      if (btn) btn.click();
+      return btns.find(b => b.textContent.trim().toLowerCase().includes('buscar cliente')) || null;
     });
+    const bcEl = bcHandle ? bcHandle.asElement() : null;
+    if (bcEl) {
+      await bcEl.click();
+    } else {
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button'));
+        const btn = btns.find(b => b.textContent.trim().toLowerCase().includes('buscar cliente'));
+        if (btn) btn.click();
+      });
+    }
     await page.waitForTimeout(2500);
 
     const errorRfc = await page.evaluate(() => {
       const body = document.body.innerText;
-      if (/rfc no registrado|rfc no encontrado|not found/i.test(body)) return true;
-      return false;
+      return /rfc no registrado|rfc no encontrado|not found/i.test(body);
     });
     if (errorRfc) {
       await screenshot("p7_error_rfc");
@@ -423,10 +453,9 @@ async function facturarPanama({
       return { ok: false, error_code: 'datos_invalidos', msg: `Panamá: RFC no encontrado (${rfc})` };
     }
 
-    // Esperar que los datos fiscales se carguen — el nombre fiscal (razonSocial) debe aparecer
+    // Esperar que los datos fiscales se carguen
     console.log("⏳ Esperando carga de datos fiscales...");
     await page.waitForFunction(() => {
-      // El nombre fiscal es un input de texto con valor largo (>5 chars) y no disabled
       const inputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
       return inputs.some(i => i.value && i.value.length > 5 && !i.disabled && !i.readOnly);
     }, { timeout: 12000 }).catch(() => {
@@ -440,39 +469,38 @@ async function facturarPanama({
     console.log("💵 Seleccionando Forma de Pago: Efectivo...");
     const fpOk = await selectMUI(page, "Forma Pago", "Efectivo");
     if (!fpOk) {
-      // Fallback: buscar el MUI Select vacío y seleccionar Efectivo
-      await page.evaluate(() => {
-        const sels = document.querySelectorAll('[role="button"].MuiSelect-select, .MuiSelect-select');
-        for (const sel of sels) {
-          if (!sel.textContent.trim() || sel.textContent.trim() === '​') {
-            sel.click();
-            return;
+      // Último fallback: primer select sin valor visible
+      console.log("⚠️ Forma de Pago: usando último fallback...");
+      const emptySelects = await page.$$('.MuiSelect-select, [role="combobox"]');
+      for (const sel of emptySelects) {
+        const txt = await sel.evaluate(el => el.textContent.replace(/​/g, '').trim());
+        if (!txt) {
+          await sel.click();
+          await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 5000 })
+            .catch(() => {});
+          const opts = await page.$$('ul[role="listbox"] li');
+          for (const opt of opts) {
+            const t = await opt.evaluate(el => el.textContent.trim());
+            if (t.toLowerCase().includes('efectivo')) {
+              await opt.click();
+              console.log(`📝 Forma de Pago (último fallback): "${t}"`);
+              break;
+            }
           }
+          break;
         }
-      });
-      await page.waitForTimeout(600);
-      await page.evaluate(() => {
-        const items = document.querySelectorAll('ul[role="listbox"] li, [role="option"]');
-        for (const item of items) {
-          if (item.textContent.toLowerCase().includes('efectivo')) {
-            item.click();
-            return;
-          }
-        }
-      });
-      console.log("📝 Forma de Pago (fallback): Efectivo");
+      }
     }
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
 
     // ── PASO 9 — Correo ───────────────────────────────────────────────────
     console.log("📧 Ingresando correo...");
-    // Scroll al fondo del formulario para asegurar que el campo correo sea visible
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(400);
 
     const correoOk = await fillReact(page, "Correo", "buzonfacturas@serviciosga.site");
     if (!correoOk) {
-      // Fallback: último input editable visible (correo es siempre el último campo)
+      // Fallback: último input editable visible
       await page.evaluate((val) => {
         const inputs = Array.from(document.querySelectorAll('input'))
           .filter(i => !i.disabled && !i.readOnly && i.type !== 'checkbox');
@@ -528,7 +556,7 @@ async function facturarPanama({
       } catch {}
     });
 
-    // Capturar posible nueva pestaña con los archivos
+    // Capturar posible nueva pestaña
     const newPagePromise = new Promise(resolve => {
       browser.on("targetcreated", async target => {
         if (target.type() === "page") {
@@ -540,16 +568,20 @@ async function facturarPanama({
     });
 
     // Click en FACTURAR (MuiButton-containedPrimary con CheckCircleIcon)
-    const facturarClicked = await page.evaluate(() => {
+    const facturarHandle = await page.evaluateHandle(() => {
       const btns = Array.from(document.querySelectorAll('button'));
-      const btn = btns.find(b =>
+      return btns.find(b =>
         b.querySelector('[data-testid="CheckCircleIcon"]') ||
         b.textContent.trim().toUpperCase().includes('FACTURAR')
-      );
-      if (btn && !btn.disabled) { btn.click(); return true; }
-      return false;
+      ) || null;
     });
-    if (!facturarClicked) throw new Error("Panamá: botón FACTURAR no encontrado o deshabilitado");
+    const facturarEl = facturarHandle ? facturarHandle.asElement() : null;
+    if (!facturarEl) throw new Error("Panamá: botón FACTURAR no encontrado");
+
+    const isDisabled = await facturarEl.evaluate(el => el.disabled);
+    if (isDisabled) throw new Error("Panamá: botón FACTURAR está deshabilitado");
+
+    await facturarEl.click();
     console.log("✅ Click en FACTURAR");
 
     await page.waitForTimeout(5000);
@@ -559,28 +591,30 @@ async function facturarPanama({
     const newTab = await newPagePromise;
     if (newTab) {
       console.log("🆕 Nueva pestaña detectada:", newTab.url?.());
-      await newTab.waitForTimeout?.(2000).catch(() => {});
+      try { await newTab.waitForTimeout(2000); } catch {}
       try { await newTab.close(); } catch {}
     }
 
-    // Si no capturamos nada por intercepción, intentar botones de descarga
     if (!xmlBuffer || !pdfBuffer) {
       console.log("🔗 Buscando botones de descarga XML/PDF...");
       await page.waitForTimeout(2000);
 
-      const clickBtn = async (textMatch) => {
-        return page.evaluate((txt) => {
+      if (!xmlBuffer) {
+        const xmlBtn = await page.evaluateHandle(() => {
           const btns = Array.from(document.querySelectorAll('button, a'));
-          const btn = btns.find(b =>
-            b.textContent.trim().toUpperCase().includes(txt)
-          );
-          if (btn) { btn.click(); return true; }
-          return false;
-        }, textMatch);
-      };
-
-      if (!xmlBuffer && await clickBtn("XML")) await page.waitForTimeout(2000);
-      if (!pdfBuffer && await clickBtn("PDF")) await page.waitForTimeout(2000);
+          return btns.find(b => b.textContent.trim().toUpperCase().includes('XML')) || null;
+        });
+        const xmlEl = xmlBtn ? xmlBtn.asElement() : null;
+        if (xmlEl) { await xmlEl.click(); await page.waitForTimeout(2000); }
+      }
+      if (!pdfBuffer) {
+        const pdfBtn = await page.evaluateHandle(() => {
+          const btns = Array.from(document.querySelectorAll('button, a'));
+          return btns.find(b => b.textContent.trim().toUpperCase().includes('PDF')) || null;
+        });
+        const pdfEl = pdfBtn ? pdfBtn.asElement() : null;
+        if (pdfEl) { await pdfEl.click(); await page.waitForTimeout(2000); }
+      }
     }
 
     await screenshot("p11_descarga");
