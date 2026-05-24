@@ -265,9 +265,14 @@
 
       document.getElementById('tickets-count').textContent = `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''}`;
 
+      // Mapa global para que abrirEditar pueda leer datos sin pasarlos por atributo HTML
+      // (JSON.stringify en atributo onclick rompe la comilla del atributo)
+      if (!window._ticketDatosMap) window._ticketDatosMap = {};
+
       lista.innerHTML = tickets.map(t => {
         let datos = {};
         try { datos = JSON.parse(t.ocr_json || '{}'); } catch {}
+        window._ticketDatosMap[t.id] = datos;
 
         const statusMap = {
           pendiente_confirmacion: '<span class="badge" style="background:#FFF7ED;color:#F97316;">Confirmar datos</span>',
@@ -304,7 +309,7 @@
                 : isInactive
                   ? `<button class="btn btn-primary btn-sm" disabled style="opacity:0.4;cursor:not-allowed;">${btnLabel}</button>`
                   : isError
-                    ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="abrirEditar(${t.id}, ${JSON.stringify(JSON.stringify(datos))})">${btnLabel}</button>`
+                    ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="abrirEditar(${t.id})">${btnLabel}</button>`
                     : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>`
               }
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
@@ -376,21 +381,22 @@
     let editarTicketId = null;
 
     const CAMPOS_EDITABLES = [
-      { key: 'folio',         label: 'Folio / Ticket' },
-      { key: 'referencia',    label: 'Referencia' },
-      { key: 'idVenta',       label: 'ID de Venta' },
-      { key: 'codigoTicket',  label: 'Código de ticket' },
-      { key: 'folioFactura',  label: 'Folio de factura' },
-      { key: 'total',         label: 'Total ($)' },
-      { key: 'fecha',         label: 'Fecha' },
-      { key: 'comercio',      label: 'Comercio' },
-      { key: 'portalUrl',     label: 'URL del portal' },
+      { key: 'folio',          label: 'Folio / Ticket' },
+      { key: 'referencia',     label: 'Referencia' },
+      { key: 'idVenta',        label: 'ID de Venta' },
+      { key: 'idFacturacion',  label: 'ID de Facturación' },
+      { key: 'codigoTicket',   label: 'Código de ticket' },
+      { key: 'folioFactura',   label: 'Folio de factura' },
+      { key: 'total',          label: 'Total ($)' },
+      { key: 'fecha',          label: 'Fecha' },
+      { key: 'comercio',       label: 'Comercio' },
+      { key: 'portalUrl',      label: 'URL del portal' },
     ];
 
-    function abrirEditar(ticketId, datosJson) {
+    function abrirEditar(ticketId) {
       editarTicketId = ticketId;
-      let datos = {};
-      try { datos = JSON.parse(datosJson); } catch {}
+      // Leer datos del mapa global (evita pasar JSON por atributo HTML, lo que rompe las comillas)
+      const datos = (window._ticketDatosMap || {})[ticketId] || {};
 
       const presentes = CAMPOS_EDITABLES.filter(c => datos[c.key] !== undefined && datos[c.key] !== null && datos[c.key] !== '');
       const extras = CAMPOS_EDITABLES.filter(c => !presentes.find(p => p.key === c.key));
