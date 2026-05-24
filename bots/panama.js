@@ -612,34 +612,86 @@ async function facturarPanama({
     await page.waitForTimeout(5000);
     await screenshot("p10_post_facturar");
 
-    // ── PASO 12 — Descargar XML y PDF ─────────────────────────────────────
+    // ── PASO 12 — Descargar XML y PDF desde la pantalla de éxito ─────────
+    // Estrategia: fetch() desde el browser context con las cookies de sesión activas.
+    // Los links "Descargar XML/PDF" son <a> que apuntan a URLs de descarga del portal.
+    // Si el href no está disponible, usamos waitForResponse + click.
+    console.log("🔗 Descargando XML y PDF de la pantalla de éxito...");
+    await page.waitForTimeout(1500);
+
+    // Cerrar nueva pestaña si se abrió (algunos portales abren los archivos en nueva tab)
     const newTab = await newPagePromise;
     if (newTab) {
       console.log("🆕 Nueva pestaña detectada:", newTab.url?.());
-      try { await newTab.waitForTimeout(2000); } catch {}
       try { await newTab.close(); } catch {}
     }
 
-    if (!xmlBuffer || !pdfBuffer) {
-      console.log("🔗 Buscando botones de descarga XML/PDF...");
-      await page.waitForTimeout(2000);
+    // Helper: descarga un archivo por keyword de texto en <a> o <button>
+    async function descargarArchivo(keyword, tipoMime) {
+      // 1. Intentar obtener href del link y hacer fetch desde el navegador (más confiable)
+      const fileUrl = await page.evaluate((kw) => {
+        const links = Array.from(document.querySelectorAll('a'));
+        const link = links.find(l => l.textContent.toLowerCase().includes(kw.toLowerCase()));
+        if (link && link.href && !link.href.startsWith('javascript') && link.href !== '#') {
+          return link.href;
+        }
+        return null;
+      }, keyword).catch(() => null);
 
-      if (!xmlBuffer) {
-        const xmlBtn = await page.evaluateHandle(() => {
-          const btns = Array.from(document.querySelectorAll('button, a'));
-          return btns.find(b => b.textContent.trim().toUpperCase().includes('XML')) || null;
-        });
-        const xmlEl = xmlBtn ? xmlBtn.asElement() : null;
-        if (xmlEl) { await xmlEl.click(); await page.waitForTimeout(2000); }
+      if (fileUrl) {
+        console.log(`   → URL encontrada para ${keyword}: ${fileUrl}`);
+        const bytes = await page.evaluate(async (url) => {
+          try {
+            const r = await fetch(url, { credentials: 'include' });
+            if (!r.ok) return null;
+            return [...new Uint8Array(await r.arrayBuffer())];
+          } catch { return null; }
+        }, fileUrl).catch(() => null);
+        if (bytes && bytes.length > 200) {
+          console.log(`📄 ${keyword} descargado vía fetch: ${bytes.length} bytes`);
+          return Buffer.from(bytes);
+        }
       }
-      if (!pdfBuffer) {
-        const pdfBtn = await page.evaluateHandle(() => {
-          const btns = Array.from(document.querySelectorAll('button, a'));
-          return btns.find(b => b.textContent.trim().toUpperCase().includes('PDF')) || null;
-        });
-        const pdfEl = pdfBtn ? pdfBtn.asElement() : null;
-        if (pdfEl) { await pdfEl.click(); await page.waitForTimeout(2000); }
+
+      // 2. Click en el link/botón + interceptar respuesta HTTP
+      console.log(`   → Intentando click + intercepción para ${keyword}...`);
+      const isXml = tipoMime.includes('xml');
+      const respPromise = page.waitForResponse(resp => {
+        const ct = (resp.headers()['content-type'] || '').toLowerCase();
+        const u  = resp.url().toLowerCase();
+        return isXml
+          ? (ct.includes('xml') || u.includes('.xml'))
+          : (ct.includes('pdf') || u.includes('.pdf'));
+      }, { timeout: 8000 }).catch(() => null);
+
+      await page.evaluate((kw) => {
+        const el = Array.from(document.querySelectorAll('a, button'))
+          .find(e => e.textContent.toLowerCase().includes(kw.toLowerCase()));
+        if (el) el.click();
+      }, keyword).catch(() => {});
+
+      const resp = await respPromise;
+      if (resp) {
+        const buf = await resp.buffer().catch(() => null);
+        if (buf && buf.length > 200) {
+          console.log(`📄 ${keyword} interceptado: ${buf.length} bytes`);
+          return buf;
+        }
       }
+
+      return null;
+    }
+
+    // Descargar XML
+    if (!xmlBuffer) {
+      xmlBuffer = await descargarArchivo('descargar xml', 'application/xml').catch(() => null)
+               || await descargarArchivo('xml', 'application/xml').catch(() => null);
+    }
+
+    // Descargar PDF
+    if (!pdfBuffer) {
+      pdfBuffer = await descargarArchivo('descargar pdf', 'application/pdf').catch(() => null)
+               || await descargarArchivo('pdf', 'application/pdf').catch(() => null);
     }
 
     await screenshot("p11_descarga");
@@ -648,12 +700,12 @@ async function facturarPanama({
     let xmlUrl = null, pdfUrl = null;
 
     if (xmlBuffer && xmlBuffer.length > 200) {
-      const preview = xmlBuffer.toString("utf8", 0, 30);
+      const preview = xmlBuffer.toString("utf8", 0, 50);
       if (preview.includes("<?") || preview.includes("<cfdi") || preview.includes("<Comprobante")) {
         xmlUrl = await subirArchivoR2(xmlBuffer, `facturas/panama_${ts}.xml`, "application/xml");
         console.log("✅ XML subido:", xmlUrl);
       } else {
-        console.log("⚠️ Buffer XML no parece CFDI — preview:", preview);
+        console.log("⚠️ Buffer XML no parece CFDI — preview:", preview.substring(0, 30));
       }
     }
     if (pdfBuffer && pdfBuffer.length > 200) {
