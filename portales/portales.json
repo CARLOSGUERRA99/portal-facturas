@@ -415,6 +415,64 @@
       }
     },
 
+    "carljr": {
+      "nombre": "Carl's Jr (ICR S.A. de C.V.)",
+      "bot": "bots/carljr.js",
+      "estado": "produccion",
+      "url_base": "http://facturacion4.icr.mx/",
+      "tecnologia": "EDX Retail (jQuery + Bootstrap), wizard 4 pasos",
+      "stealth": true,
+      "comercios": ["Carl's Jr (cualquier sucursal México)", "ICR S.A. DE C.V."],
+      "deteccion": {
+        "por_portal_field": "carljr",
+        "por_texto_ocr": ["carls jr", "carl's jr", "icr s.a"],
+        "por_comercio": ["carls jr", "carl's jr", "icr s.a"],
+        "por_url_qr": ["facturacion4.icr.mx", "icr.mx"]
+      },
+      "campos_ticket": ["referencia", "total"],
+      "campos_fiscales": ["rfc", "regimenFiscal", "usoCfdi"],
+      "flujo": [
+        "Paso 1: Cargar http://facturacion4.icr.mx/, llenar #txt_ticket (referencia ~14 dígitos), #txt_total (2 decimales), #txt_rfccliente",
+        "Paso 2: Click Siguiente → detectar errores (ya_facturado / datos_invalidos) → waitForSelector #txt_cucfdi",
+        "Paso 3: Typeahead CFDI (#txt_cucfdi → escribir código → click sugerencia jQuery UI)",
+        "Paso 4: Select régimen fiscal (#cbo_cregfiscal por valor SAT ej. '601')",
+        "Paso 5: Correo fijo en #txt_ccorreo (buzonfacturas@serviciosga.site)",
+        "Paso 6: Click Siguiente → waitForFunction 'COMPROBANTE FISCAL|Confirmar Datos' en body",
+        "Paso 7: Click Siguiente → waitForFunction 'Descargar Factura|exitosamente|Enhorabuena' o #btn_dxmlpdf",
+        "Paso 8: Click #btn_dxmlpdf → interceptar ZIP → extraer PDF+XML → subir R2",
+        "Paso 9 (fallback): llenar #txt_dcorreo + click #btn_denviar → procesandoCorreo: true"
+      ],
+      "selectores_clave": {
+        "ticket": "#txt_ticket",
+        "total": "#txt_total",
+        "rfc": "#txt_rfccliente",
+        "usoCfdi": "#txt_cucfdi",
+        "regimenFiscal": "#cbo_cregfiscal",
+        "correo": "#txt_ccorreo",
+        "descargarZip": "#btn_dxmlpdf",
+        "enviarCorreo": "#btn_denviar",
+        "correoEnvio": "#txt_dcorreo"
+      },
+      "comportamientos_especiales": [
+        "Misma plataforma RetailEDX que Farmacias Benavides — selectores idénticos",
+        "El campo ticket recibe la REFERENCIA del ticket (~14 dígitos), NO el folio",
+        "Portal auto-llena razón social y datos fiscales desde RFC — NO llenar manualmente",
+        "Botón Siguiente es dinámico (sin ID fijo) — detectar por texto 'Siguiente'",
+        "CFDI es typeahead jQuery UI — escribir código (ej. G03) → click en sugerencia",
+        "Descarga ZIP con PDF+XML via intercepción de respuesta HTTP en #btn_dxmlpdf",
+        "Stealth=true requerido"
+      ],
+      "casos_especiales": {
+        "ya_facturado": "Detectar texto 'ya fue facturado|ya facturado' → return { ok:false, error_code:'ya_facturado' }",
+        "datos_invalidos": "Detectar 'no encontrado|no existe|datos incorrectos|ticket inv' → return { ok:false, error_code:'datos_invalidos' }"
+      },
+      "datos_fijos": {
+        "regimenFiscal_default": "601",
+        "usoCfdi_default": "G03",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+
     "rendichicas": {
       "nombre": "Rendichicas / Rendilitros",
       "bot": "bots/rendichicasestacionpirusadecv.js",

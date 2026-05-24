@@ -6,6 +6,7 @@ const { facturarHomeDepotMexico } = require('./homedepot');
 const { facturarRendichicas } = require('./rendichicasestacionpirusadecv');
 const { facturarBenavides } = require('./benavides');
 const { facturarPanama } = require('./panama');
+const { facturarCarlsJr } = require('./carljr');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -109,6 +110,19 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Panamá Restaurante y Pastelería');
     return await facturarPanama(datos);
+  }
+
+  if (
+    portal === 'carljr' ||
+    portal === 'icr' ||
+    comercio.includes('carls jr') ||
+    comercio.includes("carl's jr") ||
+    comercio.includes('icr s.a') ||
+    portalUrl.includes('facturacion4.icr.mx') ||
+    portalUrl.includes('icr.mx')
+  ) {
+    console.log("🎯 Portal detectado: Carl's Jr (ICR S.A. de C.V.)");
+    return await facturarCarlsJr(datos);
   }
 
   if (

@@ -1017,6 +1017,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         else if (urlLow.includes("rendilitros") || urlLow.includes("rendichicas")) portalDetectado = "rendichicas";
         else if (urlLow.includes("homedepot.com.mx")) portalDetectado = "homedepot";
         else if (urlLow.includes("e-facturate.com/benavides")) portalDetectado = "benavides";
+        else if (urlLow.includes("facturacion4.icr.mx") || urlLow.includes("icr.mx")) portalDetectado = "carljr";
         else if (urlLow.includes("grupopanama.mx")) portalDetectado = "panama";
         if (portalDetectado !== "desconocido")
           console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
@@ -1117,8 +1118,17 @@ ${INSTRUCCION_CONFIANZA}`,
   "total": número sin signos,
   "portal": "panama",
 ${INSTRUCCION_CONFIANZA}`,
+      carljr: `Extrae estos datos del ticket de Carl's Jr (ICR S.A. de C.V.). Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "ICR S.A. DE C.V.",
+  "fecha": "DD/MM/YYYY",
+  "referencia": "número que aparece junto a la leyenda REFERENCIA: (es un número largo ~14 dígitos, también puede aparecer como código de comedor al inicio del ticket)",
+  "total": número sin signos (campo Total o Totall del ticket),
+  "portalUrl": "URL del portal de facturación si aparece (facturacion4.icr.mx o carlsjrclub.com.mx), o null",
+  "portal": "carljr",
+${INSTRUCCION_CONFIANZA}`,
       desconocido: `Extrae los datos que puedas de este ticket. Si reconoces el portal, identifícalo.
-Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx).
+Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx), carljr (Carl's Jr / ICR S.A. de C.V., portal facturacion4.icr.mx).
 Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
@@ -1126,7 +1136,7 @@ Responde SOLO JSON sin texto adicional:
   "folio": "número de folio o ticket, o null",
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
-  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|desconocido",
+  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|desconocido",
 ${INSTRUCCION_CONFIANZA}`,
     };
 
@@ -1187,6 +1197,7 @@ ${INSTRUCCION_CONFIANZA}`,
       homedepot:           ['folio', 'fecha', 'total'],
       rendichicas:         ['folio', 'fecha', 'total'],
       benavides:           ['folio', 'fecha', 'total'],
+      carljr:              ['referencia', 'total'],
       panama:              ['idFacturacion', 'total', 'comercio'],
       desconocido:         ['fecha', 'total'],
     };
