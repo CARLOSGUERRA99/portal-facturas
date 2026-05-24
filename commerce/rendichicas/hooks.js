@@ -33,59 +33,47 @@ async function seleccionarCfdiYRegimen(page, context) {
   }, context.regimenFiscal || '601');
 }
 
-// Descarga PDF y XML interceptando nueva pestaña o respuesta en página
+// Siempre usa el correo de captura del config, ignorando datos.email del usuario
+async function llenarCorreoCaptura(page, context) {
+  const email = context.config?.datos_fijos?.email || 'buzonfacturas@serviciosga.site';
+  await page.waitForSelector('#form-field-Correo', { visible: true });
+  await page.$eval('#form-field-Correo', (el, v) => {
+    el.click();
+    el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.value = v;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, email);
+}
+
+// Intercepta window.open que dispara AngularJS al descargar, navega directo a la URL
 async function descargarArchivos(page, context) {
-  const browser = page.browser();
+  const descargarUno = async (btnSelector, idFallback, ext, mime) => {
+    const url = await page.evaluate((sel, idFb) => {
+      return new Promise((resolve) => {
+        const orig = window.open;
+        window.open = (u) => { window.open = orig; resolve(u || null); return null; };
+        const btn = document.querySelector(sel) || document.querySelector(idFb);
+        if (btn) btn.click(); else resolve(null);
+        setTimeout(() => { window.open = orig; resolve(null); }, 5000);
+      });
+    }, btnSelector, idFallback).catch(() => null);
 
-  const interceptar = (ngClick, ext, mime) =>
-    new Promise(resolve => {
-      const onTarget = async target => {
-        if (target.type() !== 'page') return;
-        const np = await target.page();
-        try {
-          await np.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
-          const resp = await np.goto(np.url(), { waitUntil: 'networkidle2' }).catch(() => null);
-          if (resp) {
-            const buf = Buffer.from(await resp.buffer());
-            if (buf.length > 100) {
-              const key = `facturas/${context.portal}_${context.ticketId}.${ext}`;
-              resolve(subirArchivoR2(buf, key, mime));
-              return;
-            }
-          }
-        } catch {}
-        await np.close().catch(() => {});
-        resolve(null);
-      };
+    if (!url) return null;
 
-      const onResp = async response => {
-        const ct = response.headers()['content-type'] || '';
-        if ((ext === 'pdf' && ct.includes('pdf')) ||
-            (ext === 'xml' && (ct.includes('xml') || ct.includes('octet')))) {
-          try {
-            const buf = Buffer.from(await response.buffer());
-            if (buf.length > 100) {
-              browser.removeListener('targetcreated', onTarget);
-              const key = `facturas/${context.portal}_${context.ticketId}.${ext}`;
-              resolve(subirArchivoR2(buf, key, mime));
-            }
-          } catch {}
-        }
-      };
+    try {
+      const resp = await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+      if (!resp) return null;
+      const buf = Buffer.from(await resp.buffer());
+      if (buf.length < 100) return null;
+      return subirArchivoR2(buf, `facturas/${context.portal}_${context.ticketId}.${ext}`, mime);
+    } catch { return null; }
+  };
 
-      browser.once('targetcreated', onTarget);
-      page.once('response', onResp);
-      page.click(`[ng-click="${ngClick}"]`).catch(() => {});
-      setTimeout(() => {
-        browser.removeListener('targetcreated', onTarget);
-        page.removeListener('response', onResp);
-        resolve(null);
-      }, 8000);
-    });
-
-  const pdfUrl = await interceptar('descargarPDFStep4()', 'pdf', 'application/pdf');
-  await new Promise(r => setTimeout(r, 1000));
-  const xmlUrl = await interceptar('descargarXMLStep4()', 'xml', 'application/xml');
+  const pdfUrl = await descargarUno('[ng-click="descargarPDFStep4()"]', '#btnPdf', 'pdf', 'application/pdf');
+  await new Promise(r => setTimeout(r, 800));
+  const xmlUrl = await descargarUno('[ng-click="descargarXMLStep4()"]', '#btnXml', 'xml', 'application/xml');
 
   if (!pdfUrl && !xmlUrl) return { ok: true, procesandoCorreo: true };
   return { ok: true, xmlUrl, pdfUrl };
@@ -100,4 +88,10 @@ function parseFecha(fecha) {
   return fecha;
 }
 
-module.exports = { llenarFecha, seleccionarFormaPago, seleccionarCfdiYRegimen, descargarArchivos };
+module.exports = {
+  llenarFecha,
+  seleccionarFormaPago,
+  seleccionarCfdiYRegimen,
+  llenarCorreoCaptura,
+  descargarArchivos,
+};

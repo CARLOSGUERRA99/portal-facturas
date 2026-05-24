@@ -18,7 +18,7 @@
   { "action": "fill",       "selector": "{{selectors.razonSocial}}",  "value": "{{razonSocial}}",   "strategy": "angularjs" },
   { "action": "fill",       "selector": "{{selectors.codigoPostal}}", "value": "{{codigoPostal}}", "strategy": "angularjs" },
   { "action": "hook",       "name": "seleccionarCfdiYRegimen" },
-  { "action": "fill",       "selector": "{{selectors.correo}}",       "value": "{{email}}",         "strategy": "angularjs" },
+  { "action": "hook",       "name": "llenarCorreoCaptura" },
   { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p4_datos_fiscales_llenados" },
 
   { "action": "click",      "selector": "{{selectors.btnSiguienteDF}}" },
