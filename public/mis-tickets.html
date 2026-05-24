@@ -309,7 +309,8 @@
                 : isInactive
                   ? `<button class="btn btn-primary btn-sm" disabled style="opacity:0.4;cursor:not-allowed;">${btnLabel}</button>`
                   : isError
-                    ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="abrirEditar(${t.id})">${btnLabel}</button>`
+                    ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>
+                       <button class="btn btn-sm" onclick="abrirEditar(${t.id})" style="background:#f5f5f5;color:#555;border:1.5px solid #ddd;font-size:0.78rem;">Editar datos</button>`
                     : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>`
               }
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
