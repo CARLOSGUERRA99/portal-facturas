@@ -30,6 +30,23 @@ async function fillReact(page, labelOrPlaceholder, value) {
       }
     }
 
+    // 3. Por type="email" (campo Correo en portales Next.js)
+    if (!input && (lowerLp.includes('correo') || lowerLp.includes('email') || lowerLp.includes('mail'))) {
+      const emailInputs = Array.from(document.querySelectorAll('input[type="email"]'));
+      if (emailInputs.length === 1) {
+        input = emailInputs[0];
+      } else if (emailInputs.length > 1) {
+        for (const ei of emailInputs) {
+          const ctrl = ei.closest('.MuiFormControl-root') || ei.parentElement?.parentElement;
+          if (ctrl && normalize(ctrl.textContent).includes(lowerLp)) {
+            input = ei;
+            break;
+          }
+        }
+        if (!input) input = emailInputs[emailInputs.length - 1]; // último email input como fallback
+      }
+    }
+
     if (!input) return false;
 
     // React native setter — necesario para que React detecte el cambio
@@ -139,8 +156,14 @@ async function selectMUI(page, labelText, optionText) {
       .catch(() => { console.log(`❌ selectMUI: listbox no apareció tras reintento`); });
   }
 
+  // MUI v5 anima la apertura: esperar a que los <li> estén en el DOM antes de leerlos
+  await page.waitForFunction(
+    () => document.querySelectorAll('ul[role="listbox"] li, [role="option"], .MuiMenuItem-root').length > 0,
+    { timeout: 4000 }
+  ).catch(() => console.log(`⚠️ selectMUI: opciones tardando en renderizar`));
+
   // 4. Loguear opciones disponibles (muy útil para debugging)
-  const optHandles = await page.$$('ul[role="listbox"] li, .MuiMenuItem-root');
+  const optHandles = await page.$$('ul[role="listbox"] li, [role="option"], .MuiMenuItem-root');
   const optTexts = await Promise.all(
     optHandles.map(h => h.evaluate(el => el.textContent.trim()).catch(() => ''))
   );
@@ -464,6 +487,36 @@ async function facturarPanama({
     // Pausa extra para que React termine de renderizar todos los selects (régimen, CFDI)
     await page.waitForTimeout(1000);
     await screenshot("p7_datos_cargados");
+
+    // ── PASO 7b — Actualizar Régimen fiscal si el perfil tiene uno específico ──
+    // La SAT puede cargar un régimen distinto al del perfil del cliente.
+    // Usamos el regimenFiscal del sistema para corregirlo.
+    if (regimenFiscal) {
+      console.log(`🏛️ Actualizando Régimen fiscal: ${regimenFiscal}...`);
+      const regOk = await selectMUI(page, "Régimen fiscal", regimenFiscal);
+      if (!regOk) {
+        // Fallback: buscar el select de régimen por índice (segundo select de la página)
+        console.log(`⚠️ Régimen fiscal: intentando por índice...`);
+        const regSelects = await page.$$('[role="combobox"], .MuiSelect-select');
+        if (regSelects.length >= 1) {
+          await regSelects[0].click();
+          await page.waitForFunction(
+            () => document.querySelectorAll('ul[role="listbox"] li, .MuiMenuItem-root').length > 0,
+            { timeout: 3000 }
+          ).catch(() => {});
+          const regOpts = await page.$$('ul[role="listbox"] li, .MuiMenuItem-root');
+          for (const opt of regOpts) {
+            const t = await opt.evaluate(el => el.textContent.trim());
+            if (t.includes(String(regimenFiscal))) {
+              await opt.click();
+              console.log(`📝 Régimen fiscal (fallback): "${t}"`);
+              break;
+            }
+          }
+        }
+      }
+      await page.waitForTimeout(400);
+    }
 
     // ── PASO 8 — Forma de Pago → Efectivo (MUI Select) ───────────────────
     console.log("💵 Seleccionando Forma de Pago: Efectivo...");
