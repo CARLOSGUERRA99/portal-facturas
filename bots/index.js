@@ -27,6 +27,16 @@ async function detectarYFacturar(datos, db = null) {
   if (portal === 'oxxo' || texto.includes('oxxo') || comercio.includes('oxxo')) {
     enginePortal = 'oxxo';
   }
+  if (
+    portal === 'rendichicas' ||
+    portal === 'rendichicasestacionpirusadecv' ||
+    comercio.includes('rendichicas') ||
+    comercio.includes('rendi chicas') ||
+    portalUrl.includes('rendilitros') ||
+    portalUrl.includes('rendichicas')
+  ) {
+    enginePortal = 'rendichicas';
+  }
 
   // Fallback automático al bot legacy en caso de cualquier excepción.
   // En esta fase de validación: OK→retorna engine, error→retorna engine, excepción→legacy.

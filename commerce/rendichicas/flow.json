@@ -1,0 +1,33 @@
+[
+  { "action": "goto",       "url": "{{url}}" },
+  { "action": "waitFor",    "selector": "{{selectors.folio}}", "timeout": 15000 },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p1_carga" },
+
+  { "action": "fill",       "selector": "{{selectors.folio}}",    "value": "{{folio}}",       "strategy": "angularjs" },
+  { "action": "hook",       "name": "llenarFecha" },
+  { "action": "fill",       "selector": "{{selectors.importe}}",  "value": "{{totalDecimal}}", "strategy": "angularjs" },
+  { "action": "fill",       "selector": "{{selectors.rfcTicket}}","value": "{{rfc}}",          "strategy": "angularjs" },
+  { "action": "hook",       "name": "seleccionarFormaPago" },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p2_ticket" },
+
+  { "action": "click",      "selector": "{{selectors.btnSiguienteIT}}" },
+  { "action": "waitFor",    "selector": "{{selectors.rfcFiscal}}", "timeout": 20000 },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p3_datos_fiscales" },
+
+  { "action": "fill",       "selector": "{{selectors.rfcFiscal}}",    "value": "{{rfc}}",          "strategy": "angularjs" },
+  { "action": "fill",       "selector": "{{selectors.razonSocial}}",  "value": "{{razonSocial}}",   "strategy": "angularjs" },
+  { "action": "fill",       "selector": "{{selectors.codigoPostal}}", "value": "{{codigoPostal}}", "strategy": "angularjs" },
+  { "action": "hook",       "name": "seleccionarCfdiYRegimen" },
+  { "action": "fill",       "selector": "{{selectors.correo}}",       "value": "{{email}}",         "strategy": "angularjs" },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p4_datos_fiscales_llenados" },
+
+  { "action": "click",      "selector": "{{selectors.btnSiguienteDF}}" },
+  { "action": "waitFor",    "selector": "{{selectors.btnFacturar}}", "timeout": 20000 },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p5_confirmar" },
+
+  { "action": "click",      "selector": "{{selectors.btnFacturar}}" },
+  { "action": "waitFor",    "selector": "{{selectors.btnPdf}}", "timeout": 30000 },
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p6_descarga" },
+
+  { "action": "hook",       "name": "descargarArchivos" }
+]

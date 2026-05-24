@@ -1,0 +1,18 @@
+{
+  "folio":          "#form-field-Ticket",
+  "fecha":          "#form-field-Fecha",
+  "importe":        "#form-field-Importe",
+  "rfcTicket":      "#form-field-RFC",
+  "formaPago":      "#form-field-FormaPago",
+  "btnSiguienteIT": "button[ng-click='btnSiguienteIT()']",
+  "rfcFiscal":      "#form-field-DFRFC",
+  "razonSocial":    "#form-field-Razon",
+  "codigoPostal":   "#form-field-CP",
+  "usoCfdi":        "#form-field-cmbUsoCFDI",
+  "regimenFiscal":  "#form-field-Regimen",
+  "correo":         "#form-field-Correo",
+  "btnSiguienteDF": "button[ng-click='btnSiguienteDF()']",
+  "btnFacturar":    "button[ng-click='btnSiguienteCD()']",
+  "btnPdf":         "#btnPdf",
+  "btnXml":         "#btnXml"
+}

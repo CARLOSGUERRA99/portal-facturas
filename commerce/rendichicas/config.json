@@ -1,0 +1,16 @@
+{
+  "id": "rendichicas",
+  "nombre": "Rendichicas / Rendilitros",
+  "url_base": "https://facturacion.rendilitros.com/",
+  "dominio": "rendilitros.com",
+  "stealth": true,
+  "timeout": 30000,
+  "defaults": {
+    "formaPago": "28",
+    "usoCfdi": "G03",
+    "regimenFiscal": "601"
+  },
+  "datos_fijos": {
+    "email": "buzonfacturas@serviciosga.site"
+  }
+}
