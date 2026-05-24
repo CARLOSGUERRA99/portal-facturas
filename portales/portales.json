@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-05-24",
+  "actualizado": "2026-05-24b",
   "portales": {
     "oxxo": {
       "nombre": "OXXO Facturación Electrónica",
@@ -282,6 +282,78 @@
         "Fecha con Escape antes y después para cerrar datepicker Angular"
       ],
       "notas_desarrollo": "Bot tiene lógica correcta pero aún no tiene caso de éxito end-to-end validado"
+    },
+
+    "panama": {
+      "nombre": "Panamá Restaurante y Pastelería",
+      "bot": "bots/panama.js",
+      "estado": "produccion",
+      "url_base": "https://portalfacturacion.grupopanama.mx/",
+      "tecnologia": "Next.js + Material UI v5 (React SPA) — sin IDs en inputs, MUI Selects",
+      "stealth": true,
+      "comercios": ["Panamá Restaurante y Pastelería (Culiacán, Mazatlán, Los Mochis)"],
+      "deteccion": {
+        "por_portal_field": "panama",
+        "por_texto_ocr": ["grupopanama", "pastelerias panama", "restaurante panama"],
+        "por_comercio": ["pasteleria panama", "pastelerias panama", "restaurante panama"],
+        "por_url_qr": ["grupopanama.mx"]
+      },
+      "campos_ticket": ["idFacturacion", "total", "comercio"],
+      "campos_fiscales": ["rfc", "regimenFiscal", "usoCfdi", "codigoPostal"],
+      "flujo": [
+        "Paso 0: Cargar https://portalfacturacion.grupopanama.mx/",
+        "Paso 1: Click 'Generar Factura' por texto",
+        "Paso 2: Seleccionar ciudad por radio button (mapear desde comercio del ticket)",
+        "Paso 3: Click SIGUIENTE",
+        "Paso 4: Llenar 'ID Facturación' (React native setter) + 'Total de compra'",
+        "Paso 5: Click 'Consultar ticket' → esperar AJAX → detectar errores",
+        "Paso 6: Esperar que SIGUIENTE se habilite → click SIGUIENTE",
+        "Paso 7: Llenar RFC → click 'Buscar cliente' → esperar carga AJAX datos fiscales",
+        "Paso 8: MUI Select 'Forma Pago' → seleccionar 'Efectivo'",
+        "Paso 9: Llenar 'Correo': buzonfacturas@serviciosga.site",
+        "Paso 10: Click SIGUIENTE (se habilita con FP + correo)",
+        "Paso 11: Click 'FACTURAR' (MuiButton-containedPrimary + CheckCircleIcon)",
+        "Paso 12: Interceptar XML/PDF por response/targetcreated, subir R2; fallback IMAP"
+      ],
+      "selectores_clave": {
+        "generar_factura": "button con texto 'Generar Factura'",
+        "radio_ciudad": "input[type='radio'] — detectar por label text",
+        "siguiente": "button con texto 'SIGUIENTE' (no disabled)",
+        "id_facturacion": "input — label 'ID Facturación:' (React, sin ID)",
+        "total_compra": "input — label 'Total de compra:' (React, sin ID)",
+        "consultar_ticket": "button con texto 'Consultar ticket'",
+        "rfc": "input — label 'RFC:' (React, sin ID)",
+        "buscar_cliente": "button con texto 'Buscar cliente'",
+        "forma_pago": "MUI Select — label 'Forma Pago:' → opción 'Efectivo'",
+        "correo": "input — label 'Correo:' (React, sin ID, último input)",
+        "facturar": "button MuiButton-containedPrimary con data-testid='CheckCircleIcon'"
+      },
+      "comportamientos_especiales": [
+        "React SPA — inputs controlados, requieren Object.getOwnPropertyDescriptor native setter",
+        "Sin IDs en inputs — usar label text o posición (nth) como fallback",
+        "MUI Select para Forma de Pago y Uso CFDI — NO son <select> nativos",
+        "Ciudad se determina del nombre del comercio OCR (Mazatlán/Culiacán/Los Mochis/Venta en Linea)",
+        "SIGUIENTE deshabilitado hasta que ticket sea validado por AJAX",
+        "SIGUIENTE en paso 3 deshabilitado hasta que Forma Pago + Correo estén llenados",
+        "Descarga por interceptación de response HTTP (content-type xml/pdf) o targetcreated"
+      ],
+      "casos_especiales": {
+        "ya_facturado": "Detectar texto 'ya fue facturado' tras Consultar ticket",
+        "datos_invalidos": "Detectar 'no encontrado|inválido|incorrecto' tras Consultar ticket",
+        "rfc_no_encontrado": "Detectar 'RFC no registrado|not found' tras Buscar cliente"
+      },
+      "ciudad_mapping": {
+        "mazatlan": "Mazatlán",
+        "culiacan": "Culiacán",
+        "mochis": "Los Mochis",
+        "linea": "Venta en Linea",
+        "default": "Culiacán"
+      },
+      "datos_fijos": {
+        "formaPago": "Efectivo (01)",
+        "usoCfdi_default": "G03",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
     },
 
     "benavides": {

@@ -229,7 +229,7 @@ function proximaMedianoche() {
   return d;
 }
 
-const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara', 'rendichicas', 'benavides'];
+const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara', 'rendichicas', 'benavides', 'panama'];
 
 // ── LÓGICA COMPARTIDA DE FACTURACIÓN (usada por auto-facturar y endpoint manual) ──
 async function ejecutarFacturacion(ticketId, userId) {
@@ -481,7 +481,7 @@ async function procesarCola() {
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'pendiente_confirmacion' AND t.requiere_confirmacion = 0
        AND u.rfc IS NOT NULL AND u.rfc != ''
-       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides')
+       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama')
        ORDER BY t.creado ASC LIMIT ?`,
       [slots]
     );
@@ -1006,6 +1006,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         else if (urlLow.includes("rendilitros") || urlLow.includes("rendichicas")) portalDetectado = "rendichicas";
         else if (urlLow.includes("homedepot.com.mx")) portalDetectado = "homedepot";
         else if (urlLow.includes("e-facturate.com/benavides")) portalDetectado = "benavides";
+        else if (urlLow.includes("grupopanama.mx")) portalDetectado = "panama";
         if (portalDetectado !== "desconocido")
           console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
         datosOCR.portalUrl = urlQR;
@@ -1097,8 +1098,16 @@ ${INSTRUCCION_CONFIANZA}`,
   "total": número sin signos,
   "portal": "benavides",
 ${INSTRUCCION_CONFIANZA}`,
+      panama: `Extrae estos datos del ticket de Panamá Restaurante y Pastelería. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "nombre exacto del establecimiento (ej. PASTELERIAS PANAMA DE MAZATLAN SA DE CV)",
+  "fecha": "DD/MM/YYYY",
+  "idFacturacion": "número que aparece después de la leyenda SU ID DE FACTURACION ES (solo dígitos)",
+  "total": número sin signos,
+  "portal": "panama",
+${INSTRUCCION_CONFIANZA}`,
       desconocido: `Extrae los datos que puedas de este ticket. Si reconoces el portal, identifícalo.
-Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com).
+Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx).
 Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
@@ -1106,7 +1115,7 @@ Responde SOLO JSON sin texto adicional:
   "folio": "número de folio o ticket, o null",
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
-  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|desconocido",
+  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|desconocido",
 ${INSTRUCCION_CONFIANZA}`,
     };
 
@@ -1167,6 +1176,7 @@ ${INSTRUCCION_CONFIANZA}`,
       homedepot:           ['folio', 'fecha', 'total'],
       rendichicas:         ['folio', 'fecha', 'total'],
       benavides:           ['folio', 'fecha', 'total'],
+      panama:              ['idFacturacion', 'total', 'comercio'],
       desconocido:         ['fecha', 'total'],
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;

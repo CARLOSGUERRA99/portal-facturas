@@ -5,6 +5,7 @@ const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
 const { facturarHomeDepotMexico } = require('./homedepot');
 const { facturarRendichicas } = require('./rendichicasestacionpirusadecv');
 const { facturarBenavides } = require('./benavides');
+const { facturarPanama } = require('./panama');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -95,6 +96,19 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Farmacias Benavides');
     return await facturarBenavides(datos);
+  }
+
+  if (
+    portal === 'panama' ||
+    portal === 'grupopanama' ||
+    portalUrl.includes('grupopanama.mx') ||
+    comercio.includes('pasteleria panama') ||
+    comercio.includes('pastelerias panama') ||
+    comercio.includes('restaurante panama') ||
+    texto.includes('grupopanama')
+  ) {
+    console.log('🎯 Portal detectado: Panamá Restaurante y Pastelería');
+    return await facturarPanama(datos);
   }
 
   if (
