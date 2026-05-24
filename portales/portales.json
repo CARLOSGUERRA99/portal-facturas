@@ -284,6 +284,28 @@
       "notas_desarrollo": "Bot tiene lógica correcta pero aún no tiene caso de éxito end-to-end validado"
     },
 
+    "benavides": {
+      "nombre": "Farmacias Benavides",
+      "bot": "commerce/benavides/flow.json",
+      "estado": "en_validacion",
+      "url_base": "https://e-facturate.com/benavides/",
+      "tecnologia": "EDX Retail (jQuery + Bootstrap)",
+      "stealth": false,
+      "comercios": ["Farmacias Benavides (cualquier sucursal)"],
+      "deteccion": {
+        "por_portal_field": "benavides",
+        "por_texto_ocr": ["benavides", "farmacias benavides"],
+        "por_comercio": ["benavides"],
+        "por_url_qr": ["e-facturate.com/benavides"]
+      },
+      "campos_ticket": ["folio", "fecha", "total"],
+      "campos_fiscales": ["rfc", "razonSocial", "regimenFiscal", "usoCfdi", "codigoPostal", "calle", "colonia", "municipio"],
+      "datos_fijos": {
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+
     "rendichicas": {
       "nombre": "Rendichicas / Rendilitros",
       "bot": "bots/rendichicasestacionpirusadecv.js",
