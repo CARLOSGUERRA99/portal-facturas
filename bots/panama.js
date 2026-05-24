@@ -87,99 +87,115 @@ async function fillReactNth(page, nth, value) {
 }
 
 // selectMUI: para MUI Select en portales Next.js + MUI v5.
-// Usa Puppeteer elementHandle.click() (eventos de mouse reales) en vez de
-// el.click() desde evaluate(), que no dispara los listeners de MUI/React.
+// Estrategia 1: búsqueda por label. Si falla → estrategia 2: prueba cada select
+// hasta encontrar el que contiene la opción buscada (cierra con Escape los incorrectos).
 async function selectMUI(page, labelText, optionText) {
   console.log(`🎯 selectMUI: buscando "${labelText}" → "${optionText}"`);
 
-  // 1. Scroll al select
-  await page.evaluate((lbl) => {
-    const normalize = s => s.toLowerCase().replace(':', '').trim();
-    const labels = document.querySelectorAll('label, p, .MuiFormLabel-root, .MuiInputLabel-root');
-    for (const l of labels) {
-      if (normalize(l.textContent).includes(normalize(lbl))) {
-        const ctrl = l.closest('.MuiFormControl-root') || l.parentElement?.parentElement;
-        if (ctrl) { ctrl.scrollIntoView({ block: 'center', behavior: 'smooth' }); return; }
+  // Esperar y hacer click en las opciones del listbox abierto. Retorna el texto seleccionado o null.
+  async function elegirOpcion() {
+    // MUI v5 anima la apertura — esperar a que los <li> existan
+    await page.waitForFunction(
+      () => document.querySelectorAll('ul[role="listbox"] li, [role="option"], .MuiMenuItem-root').length > 0,
+      { timeout: 3000 }
+    ).catch(() => {});
+
+    const handles = await page.$$('ul[role="listbox"] li, [role="option"], .MuiMenuItem-root');
+    const texts   = await Promise.all(handles.map(h => h.evaluate(el => el.textContent.trim()).catch(() => '')));
+
+    for (let i = 0; i < handles.length; i++) {
+      if (texts[i].toLowerCase().includes(optionText.toLowerCase())) {
+        await handles[i].click();
+        await page.waitForTimeout(500);
+        return texts[i];
       }
     }
-  }, labelText);
-  await page.waitForTimeout(500);
+    return null; // opción no encontrada en este listbox
+  }
 
-  // 2. Obtener el handle del elemento select para poder hacer click real (no evaluate)
+  // ── Estrategia 1: búsqueda por label ─────────────────────────────────────
   const selectHandle = await page.evaluateHandle((lbl) => {
     const normalize = s => s.toLowerCase().replace(':', '').trim();
-    const labels = document.querySelectorAll('label, p, .MuiFormLabel-root, .MuiInputLabel-root');
-    for (const l of labels) {
-      if (normalize(l.textContent).includes(normalize(lbl))) {
-        const ctrl = l.closest('.MuiFormControl-root') || l.parentElement?.parentElement;
-        if (ctrl) {
-          const sel = ctrl.querySelector(
-            '[role="combobox"], [role="button"], .MuiSelect-select, .MuiInputBase-input'
-          );
+    const lowerLp   = normalize(lbl);
+
+    // 1a. Buscar en elementos típicos de label
+    const labelEls = document.querySelectorAll(
+      'label, p, span, .MuiFormLabel-root, .MuiInputLabel-root, legend'
+    );
+    for (const l of labelEls) {
+      if (l.children.length > 3) continue; // saltar contenedores grandes
+      const txt = normalize(l.textContent);
+      if (!txt.includes(lowerLp)) continue;
+      const ctrl = l.closest('.MuiFormControl-root') || l.parentElement;
+      if (ctrl) {
+        const sel = ctrl.querySelector(
+          '[role="combobox"], [role="button"], .MuiSelect-select'
+        );
+        if (sel) return sel;
+      }
+    }
+
+    // 1b. Recorrer todos los .MuiFormControl-root y comparar su texto interno
+    for (const ctrl of document.querySelectorAll('.MuiFormControl-root')) {
+      for (const child of ctrl.querySelectorAll('label, p, span, legend')) {
+        if (child.children.length > 2) continue;
+        if (normalize(child.textContent).includes(lowerLp)) {
+          const sel = ctrl.querySelector('[role="combobox"], [role="button"], .MuiSelect-select');
           if (sel) return sel;
         }
       }
     }
+
     return null;
   }, labelText);
 
   const selectEl = selectHandle ? selectHandle.asElement() : null;
 
   if (selectEl) {
-    // Click real via Puppeteer — dispara mousedown/mouseup/click que MUI escucha
+    await selectEl.scrollIntoView().catch(() => {});
     await selectEl.click();
-    console.log(`   → Click en select (Puppeteer handle)`);
-  } else {
-    // Fallback: primer MUI Select vacío
-    console.log(`⚠️ selectMUI: label "${labelText}" no hallado — fallback por select vacío`);
-    const fallback = await page.$('.MuiSelect-select:not([aria-disabled])');
-    if (fallback) {
-      await fallback.click();
-    } else {
-      console.log(`⚠️ selectMUI: ningún select disponible para "${labelText}"`);
-      return false;
-    }
-  }
-
-  // 3. Esperar el popover/listbox
-  try {
-    await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 6000 });
-  } catch {
-    // Reintento: el click puede haber fallado (elemento en posición off-screen, etc.)
-    console.log(`⚠️ selectMUI: listbox no apareció, reintentando...`);
-    if (selectEl) await selectEl.click().catch(() => {});
-    else {
-      const fb2 = await page.$('.MuiSelect-select:not([aria-disabled])');
-      if (fb2) await fb2.click().catch(() => {});
-    }
-    await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 5000 })
-      .catch(() => { console.log(`❌ selectMUI: listbox no apareció tras reintento`); });
-  }
-
-  // MUI v5 anima la apertura: esperar a que los <li> estén en el DOM antes de leerlos
-  await page.waitForFunction(
-    () => document.querySelectorAll('ul[role="listbox"] li, [role="option"], .MuiMenuItem-root').length > 0,
-    { timeout: 4000 }
-  ).catch(() => console.log(`⚠️ selectMUI: opciones tardando en renderizar`));
-
-  // 4. Loguear opciones disponibles (muy útil para debugging)
-  const optHandles = await page.$$('ul[role="listbox"] li, [role="option"], .MuiMenuItem-root');
-  const optTexts = await Promise.all(
-    optHandles.map(h => h.evaluate(el => el.textContent.trim()).catch(() => ''))
-  );
-  console.log(`   → Opciones disponibles: [${optTexts.join(' | ')}]`);
-
-  // 5. Click en la opción correcta usando Puppeteer handle
-  for (let i = 0; i < optHandles.length; i++) {
-    if (optTexts[i].toLowerCase().includes(optionText.toLowerCase())) {
-      await optHandles[i].click();
-      console.log(`📝 MUI Select["${labelText}"]: seleccionado "${optTexts[i]}"`);
-      await page.waitForTimeout(600);
+    await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 5000 }).catch(() => {});
+    const chosen = await elegirOpcion();
+    if (chosen) {
+      console.log(`📝 MUI Select["${labelText}"]: seleccionado "${chosen}"`);
       return true;
     }
+    // Listbox apareció pero opción no encontrada — cerrar
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.waitForTimeout(300);
   }
 
-  console.log(`⚠️ MUI Select["${labelText}"]: opción "${optionText}" no encontrada en lista`);
+  // ── Estrategia 2: probar cada select hasta encontrar el correcto ──────────
+  console.log(`⚠️ selectMUI: label "${labelText}" no hallado — probando cada select`);
+
+  const allSelects = await page.$$('.MuiSelect-select, [role="combobox"]');
+  for (const sel of allSelects) {
+    const isDisabled = await sel.evaluate(el =>
+      el.getAttribute('aria-disabled') === 'true' || el.hasAttribute('disabled')
+    ).catch(() => false);
+    if (isDisabled) continue;
+
+    // Scroll y click
+    await sel.evaluate(el => el.scrollIntoView({ block: 'center' })).catch(() => {});
+    await sel.click();
+
+    const appeared = await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 3000 })
+      .then(() => true).catch(() => false);
+
+    if (!appeared) continue;
+
+    const chosen = await elegirOpcion();
+    if (chosen) {
+      console.log(`📝 MUI Select["${labelText}"]: seleccionado "${chosen}" (fallback por opciones)`);
+      return true;
+    }
+
+    // Opción no estaba en este select — cerrar y probar siguiente
+    await page.keyboard.press('Escape').catch(() => {});
+    await page.waitForTimeout(400);
+  }
+
+  console.log(`❌ selectMUI: "${optionText}" no encontrado en ningún select de la página`);
   return false;
 }
 
@@ -488,62 +504,18 @@ async function facturarPanama({
     await page.waitForTimeout(1000);
     await screenshot("p7_datos_cargados");
 
-    // ── PASO 7b — Actualizar Régimen fiscal si el perfil tiene uno específico ──
+    // ── PASO 7b — Actualizar Régimen fiscal ──────────────────────────────────
     // La SAT puede cargar un régimen distinto al del perfil del cliente.
-    // Usamos el regimenFiscal del sistema para corregirlo.
     if (regimenFiscal) {
       console.log(`🏛️ Actualizando Régimen fiscal: ${regimenFiscal}...`);
-      const regOk = await selectMUI(page, "Régimen fiscal", regimenFiscal);
-      if (!regOk) {
-        // Fallback: buscar el select de régimen por índice (segundo select de la página)
-        console.log(`⚠️ Régimen fiscal: intentando por índice...`);
-        const regSelects = await page.$$('[role="combobox"], .MuiSelect-select');
-        if (regSelects.length >= 1) {
-          await regSelects[0].click();
-          await page.waitForFunction(
-            () => document.querySelectorAll('ul[role="listbox"] li, .MuiMenuItem-root').length > 0,
-            { timeout: 3000 }
-          ).catch(() => {});
-          const regOpts = await page.$$('ul[role="listbox"] li, .MuiMenuItem-root');
-          for (const opt of regOpts) {
-            const t = await opt.evaluate(el => el.textContent.trim());
-            if (t.includes(String(regimenFiscal))) {
-              await opt.click();
-              console.log(`📝 Régimen fiscal (fallback): "${t}"`);
-              break;
-            }
-          }
-        }
-      }
-      await page.waitForTimeout(400);
+      await selectMUI(page, "Régimen fiscal", String(regimenFiscal));
+      // Esperar a que React actualice el DOM antes de buscar el siguiente select
+      await page.waitForTimeout(600);
     }
 
     // ── PASO 8 — Forma de Pago → Efectivo (MUI Select) ───────────────────
     console.log("💵 Seleccionando Forma de Pago: Efectivo...");
-    const fpOk = await selectMUI(page, "Forma Pago", "Efectivo");
-    if (!fpOk) {
-      // Último fallback: primer select sin valor visible
-      console.log("⚠️ Forma de Pago: usando último fallback...");
-      const emptySelects = await page.$$('.MuiSelect-select, [role="combobox"]');
-      for (const sel of emptySelects) {
-        const txt = await sel.evaluate(el => el.textContent.replace(/​/g, '').trim());
-        if (!txt) {
-          await sel.click();
-          await page.waitForSelector('ul[role="listbox"]', { visible: true, timeout: 5000 })
-            .catch(() => {});
-          const opts = await page.$$('ul[role="listbox"] li');
-          for (const opt of opts) {
-            const t = await opt.evaluate(el => el.textContent.trim());
-            if (t.toLowerCase().includes('efectivo')) {
-              await opt.click();
-              console.log(`📝 Forma de Pago (último fallback): "${t}"`);
-              break;
-            }
-          }
-          break;
-        }
-      }
-    }
+    await selectMUI(page, "Forma Pago", "Efectivo");
     await page.waitForTimeout(600);
 
     // ── PASO 9 — Correo ───────────────────────────────────────────────────
