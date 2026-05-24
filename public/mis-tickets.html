@@ -303,9 +303,9 @@
 
         const isPendingConfirm = t.status === 'pendiente_confirmacion';
         const isError = t.status === 'error';
+        const isProcessed = t.status === 'procesado';
+        const isProcessing = ['procesando', 'procesando_correo'].includes(t.status);
         const canDelete = isError || t.status === 'pendiente' || isPendingConfirm;
-        const btnLabel = t.status === 'procesado' ? 'Facturado' : isError ? 'Reintentar' : 'Facturar';
-        const isInactive = ['procesando', 'procesando_correo', 'procesado'].includes(t.status);
 
         // Select de reasignación (visible solo si hay residentes configurados)
         const residenteSelect = _misResidentes.length > 0 ? `
@@ -326,12 +326,14 @@
               ${badge}
               ${isPendingConfirm
                 ? `<a href="/dashboard?confirmar=${t.id}" class="btn btn-primary btn-sm">Revisar datos</a>`
-                : isInactive
-                  ? `<button class="btn btn-primary btn-sm" disabled style="opacity:0.4;cursor:not-allowed;">${btnLabel}</button>`
-                  : isError
-                    ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>
-                       <button class="btn btn-sm" onclick="abrirEditar(${t.id})" style="background:#f5f5f5;color:#555;border:1.5px solid #ddd;font-size:0.78rem;">Editar datos</button>`
-                    : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">${btnLabel}</button>`
+                : isProcessed
+                  ? ''
+                  : isProcessing
+                    ? `<button class="btn btn-primary btn-sm" disabled style="opacity:0.4;cursor:not-allowed;">Procesando...</button>`
+                    : isError
+                      ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">Reintentar</button>
+                         <button class="btn btn-sm" onclick="abrirEditar(${t.id})" style="background:#f5f5f5;color:#555;border:1.5px solid #ddd;font-size:0.78rem;">Editar datos</button>`
+                      : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">Facturar</button>`
               }
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
               ${residenteSelect}
