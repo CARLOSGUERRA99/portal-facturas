@@ -128,7 +128,14 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject) {
 
         if (pendientes > 0) return;
 
-        // Todos los mensajes recolectados — buscar el primero con XML/PDF
+        // Todos los mensajes recolectados — ordenar por fecha DESC (más nuevo primero)
+        // para evitar agarrar un correo CFDI antiguo antes que el recién llegado.
+        mensajes.sort((a, b) => {
+          const da = a.parsed.date ? new Date(a.parsed.date) : new Date(0);
+          const db2 = b.parsed.date ? new Date(b.parsed.date) : new Date(0);
+          return db2 - da;
+        });
+
         let encontrado = null;
 
         for (const { parsed, uid: msgUid } of mensajes) {
