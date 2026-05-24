@@ -14,9 +14,9 @@
   { "action": "waitFor",    "selector": "{{selectors.rfcFiscal}}", "timeout": 20000 },
   { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p3_datos_fiscales" },
 
-  { "action": "fill",       "selector": "{{selectors.rfcFiscal}}",    "value": "{{rfc}}",          "strategy": "angularjs" },
-  { "action": "fill",       "selector": "{{selectors.razonSocial}}",  "value": "{{razonSocial}}",   "strategy": "angularjs" },
-  { "action": "fill",       "selector": "{{selectors.codigoPostal}}", "value": "{{codigoPostal}}", "strategy": "angularjs" },
+  { "action": "fill",       "selector": "{{selectors.rfcFiscal}}",    "value": "{{rfc}}",         "strategy": "angularjs" },
+  { "action": "fill",       "selector": "{{selectors.razonSocial}}",  "value": "{{razonSocial}}", "strategy": "angularjs" },
+  { "action": "fill",       "selector": "{{selectors.codigoPostal}}", "value": "{{codigoPostal}}","strategy": "angularjs" },
   { "action": "hook",       "name": "seleccionarCfdiYRegimen" },
   { "action": "hook",       "name": "llenarCorreoCaptura" },
   { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p4_datos_fiscales_llenados" },
@@ -26,8 +26,6 @@
   { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p5_confirmar" },
 
   { "action": "click",      "selector": "{{selectors.btnFacturar}}" },
-  { "action": "waitFor",    "selector": "{{selectors.btnPdf}}", "timeout": 30000 },
-  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p6_descarga" },
-
-  { "action": "hook",       "name": "descargarArchivos" }
+  { "action": "screenshot", "key": "debug/{{portal}}_{{ticketId}}_p6_post_facturar" },
+  { "action": "hook",       "name": "esperarResultadoYDescargar" }
 ]
