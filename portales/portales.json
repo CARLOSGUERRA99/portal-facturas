@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-05-17",
+  "actualizado": "2026-05-24",
   "portales": {
     "oxxo": {
       "nombre": "OXXO Facturación Electrónica",
@@ -255,7 +255,7 @@
       "url_base": "https://www.movil.farmaciasguadalajara.com/facturacion/",
       "tecnologia": "Angular 15 con reactive forms y ng-mask",
       "stealth": true,
-      "comercios": ["Farmacias Guadalajara (cualquier sucursal)", "Farmacias Benavides (mismo portal)"],
+      "comercios": ["Farmacias Guadalajara (cualquier sucursal)"],
       "deteccion": {
         "por_portal_field": "farmaciaguadalajara",
         "por_texto_ocr": ["farmacia guadalajara", "farmaciasguadalajara", "fragua"],
@@ -282,6 +282,65 @@
         "Fecha con Escape antes y después para cerrar datepicker Angular"
       ],
       "notas_desarrollo": "Bot tiene lógica correcta pero aún no tiene caso de éxito end-to-end validado"
+    },
+
+    "benavides": {
+      "nombre": "Farmacias Benavides",
+      "bot": "bots/benavides.js",
+      "estado": "produccion",
+      "url_base": "https://e-facturate.com/benavides/",
+      "tecnologia": "EDX Retail (jQuery + Bootstrap), wizard 4 pasos",
+      "stealth": true,
+      "comercios": ["Farmacias Benavides (cualquier sucursal)"],
+      "deteccion": {
+        "por_portal_field": "benavides",
+        "por_texto_ocr": ["benavides"],
+        "por_comercio": ["benavides"],
+        "por_url_qr": ["e-facturate.com/benavides"]
+      },
+      "campos_ticket": ["folio", "fecha", "total"],
+      "campos_fiscales": ["rfc", "regimenFiscal", "usoCfdi"],
+      "flujo": [
+        "Paso 1: Cargar portal, llenar #txt_ticket (folio sin asteriscos), #txt_total (2 decimales), #txt_rfccliente",
+        "Paso 2: Click Siguiente → waitForSelector #txt_cucfdi (Datos Fiscales)",
+        "Paso 3: Typeahead CFDI (#txt_cucfdi → tipo código → click sugerencia jQuery UI)",
+        "Paso 4: Select régimen fiscal (#cbo_cregfiscal por valor SAT ej. '601')",
+        "Paso 5: Correo fijo en #txt_ccorreo (buzonfacturas@serviciosga.site)",
+        "Paso 6: Click Siguiente → waitForFunction 'COMPROBANTE FISCAL' en body",
+        "Paso 7: Click Siguiente → waitForFunction 'Descargar Factura' o #btn_dxmlpdf",
+        "Paso 8: Click #btn_dxmlpdf → interceptar ZIP → extraer PDF+XML → subir R2",
+        "Paso 9 (fallback): llenar #txt_dcorreo + click #btn_denviar → procesandoCorreo: true"
+      ],
+      "selectores_clave": {
+        "ticket": "#txt_ticket",
+        "total": "#txt_total",
+        "rfc": "#txt_rfccliente",
+        "usoCfdi": "#txt_cucfdi",
+        "regimenFiscal": "#cbo_cregfiscal",
+        "correo": "#txt_ccorreo",
+        "descargarZip": "#btn_dxmlpdf",
+        "descargarPdf": "#btn_dpdf",
+        "descargarXml": "#btn_dxml",
+        "enviarCorreo": "#btn_denviar",
+        "correoEnvio": "#txt_dcorreo"
+      },
+      "comportamientos_especiales": [
+        "Portal auto-llena razón social, CP, colonia, calle, municipio desde el RFC — NO llenar manualmente",
+        "Botón Siguiente es dinámico (sin ID fijo) — detectar por texto 'Siguiente'",
+        "CFDI es typeahead jQuery UI — escribir código (ej. G03) → click en sugerencia",
+        "Folio del ticket viene entre asteriscos *45061402333295* — limpiar antes de enviar",
+        "Descarga ZIP con PDF+XML via intercepción de respuesta HTTP en #btn_dxmlpdf",
+        "Stealth=true requerido"
+      ],
+      "casos_especiales": {
+        "ya_facturado": "Detectar texto 'ya fue facturado' → return { ok:false, error_code:'ya_facturado' }",
+        "datos_invalidos": "Detectar 'no encontrado|no existe|datos incorrectos|ticket inv' → return { ok:false, error_code:'datos_invalidos' }"
+      },
+      "datos_fijos": {
+        "regimenFiscal_default": "601",
+        "usoCfdi_default": "G03",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
     },
 
     "rendichicas": {

@@ -4,6 +4,7 @@ const { facturarGasmaz } = require('./gasmaz');
 const { facturarFarmaciasGuadalajara } = require('./farmaciaguadalajara');
 const { facturarHomeDepotMexico } = require('./homedepot');
 const { facturarRendichicas } = require('./rendichicasestacionpirusadecv');
+const { facturarBenavides } = require('./benavides');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -84,6 +85,16 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Rendichicas');
     return await facturarRendichicas(datos);
+  }
+
+  if (
+    portal === 'benavides' ||
+    portal === 'farmaciasbenavides' ||
+    comercio.includes('benavides') ||
+    portalUrl.includes('e-facturate.com/benavides')
+  ) {
+    console.log('🎯 Portal detectado: Farmacias Benavides');
+    return await facturarBenavides(datos);
   }
 
   if (
