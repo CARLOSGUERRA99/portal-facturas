@@ -232,7 +232,7 @@
       const lista = document.getElementById('lista');
       const mesFiltro = document.getElementById('filtro-mes').value;
 
-      let facturas = _todasFacturas;
+      let facturas = _todasFacturas.filter(f => f.xml_url || f.pdf_url);
       if (mesFiltro) {
         facturas = facturas.filter(f => {
           const d = new Date(f.creado);

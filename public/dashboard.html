@@ -187,42 +187,21 @@
     <!-- Upload + Chart -->
     <div class="two-col">
 
-      <!-- Upload -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Subir ticket</div>
+      <!-- Versículo del día -->
+      <div style="background:linear-gradient(145deg,#1e4208 0%,#2d5c10 50%,#3d7a18 100%);border-radius:var(--card-radius);padding:30px 28px;display:flex;flex-direction:column;min-height:300px;position:relative;overflow:hidden;box-shadow:0 6px 24px rgba(30,66,8,0.35);">
+        <!-- marca de agua decorativa -->
+        <div style="position:absolute;right:-10px;top:-20px;font-size:160px;line-height:1;color:rgba(255,255,255,0.04);font-family:Georgia,serif;user-select:none;pointer-events:none;">"</div>
+        <div style="position:absolute;bottom:10px;left:14px;width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,0.03);pointer-events:none;"></div>
+
+        <div style="font-size:0.7rem;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:22px;">✝ Palabra del día</div>
+
+        <div id="versiculo-texto" style="font-size:1.08rem;color:white;line-height:1.7;font-weight:400;flex:1;font-style:italic;z-index:1;">
+          &ldquo;Cargando...&rdquo;
         </div>
 
-        <div style="background:#FFF7ED;border:1px solid #F97316;border-radius:10px;padding:9px 13px;font-size:0.78rem;color:#c2410c;margin-bottom:10px;">
-          ⚠️ Solo se acepta <strong>1 ticket a la vez</strong> — la carga masiva no está habilitada por el momento.
-        </div>
-
-        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('ticketFile').click()">
-          <div class="upload-icon">📷</div>
-          <div class="upload-text">Selecciona o arrastra tu ticket</div>
-          <div class="upload-sub">JPG, PNG, HEIC, PDF — foto o imagen del ticket</div>
-        </div>
-        <input type="file" id="ticketFile" accept="image/*,application/pdf" style="display:none" onchange="onFileSelected()">
-
-        <img class="preview-img" id="preview-img">
-
-        <div id="upload-actions" style="display:none; margin-top:14px;">
-          <button class="btn btn-primary btn-full" id="btn-procesar" onclick="subirTicket()">
-            Analizar con IA
-          </button>
-        </div>
-
-        <div id="upload-alert" class="alert" style="margin-top:12px;"></div>
-
-        <div class="result-card" id="result-card">
-          <div class="result-card-title">Datos detectados</div>
-          <div class="result-row"><span class="result-label">Comercio</span><span class="result-value" id="res-comercio">—</span></div>
-          <div class="result-row"><span class="result-label">Fecha</span><span class="result-value" id="res-fecha">—</span></div>
-          <div class="result-row"><span class="result-label">Folio</span><span class="result-value" id="res-folio">—</span></div>
-          <div class="result-row"><span class="result-label">Total</span><span class="result-value" id="res-total">—</span></div>
-          <div style="margin-top:14px;">
-            <a href="/mis-tickets" class="btn btn-outline btn-sm">Ver mis tickets →</a>
-          </div>
+        <div style="margin-top:24px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div id="versiculo-ref" style="font-size:0.82rem;color:rgba(255,255,255,0.6);font-weight:700;letter-spacing:0.02em;"></div>
+          <button onclick="siguienteVersiculo()" style="flex-shrink:0;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.18);color:rgba(255,255,255,0.85);font-size:0.75rem;font-weight:600;padding:7px 15px;border-radius:20px;cursor:pointer;font-family:inherit;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.22)'" onmouseout="this.style.background='rgba(255,255,255,0.12)'">Otro →</button>
         </div>
       </div>
 
@@ -376,6 +355,61 @@
 
   <script>
     const MINUTOS_POR_FACTURA = 10;
+
+    // ── VERSÍCULOS DEL DÍA ──
+    const VERSICULOS = [
+      { texto: 'Todo lo puedo en Cristo que me fortalece.', ref: 'Filipenses 4:13' },
+      { texto: 'Porque yo sé los pensamientos que tengo acerca de vosotros, dice Jehová, pensamientos de paz, y no de mal, para daros el fin que esperáis.', ref: 'Jeremías 29:11' },
+      { texto: 'Porque de tal manera amó Dios al mundo, que ha dado a su Hijo unigénito, para que todo aquel que en él cree, no se pierda, mas tenga vida eterna.', ref: 'Juan 3:16' },
+      { texto: 'Jehová es mi pastor; nada me faltará.', ref: 'Salmos 23:1' },
+      { texto: 'Y sabemos que a los que aman a Dios, todas las cosas les ayudan a bien, esto es, a los que conforme a su propósito son llamados.', ref: 'Romanos 8:28' },
+      { texto: 'Fíate de Jehová de todo tu corazón, y no te apoyes en tu propia prudencia. Reconócelo en todos tus caminos, y él enderezará tus veredas.', ref: 'Proverbios 3:5-6' },
+      { texto: 'Pero los que esperan a Jehová tendrán nuevas fuerzas; levantarán alas como las águilas; correrán, y no se cansarán; caminarán, y no se fatigarán.', ref: 'Isaías 40:31' },
+      { texto: 'Mas buscad primeramente el reino de Dios y su justicia, y todas estas cosas os serán añadidas.', ref: 'Mateo 6:33' },
+      { texto: 'Dios es nuestro amparo y fortaleza, nuestro pronto auxilio en las tribulaciones.', ref: 'Salmos 46:1' },
+      { texto: 'Si Dios es por nosotros, ¿quién contra nosotros?', ref: 'Romanos 8:31' },
+      { texto: 'No temas, porque yo estoy contigo; no desmayes, porque yo soy tu Dios que te esfuerzo; siempre te ayudaré, siempre te sustentaré con la diestra de mi justicia.', ref: 'Isaías 41:10' },
+      { texto: 'El Señor es mi luz y mi salvación; ¿a quién temeré? El Señor es la fortaleza de mi vida; ¿de quién me he de atemorizar?', ref: 'Salmos 27:1' },
+      { texto: 'La paz os dejo, mi paz os doy; yo no os la doy como el mundo la da. No se turbe vuestro corazón, ni tenga miedo.', ref: 'Juan 14:27' },
+      { texto: 'Por nada estéis afanosos, sino sean conocidas vuestras peticiones delante de Dios en toda oración y ruego, con acción de gracias.', ref: 'Filipenses 4:6' },
+      { texto: 'Y la paz de Dios, que sobrepasa todo entendimiento, guardará vuestros corazones y vuestros pensamientos en Cristo Jesús.', ref: 'Filipenses 4:7' },
+      { texto: 'Él da esfuerzo al cansado, y multiplica las fuerzas al que no tiene ningunas.', ref: 'Isaías 40:29' },
+      { texto: 'Todo lo que hagáis, hacedlo de corazón, como para el Señor y no para los hombres.', ref: 'Colosenses 3:23' },
+      { texto: 'Encomienda a Jehová tu camino, y confía en él; y él hará.', ref: 'Salmos 37:5' },
+      { texto: 'Estad siempre gozosos. Orad sin cesar. Dad gracias en todo.', ref: '1 Tesalonicenses 5:16-18' },
+      { texto: 'Sé fuerte y valiente. No temas ni te desanimes, porque Jehová tu Dios estará contigo dondequiera que vayas.', ref: 'Josué 1:9' },
+      { texto: 'Con amor eterno te he amado; por tanto, te prolongué mi misericordia.', ref: 'Jeremías 31:3' },
+      { texto: 'El amor es sufrido, es benigno; el amor no tiene envidia, el amor no es jactancioso, no se envanece.', ref: '1 Corintios 13:4' },
+      { texto: 'Bendito sea el Dios y Padre de nuestro Señor Jesucristo, Padre de misericordias y Dios de toda consolación.', ref: '2 Corintios 1:3' },
+      { texto: 'Jehová está en medio de ti, poderoso, él salvará; se gozará sobre ti con alegría, callará de amor, se regocijará sobre ti con cánticos.', ref: 'Sofonías 3:17' },
+      { texto: 'El que habita al abrigo del Altísimo morará bajo la sombra del Omnipotente.', ref: 'Salmos 91:1' },
+      { texto: 'Lámpara es a mis pies tu palabra, y lumbrera a mi camino.', ref: 'Salmos 119:105' },
+      { texto: 'Tú guardarás en completa paz a aquel cuyo pensamiento en ti persevera; porque en ti ha confiado.', ref: 'Isaías 26:3' },
+      { texto: 'Porque el Señor da la sabiduría, y de su boca viene el conocimiento y la inteligencia.', ref: 'Proverbios 2:6' },
+      { texto: 'Venid a mí todos los que estáis trabajados y cargados, y yo os haré descansar.', ref: 'Mateo 11:28' },
+      { texto: 'Yo soy la resurrección y la vida; el que cree en mí, aunque esté muerto, vivirá.', ref: 'Juan 11:25' },
+      { texto: 'Jehová te bendiga, y te guarde; Jehová haga resplandecer su rostro sobre ti, y tenga de ti misericordia.', ref: 'Números 6:24-25' },
+      { texto: 'Confía en Jehová, y haz el bien; y habitarás en la tierra, y te apacentarás de la verdad.', ref: 'Salmos 37:3' },
+      { texto: 'Deléitate asimismo en Jehová, y él te concederá las peticiones de tu corazón.', ref: 'Salmos 37:4' },
+      { texto: 'Nunca se apartará de tu boca este libro de la ley, sino que de día y de noche meditarás en él.', ref: 'Josué 1:8' },
+      { texto: 'Así que no os afanéis por el día de mañana, porque el día de mañana traerá su afán. Basta a cada día su propio mal.', ref: 'Mateo 6:34' },
+      { texto: 'Mi Dios, pues, suplirá todo lo que os falta conforme a sus riquezas en gloria en Cristo Jesús.', ref: 'Filipenses 4:19' },
+    ];
+
+    let versiculoIdx = Math.floor(Date.now() / 86400000) % VERSICULOS.length;
+
+    function mostrarVersiculo() {
+      const v = VERSICULOS[versiculoIdx % VERSICULOS.length];
+      document.getElementById('versiculo-texto').innerHTML = `&ldquo;${v.texto}&rdquo;`;
+      document.getElementById('versiculo-ref').textContent = v.ref;
+    }
+
+    function siguienteVersiculo() {
+      versiculoIdx = (versiculoIdx + 1) % VERSICULOS.length;
+      mostrarVersiculo();
+    }
+
+    mostrarVersiculo();
     let residenteChart = null;
 
     const MONTHS = { '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun',
