@@ -119,16 +119,25 @@ async function recuperarDesdeHistorial(page, context) {
   await page.waitForSelector('table tbody tr', { visible: true, timeout: 15000 });
   await new Promise(r => setTimeout(r, 500));
 
-  // Descargar PDF y XML de la primera fila usando window.open interception
+  // Descargar PDF y XML de la primera fila
   // Columnas: Estacion(0) Folio(1) Serie(2) Fecha(3) Estatus(4) Total(5) PDF(6) XML(7)
+  // Estrategia: href directo del anchor → window.open interception → null
   const descargarColumna = async (colIndex, ext, mime) => {
     const url = await page.evaluate((idx) => {
       return new Promise(resolve => {
+        const cells = document.querySelectorAll('table tbody tr:first-child td');
+        const el = cells[idx]?.querySelector('a, button, img, span');
+        if (!el) { resolve(null); return; }
+
+        // Si es un anchor con href directo (no javascript:), úsalo sin interceptar
+        if (el.tagName === 'A' && el.href && !el.href.toLowerCase().startsWith('javascript')) {
+          resolve(el.href); return;
+        }
+
+        // Fallback: interceptar window.open
         const orig = window.open;
         window.open = (u) => { window.open = orig; resolve(u || null); return null; };
-        const cells = document.querySelectorAll('table tbody tr:first-child td');
-        const btn = cells[idx]?.querySelector('a, button, img, span');
-        if (btn) btn.click(); else resolve(null);
+        el.click();
         setTimeout(() => { window.open = orig; resolve(null); }, 5000);
       });
     }, colIndex).catch(() => null);
