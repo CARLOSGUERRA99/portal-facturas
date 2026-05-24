@@ -243,8 +243,13 @@ async function facturarPanama({
       );
       if (btn) btn.click();
     });
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(800);
     await screenshot("p1_generar_factura");
+
+    // ── PASO 1b — Click SIGUIENTE (selección de operación → Lugar de consumo) ──
+    // "Generar Factura" solo selecciona la opción; SIGUIENTE la confirma y avanza.
+    console.log("➡️ Click SIGUIENTE para avanzar a Lugar de consumo...");
+    await clickSiguiente(page, 8000);
 
     // ── PASO 2 — Seleccionar ciudad (radio button) ────────────────────────
     const ciudad = detectarCiudad(comercio);
