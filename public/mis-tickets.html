@@ -102,6 +102,12 @@
 
     <div class="residente-tabs" id="residente-tabs" style="display:none;"></div>
 
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <select id="filtro-mes" onchange="renderTickets()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:0.85rem;background:white;color:var(--text);outline:none;cursor:pointer;">
+        <option value="">Todos los meses</option>
+      </select>
+    </div>
+
     <div class="tickets-card" id="tickets-container">
       <div class="tickets-card-header">
         <div class="card-title">Todos los tickets</div>
@@ -197,13 +203,55 @@
       if (sel && !sel.contains(e.target)) document.getElementById('residente-dropdown').classList.remove('open');
     });
 
+    let _todosTickets = [];
+
     async function cargarTickets() {
       const url = '/api/tickets' + (activeResidenteId ? `?residente_id=${activeResidenteId}` : '');
       const res = await fetch(url);
       const data = await res.json();
-      const lista = document.getElementById('lista');
 
-      if (!data.ok || data.tickets.length === 0) {
+      if (!data.ok) {
+        document.getElementById('lista').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Error al cargar</div></div>`;
+        return;
+      }
+
+      _todosTickets = data.tickets || [];
+      poblarFiltroMes(_todosTickets);
+      renderTickets();
+    }
+
+    function poblarFiltroMes(tickets) {
+      const meses = new Map();
+      const MESES_LABEL = { '01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio','07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre' };
+      tickets.forEach(t => {
+        const d = new Date(t.creado);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const key = `${y}-${m}`;
+        if (!meses.has(key)) meses.set(key, `${MESES_LABEL[m]} ${y}`);
+      });
+      const sel = document.getElementById('filtro-mes');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Todos los meses</option>' +
+        [...meses.entries()].sort((a,b) => b[0].localeCompare(a[0]))
+          .map(([k, label]) => `<option value="${k}" ${k === current ? 'selected' : ''}>${label}</option>`).join('');
+    }
+
+    function renderTickets() {
+      const lista = document.getElementById('lista');
+      const mesFiltro = document.getElementById('filtro-mes').value;
+
+      let tickets = _todosTickets;
+      if (mesFiltro) {
+        tickets = tickets.filter(t => {
+          const d = new Date(t.creado);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          return `${y}-${m}` === mesFiltro;
+        });
+      }
+
+      if (tickets.length === 0) {
         lista.innerHTML = `
           <div class="empty-state">
             <div class="empty-icon">🎫</div>
@@ -215,9 +263,9 @@
         return;
       }
 
-      document.getElementById('tickets-count').textContent = `${data.tickets.length} ticket${data.tickets.length !== 1 ? 's' : ''}`;
+      document.getElementById('tickets-count').textContent = `${tickets.length} ticket${tickets.length !== 1 ? 's' : ''}`;
 
-      lista.innerHTML = data.tickets.map(t => {
+      lista.innerHTML = tickets.map(t => {
         let datos = {};
         try { datos = JSON.parse(t.ocr_json || '{}'); } catch {}
 
@@ -237,7 +285,6 @@
 
         const isPendingConfirm = t.status === 'pendiente_confirmacion';
         const isError = t.status === 'error';
-        const canFacturar = t.status === 'pendiente' || isError;
         const canDelete = isError || t.status === 'pendiente' || isPendingConfirm;
         const btnLabel = t.status === 'procesado' ? 'Facturado' : isError ? 'Reintentar' : 'Facturar';
         const isInactive = ['procesando', 'procesando_correo', 'procesado'].includes(t.status);

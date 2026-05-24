@@ -1350,10 +1350,10 @@ app.get("/api/tickets", auth, async (req, res) => {
 app.get("/api/facturas", auth, async (req, res) => {
   try {
     const { residente_id } = req.query;
-    let query = "SELECT f.id, f.comercio, f.status, f.xml_url, f.pdf_url, f.creado FROM facturas f";
+    let query = "SELECT f.id, f.comercio, f.status, f.xml_url, f.pdf_url, f.creado, t.ocr_json FROM facturas f LEFT JOIN tickets t ON f.ticket_id = t.id";
     const params = [req.session.userId];
     if (residente_id) {
-      query += " JOIN tickets t ON f.ticket_id = t.id WHERE f.user_id = ? AND t.residente_id = ?";
+      query += " WHERE f.user_id = ? AND t.residente_id = ?";
       params.push(residente_id);
     } else {
       query += " WHERE f.user_id = ?";

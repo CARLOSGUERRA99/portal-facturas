@@ -93,6 +93,12 @@
 
     <div class="residente-tabs" id="residente-tabs" style="display:none;"></div>
 
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <select id="filtro-mes" onchange="renderFacturas()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:0.85rem;background:white;color:var(--text);outline:none;cursor:pointer;">
+        <option value="">Todos los meses</option>
+      </select>
+    </div>
+
     <div class="facturas-card">
       <div class="facturas-card-header">
         <div class="card-title">Facturas generadas</div>
@@ -188,13 +194,55 @@
       if (sel && !sel.contains(e.target)) document.getElementById('residente-dropdown').classList.remove('open');
     });
 
+    let _todasFacturas = [];
+
     async function cargarFacturas() {
       const url = '/api/facturas' + (activeResidenteId ? `?residente_id=${activeResidenteId}` : '');
       const res = await fetch(url);
       const data = await res.json();
-      const lista = document.getElementById('lista');
 
-      if (!data.ok || data.facturas.length === 0) {
+      if (!data.ok) {
+        document.getElementById('lista').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-title">Error al cargar</div></div>`;
+        return;
+      }
+
+      _todasFacturas = data.facturas || [];
+      poblarFiltroMes(_todasFacturas);
+      renderFacturas();
+    }
+
+    function poblarFiltroMes(facturas) {
+      const meses = new Map();
+      const MESES_LABEL = { '01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio','07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre' };
+      facturas.forEach(f => {
+        const d = new Date(f.creado);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const key = `${y}-${m}`;
+        if (!meses.has(key)) meses.set(key, `${MESES_LABEL[m]} ${y}`);
+      });
+      const sel = document.getElementById('filtro-mes');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Todos los meses</option>' +
+        [...meses.entries()].sort((a,b) => b[0].localeCompare(a[0]))
+          .map(([k, label]) => `<option value="${k}" ${k === current ? 'selected' : ''}>${label}</option>`).join('');
+    }
+
+    function renderFacturas() {
+      const lista = document.getElementById('lista');
+      const mesFiltro = document.getElementById('filtro-mes').value;
+
+      let facturas = _todasFacturas;
+      if (mesFiltro) {
+        facturas = facturas.filter(f => {
+          const d = new Date(f.creado);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          return `${y}-${m}` === mesFiltro;
+        });
+      }
+
+      if (facturas.length === 0) {
         lista.innerHTML = `
           <div class="empty-state">
             <div class="empty-icon">🧾</div>
@@ -206,33 +254,36 @@
         return;
       }
 
-      document.getElementById('facturas-count').textContent = `${data.facturas.length} factura${data.facturas.length !== 1 ? 's' : ''}`;
+      document.getElementById('facturas-count').textContent = `${facturas.length} factura${facturas.length !== 1 ? 's' : ''}`;
 
-      lista.innerHTML = data.facturas.map(f => {
-        const statusBadge = f.status === 'completado'
-          ? '<span class="badge badge-success">Completado</span>'
-          : '<span class="badge badge-pending">Pendiente</span>';
+      lista.innerHTML = facturas.map(f => {
+        let ocr = {};
+        try { ocr = JSON.parse(f.ocr_json || '{}'); } catch {}
 
-        const folio = f.folio || f.id || Date.now();
+        const folioTicket = ocr.folio || ocr.folioFactura || ocr.noTicket || '';
+        const total = ocr.total ? `$${parseFloat(ocr.total).toFixed(2)}` : '';
+        const folioId = folioTicket || f.id;
+
         const xmlBtn = f.xml_url
-          ? `<a href="${f.xml_url}" download="factura_${folio}.xml" target="_blank" class="btn-xml">⬇ XML</a>`
+          ? `<a href="${f.xml_url}" download="factura_${folioId}.xml" target="_blank" class="btn-xml">⬇ XML</a>`
           : '';
         const pdfBtn = f.pdf_url
-          ? `<a href="${f.pdf_url}" download="factura_${folio}.pdf" target="_blank" class="btn-pdf">⬇ PDF</a>`
+          ? `<a href="${f.pdf_url}" download="factura_${folioId}.pdf" target="_blank" class="btn-pdf">⬇ PDF</a>`
           : '';
 
         const fecha = new Date(f.creado).toLocaleDateString('es-MX', {
           day: '2-digit', month: 'long', year: 'numeric'
         });
 
+        const meta = [fecha, folioTicket ? `Folio ${folioTicket}` : '', total].filter(Boolean).join(' · ');
+
         return `
           <div class="factura-row">
             <div class="factura-main">
               <div class="factura-name">${f.comercio || 'Comercio'}</div>
-              <div class="factura-meta">${fecha}</div>
+              <div class="factura-meta">${meta}</div>
             </div>
             <div class="factura-right">
-              ${statusBadge}
               ${xmlBtn}
               ${pdfBtn}
             </div>

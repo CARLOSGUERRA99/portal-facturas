@@ -229,7 +229,7 @@
       <!-- Chart -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Gastos por mes</div>
+          <div class="card-title">Gastos por categoría</div>
           <span id="chart-total" style="font-size:0.8rem;color:var(--text-muted);font-weight:600;"></span>
         </div>
         <div class="chart-wrap">
@@ -375,7 +375,7 @@
   </div>
 
   <script>
-    const MINUTOS_POR_FACTURA = 45;
+    const MINUTOS_POR_FACTURA = 10;
     let residenteChart = null;
 
     const MONTHS = { '01':'Ene','02':'Feb','03':'Mar','04':'Abr','05':'May','06':'Jun',
@@ -501,6 +501,24 @@
       }
     }
 
+    const CATEGORIAS = ['Gasolina', 'Alimentos', 'Medicamentos', 'Hogar', 'Otros'];
+    const CAT_COLORS = {
+      Gasolina:     { bg: 'rgba(59,109,17,0.75)',  border: '#3B6D11' },
+      Alimentos:    { bg: 'rgba(249,115,22,0.75)', border: '#F97316' },
+      Medicamentos: { bg: 'rgba(59,130,246,0.75)', border: '#3B82F6' },
+      Hogar:        { bg: 'rgba(139,92,246,0.75)', border: '#8B5CF6' },
+      Otros:        { bg: 'rgba(156,163,175,0.6)', border: '#9CA3AF' },
+    };
+
+    function clasificarCategoria(comercio) {
+      const c = (comercio || '').toLowerCase();
+      if (c.includes('arco') || c.includes('gasmaz') || c.includes('ramsa') || c.includes('rendichicas') || c.includes('piru') || c.includes('joya') || c.includes('gasolinera') || c.includes('nexusfuel') || c.includes('combustible') || c.includes('petro') || c.includes('caffenio')) return 'Gasolina';
+      if (c.includes('oxxo') || c.includes('seven') || c.includes('walmart') || c.includes('chedraui') || c.includes('soriana') || c.includes('costco') || c.includes('super')) return 'Alimentos';
+      if (c.includes('farmacia') || c.includes('guadalajara') || c.includes('benavides') || c.includes('medica') || c.includes('salud') || c.includes('similar') || c.includes('cruz verde')) return 'Medicamentos';
+      if (c.includes('homedepot') || c.includes('home depot') || c.includes('depot') || c.includes('ferreteria') || c.includes('construrama') || c.includes('acabados') || c.includes('cemex')) return 'Hogar';
+      return 'Otros';
+    }
+
     function buildChart(tickets) {
       const monthly = {};
       tickets.forEach(t => {
@@ -510,7 +528,9 @@
           const parts = d.fecha.split('/');
           if (parts.length !== 3) return;
           const key = `${parts[2]}-${parts[1].padStart(2, '0')}`;
-          monthly[key] = (monthly[key] || 0) + parseFloat(d.total);
+          const cat = clasificarCategoria(t.comercio || d.comercio);
+          if (!monthly[key]) monthly[key] = {};
+          monthly[key][cat] = (monthly[key][cat] || 0) + parseFloat(d.total);
         } catch {}
       });
 
@@ -526,50 +546,44 @@
         const [y, m] = k.split('-');
         return `${MONTHS[m] || m} ${y}`;
       });
-      const values = keys.map(k => parseFloat(monthly[k].toFixed(2)));
-      const total = values.reduce((a, b) => a + b, 0);
+
+      let total = 0;
+      keys.forEach(k => CATEGORIAS.forEach(c => { total += monthly[k][c] || 0; }));
       document.getElementById('chart-total').textContent = `Total: $${total.toFixed(2)}`;
+
+      const datasets = CATEGORIAS
+        .filter(cat => keys.some(k => (monthly[k][cat] || 0) > 0))
+        .map(cat => ({
+          label: cat,
+          data: keys.map(k => parseFloat((monthly[k][cat] || 0).toFixed(2))),
+          backgroundColor: CAT_COLORS[cat].bg,
+          borderColor: CAT_COLORS[cat].border,
+          borderWidth: 1.5,
+          borderRadius: 4,
+          borderSkipped: false,
+        }));
 
       const ctx = document.getElementById('gastos-chart').getContext('2d');
       if (gastoChart) gastoChart.destroy();
       gastoChart = new Chart(ctx, {
         type: 'bar',
-        data: {
-          labels,
-          datasets: [{
-            label: 'Gasto ($)',
-            data: values,
-            backgroundColor: 'rgba(59,109,17,0.18)',
-            borderColor: '#3B6D11',
-            borderWidth: 2,
-            borderRadius: 8,
-            borderSkipped: false,
-          }]
-        },
+        data: { labels, datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { display: false },
+            legend: {
+              display: true,
+              position: 'bottom',
+              labels: { font: { family: 'Inter', size: 11 }, padding: 10, boxWidth: 12, boxHeight: 12 }
+            },
             tooltip: {
-              callbacks: {
-                label: ctx => ` $${ctx.parsed.y.toFixed(2)}`
-              }
+              callbacks: { label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}` }
             }
           },
           scales: {
-            x: {
-              grid: { display: false },
-              ticks: { font: { family: 'Inter', size: 12 }, color: '#6b7c5e' }
-            },
-            y: {
-              grid: { color: '#f0f4ec' },
-              ticks: {
-                font: { family: 'Inter', size: 11 },
-                color: '#6b7c5e',
-                callback: v => `$${v}`
-              }
-            }
+            x: { stacked: true, grid: { display: false }, ticks: { font: { family: 'Inter', size: 12 }, color: '#6b7c5e' } },
+            y: { stacked: true, grid: { color: '#f0f4ec' }, ticks: { font: { family: 'Inter', size: 11 }, color: '#6b7c5e', callback: v => `$${v}` } }
           }
         }
       });
