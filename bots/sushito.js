@@ -13,20 +13,13 @@ async function fillInput(page, selector, value) {
   await page.waitForTimeout(150);
 }
 
-async function extraerEmailContacto(page) {
-  return page.evaluate(() => {
-    const link = document.querySelector('a[href^="mailto:"]');
-    if (link) return link.href.replace('mailto:', '').split('?')[0].trim();
-    const m = document.body.innerText.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/);
-    return m ? m[0].toLowerCase() : null;
-  });
-}
-
 async function facturarSushito({ referencia, folio, total, rfc, razonSocial, regimenFiscal, usoCfdi, ticketId, portalUrl }) {
-  const codigoUnico = String(referencia || folio || '').trim();
+  // codigoUnico: el ID único del ticket que imprime el restaurante en la nota
+  const codigoUnico = String(referencia || folio || "").trim();
+  const folioStr   = String(folio || referencia || "").trim();
 
-  console.log("🤖 Iniciando bot SushiO (mefacturo.mx)...");
-  console.log(`   Código único: ${codigoUnico} | Folio: ${folio} | Total: ${total} | RFC: ${rfc}`);
+  console.log("🤖 Iniciando bot SushiO (mefacturo.mx/sushio)...");
+  console.log(`   CodigoUnico: ${codigoUnico} | Folio: ${folioStr} | RFC: ${rfc}`);
 
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
@@ -63,66 +56,98 @@ async function facturarSushito({ referencia, folio, total, rfc, razonSocial, reg
     await page.waitForTimeout(2000);
     await screenshot("p0_inicio");
 
-    // Detectar vencido en pantalla inicial antes de llenar formulario
-    const textoInicio = await page.evaluate(() => document.body.innerText.toLowerCase());
-    if (/ticket\s+vencido|plazo\s+vencido/.test(textoInicio)) {
-      const emailContacto = await extraerEmailContacto(page);
-      console.log(`⚠️ Ticket vencido en pantalla inicial. Email: ${emailContacto}`);
-      await browser.close();
-      return { ok: false, error_code: "ticket_vencido", email_contacto: emailContacto, permite_solicitud_correo: true, msg: "El plazo para facturar este ticket ha vencido" };
-    }
+    // ── Extraer email de contacto del header del portal (visible antes de cualquier acción) ──
+    // El portal muestra "SushiO / Teléfono XXXX / caja@sushio.mx" en el encabezado
+    const emailContacto = await page.evaluate(() => {
+      // 1) Buscar link mailto
+      const link = document.querySelector('a[href^="mailto:"]');
+      if (link) return link.href.replace("mailto:", "").split("?")[0].trim();
+      // 2) Buscar texto con patrón de email
+      const match = document.body.innerText.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/);
+      return match ? match[0].toLowerCase() : null;
+    });
+    console.log(`📧 Email contacto del portal: ${emailContacto}`);
 
-    // ── PASO 1 — Llenar datos del ticket ────────────────────────────────────
+    // ── PASO 1 — Formulario único: CodigoUnicoTicket + FolioTicket + RFC ────
+    // El portal SoftRestaurant tiene los 3 campos en una sola pantalla junto al
+    // botón "Facturar". No es multi-step antes de ingresar datos fiscales.
     await page.waitForSelector("#CodigoUnicoTicket", { visible: true, timeout: 15000 });
+    console.log("📝 Llenando formulario...");
+
     await fillInput(page, "#CodigoUnicoTicket", codigoUnico);
 
     const hayFolio = await page.$("#FolioTicket").catch(() => null);
-    if (hayFolio && folio) {
-      await fillInput(page, "#FolioTicket", folio);
+    if (hayFolio) {
+      await fillInput(page, "#FolioTicket", folioStr);
     }
 
-    const hayTotal = await page.$("#Total, #TotalTicket, #ImporteTicket").catch(() => null);
-    if (hayTotal && total) {
-      await fillInput(page, "#Total, #TotalTicket, #ImporteTicket", total);
-    }
+    await fillInput(page, "#RFC", rfc);
+    console.log(`   ✔ CodigoUnico: ${codigoUnico} | Folio: ${folioStr} | RFC: ${rfc}`);
+    await screenshot("p1_formulario_llenado");
 
-    await screenshot("p1_datos_ticket");
-
-    // Click en Consultar / Siguiente
-    await page.evaluate(() => {
+    // ── Click en "Facturar" ──────────────────────────────────────────────────
+    console.log("🖱️ Click en Facturar...");
+    const clicOk = await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button']"))
-        .find(b => /consultar|verificar|buscar|siguiente|continuar/i.test((b.textContent || b.value || "")));
-      if (btn) btn.click();
+        .find(b => /^facturar$/i.test((b.textContent || b.value || "").trim()));
+      if (btn) { btn.click(); return true; }
+      // Fallback: cualquier botón con "facturar" en el texto
+      const btn2 = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button']"))
+        .find(b => /facturar/i.test((b.textContent || b.value || "")));
+      if (btn2) { btn2.click(); return true; }
+      return false;
     });
-    await page.waitForTimeout(3000);
+    if (!clicOk) {
+      await screenshot("error_sin_boton");
+      await browser.close();
+      return { ok: false, msg: "SushiO: no se encontró el botón Facturar" };
+    }
 
-    // Detectar resultado
+    // ── Detectar resultado tras hacer click ──────────────────────────────────
+    // El portal puede mostrar:
+    //   a) "Ticket vencido" / "plazo vencido" → modal o texto en pantalla
+    //   b) "Ya fue facturado" / "CFDI ya generado"
+    //   c) Datos incorrectos / ticket no encontrado
+    //   d) Paso 2 con datos fiscales (Razón Social, Correo) para factura normal
     const caso = await Promise.race([
       page.waitForFunction(
-        () => /ticket\s+vencido|plazo\s+vencido/i.test(document.body.innerText),
-        { timeout: 12000 }
+        () => /ticket\s+vencido|plazo\s+vencido|ya\s+no\s+puede\s+factur|tiempo\s+para\s+facturar|expi/i.test(document.body.innerText),
+        { timeout: 15000 }
       ).then(() => "vencido"),
       page.waitForFunction(
-        () => /ya\s+fue\s+facturado|ya\s+facturado|cfdi\s+ya\s+generado/i.test(document.body.innerText),
-        { timeout: 12000 }
+        () => /ya\s+fue\s+facturado|ya\s+facturado|cfdi\s+ya|comprobante\s+ya\s+generado/i.test(document.body.innerText),
+        { timeout: 15000 }
       ).then(() => "ya_facturado"),
       page.waitForFunction(
-        () => /no\s+(se\s+)?(encontr[oó]|existe)|ticket\s+inv[áa]lido|datos\s+incorrectos/i.test(document.body.innerText),
-        { timeout: 12000 }
+        () => /no\s+(se\s+)?(encontr[oó]|existe)|ticket\s+inv[áa]lido|datos\s+incorrectos|no\s+v[áa]lido/i.test(document.body.innerText),
+        { timeout: 15000 }
       ).then(() => "invalido"),
-      page.waitForSelector("#RFC, #Rfc, #rfc", { visible: true, timeout: 12000 })
-        .then(() => "paso2"),
+      // Paso 2: aparece campo de correo o razón social para completar datos fiscales
+      page.waitForFunction(
+        () => {
+          const el = document.querySelector("input[type='email'], #Correo, #CorreoElectronico, #Email");
+          return el && el.offsetParent !== null;
+        },
+        { timeout: 15000 }
+      ).then(() => "paso2"),
     ]).catch(() => "timeout");
 
-    await screenshot("p2_resultado_consulta");
-    console.log(`   Resultado consulta: ${caso}`);
+    await screenshot(`p2_${caso}`);
+    console.log(`   Resultado: ${caso}`);
 
+    // ── Ticket vencido ──────────────────────────────────────────────────────
     if (caso === "vencido") {
-      const emailContacto = await extraerEmailContacto(page);
       console.log(`⚠️ Ticket vencido. Email contacto: ${emailContacto}`);
       await browser.close();
-      return { ok: false, error_code: "ticket_vencido", email_contacto: emailContacto, permite_solicitud_correo: true, msg: "El plazo para facturar este ticket ha vencido" };
+      return {
+        ok: false,
+        error_code: "ticket_vencido",
+        email_contacto: emailContacto,
+        permite_solicitud_correo: true,
+        msg: "El plazo para facturar este ticket ha vencido",
+      };
     }
+
     if (caso === "ya_facturado") {
       await browser.close();
       return { ok: false, error_code: "ya_facturado", msg: "SushiO: el ticket ya fue facturado" };
@@ -136,55 +161,47 @@ async function facturarSushito({ referencia, folio, total, rfc, razonSocial, reg
       return { ok: false, error_code: "timeout", msg: "SushiO: timeout esperando respuesta del portal" };
     }
 
-    // ── PASO 2 — Datos fiscales ──────────────────────────────────────────────
-    await page.waitForTimeout(1500);
+    // ── PASO 2 — Completar datos fiscales y generar factura ─────────────────
+    console.log("✅ Ticket válido — completando datos fiscales...");
+    await page.waitForTimeout(1000);
 
-    // RFC
-    await fillInput(page, "#RFC, #Rfc, #rfc", rfc);
-    await page.waitForTimeout(800);
-
-    // Click en Buscar cliente si existe
-    const btnBuscar = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button, input[type='button']"))
-        .find(b => /buscar|cargar|validar\s+rfc/i.test((b.textContent || b.value || "")));
-      if (btn) { btn.click(); return true; }
-      return false;
-    });
-    if (btnBuscar) await page.waitForTimeout(2000);
-
-    // Correo
+    // Correo electrónico (campo obligatorio para recibir el CFDI)
     await page.evaluate(() => {
-      const campos = document.querySelectorAll("input[type='email'], #Correo, #Email, #CorreoElectronico, #correo");
+      const campos = "input[type='email'], #Correo, #Email, #CorreoElectronico, #correo"
+        .split(", ").flatMap(s => Array.from(document.querySelectorAll(s)));
       for (const inp of campos) {
+        if (!inp.offsetParent) continue;
         inp.value = "buzonfacturas@serviciosga.site";
-        inp.dispatchEvent(new Event("input", { bubbles: true }));
+        inp.dispatchEvent(new Event("input",  { bubbles: true }));
         inp.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
     console.log("📧 Correo: buzonfacturas@serviciosga.site");
+
+    // Régimen fiscal si existe select
+    if (regimenFiscal) {
+      await page.evaluate((reg) => {
+        const sel = document.querySelector("#RegimenFiscal, #Regimen, select[name*='regimen']");
+        if (!sel) return;
+        for (const opt of sel.options) {
+          if (opt.value === reg || opt.text.includes(reg)) {
+            sel.value = opt.value;
+            sel.dispatchEvent(new Event("change", { bubbles: true }));
+            return;
+          }
+        }
+      }, String(regimenFiscal));
+    }
+
     await screenshot("p3_datos_fiscales");
 
-    // Siguiente hacia confirmación
+    // Click en "Facturar" (segundo paso) o "Generar"
+    console.log("🧾 Generando factura...");
     await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
-        .find(b => /siguiente|continuar|facturar|generar/i.test((b.textContent || b.value || "")));
+        .find(b => /facturar|generar|emitir/i.test((b.textContent || b.value || "")));
       if (btn) btn.click();
     });
-    await page.waitForTimeout(3000);
-    await screenshot("p4_confirmacion");
-
-    // ── PASO 3 — Confirmar y generar ────────────────────────────────────────
-    const esConfirmacion = await page.evaluate(() =>
-      /confirma|verifica|datos.*factura/i.test(document.body.innerText)
-    );
-    if (esConfirmacion) {
-      await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
-          .find(b => /facturar|generar|emitir|confirmar/i.test((b.textContent || b.value || "")));
-        if (btn) btn.click();
-      });
-      await page.waitForTimeout(5000);
-    }
 
     // Esperar confirmación de factura generada
     const generado = await page.waitForFunction(
@@ -192,7 +209,7 @@ async function facturarSushito({ referencia, folio, total, rfc, razonSocial, reg
       { timeout: 30000 }
     ).then(() => true).catch(() => false);
 
-    await screenshot("p5_generado");
+    await screenshot("p4_resultado_final");
 
     if (!generado) {
       console.log("⚠️ Sin confirmación de generación — fallback IMAP");
@@ -200,16 +217,16 @@ async function facturarSushito({ referencia, folio, total, rfc, razonSocial, reg
       return { ok: true, procesandoCorreo: true };
     }
 
-    // Intentar descargar XML y PDF directamente
+    // Intentar extraer links de descarga directa
     const xmlUrl = await page.evaluate(() => {
       const a = Array.from(document.querySelectorAll("a[href]"))
-        .find(a => /\.xml|descargar.*xml|xml/i.test(a.href + a.textContent));
-      return a ? a.href : null;
+        .find(a => /\.xml(\?|$)|descargar.*xml|xml.*descargar/i.test(a.href + " " + a.textContent));
+      return a?.href || null;
     });
     const pdfUrl = await page.evaluate(() => {
       const a = Array.from(document.querySelectorAll("a[href]"))
-        .find(a => /\.pdf|descargar.*pdf|pdf/i.test(a.href + a.textContent));
-      return a ? a.href : null;
+        .find(a => /\.pdf(\?|$)|descargar.*pdf|pdf.*descargar/i.test(a.href + " " + a.textContent));
+      return a?.href || null;
     });
 
     await browser.close();
