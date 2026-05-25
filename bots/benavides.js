@@ -98,14 +98,51 @@ async function facturarBenavides({
     console.log("➡️ Avanzando a Datos Fiscales...");
     await clickSiguiente(page);
 
-    // Detectar si el portal rechazó los datos (ticket inválido, ya facturado, etc.)
+    // Detectar si el portal rechazó los datos o si ya fue facturado
     const errTexto = await page.evaluate(() => {
       const body = document.body.innerText;
-      if (/ya fue facturado|ya facturado/i.test(body)) return "YA_FACTURADO";
+      if (/ya fue facturado|ya facturado|ha sido generada/i.test(body)) return "YA_FACTURADO";
       if (/no encontrado|no existe|datos incorrectos|ticket inv/i.test(body)) return "DATOS_INVALIDOS";
       return null;
     });
     if (errTexto === "YA_FACTURADO") {
+      console.log("⚠️ Ya facturado — intentando descargar factura existente del modal...");
+      await screenshot("ya_facturado_modal");
+      // El modal tiene "Descargar XML + PDF" — intentar descargarlo
+      const zipYaFact = await new Promise(resolve => {
+        page.on("response", async resp => {
+          try {
+            const ct = resp.headers()["content-type"] || "";
+            const url = resp.url();
+            if (ct.includes("zip") || ct.includes("octet-stream") || url.toLowerCase().includes(".zip")) {
+              const buf = await resp.buffer().catch(() => null);
+              if (buf && buf.length > 100) resolve(buf);
+            }
+          } catch {}
+        });
+        setTimeout(() => resolve(null), 8000);
+        page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll("button, input[type='button'], a"));
+          const btn = btns.find(b => /descargar xml|descargar.*pdf/i.test(b.textContent || b.value || ""));
+          if (btn) btn.click();
+        });
+      });
+      if (zipYaFact) {
+        const dir = await unzipper.Open.buffer(zipYaFact);
+        let pdfBuf = null, xmlBuf = null;
+        for (const file of dir.files) {
+          const content = await file.buffer();
+          if (file.path.toLowerCase().endsWith(".pdf")) pdfBuf = content;
+          else if (file.path.toLowerCase().endsWith(".xml")) xmlBuf = content;
+        }
+        const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `facturas/benavides_${ts}.pdf`, "application/pdf") : null;
+        const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `facturas/benavides_${ts}.xml`, "application/xml") : null;
+        await browser.close();
+        if (pdfUrl || xmlUrl) {
+          console.log("✅ Factura existente descargada del modal ya_facturado");
+          return { ok: true, xmlUrl, pdfUrl };
+        }
+      }
       await browser.close();
       return { ok: false, error_code: "ya_facturado", msg: "Benavides: el ticket ya fue facturado" };
     }
