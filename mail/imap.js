@@ -155,10 +155,25 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
 
           if (xmlBuffer || pdfBuffer) {
             // Filtrar por comercio para evitar cruzar facturas entre tickets.
-            // Los portales de plataformas propias (e-facturate, retailedx, pade.mx)
-            // envían desde dominios que no mencionan el comercio — no aplicar filtro.
-            const platformDomains = ['e-facturate', 'retailedx', 'edxsolutions', 'pade.mx'];
-            const fromPlatform = platformDomains.some(d => from.toLowerCase().includes(d));
+            // Algunos portales (RetailEDX, pade.mx) usan un dominio de plataforma que no
+            // menciona el comercio. Solo se omite el filtro si el comercio esperado
+            // corresponde a uno de los portales que usa esa plataforma.
+            // Así evitamos que un correo de Benavides/EDX se asocie a un ticket de SushiO.
+            const platformPortalMap = [
+              { domains: ['e-facturate', 'retailedx', 'edxsolutions'], portals: ['benavides', 'carl', 'icr', 'retailedx'] },
+              { domains: ['pade.mx'], portals: ['rendichicas', 'caffenio'] },
+            ];
+            const fromLower = from.toLowerCase();
+            const expectedLower = (expectedComercio || '').toLowerCase();
+            // Sin comercio esperado: comportamiento original (bypass global)
+            // Con comercio esperado: solo bypass si el dominio corresponde a ese comercio
+            const fromPlatform = !expectedComercio
+              ? platformPortalMap.some(e => e.domains.some(d => fromLower.includes(d)))
+              : platformPortalMap.some(e =>
+                  e.domains.some(d => fromLower.includes(d)) &&
+                  e.portals.some(p => expectedLower.includes(p))
+                );
+
             if (expectedComercio && !fromPlatform) {
               const keywords = expectedComercio.toLowerCase()
                 .split(/[\s,./]+/)

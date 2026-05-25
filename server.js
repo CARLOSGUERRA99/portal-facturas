@@ -2133,6 +2133,50 @@ app.get("/api/admin/debug-files", auth, requireAdmin, async (req, res) => {
   }
 });
 
+// ── ENDPOINT ADMIN: revertir factura errónea de un ticket ──
+// Borra el XML/PDF de R2, elimina el registro de factura y resetea el ticket
+// a procesando_correo para que el job IMAP lo reintente.
+app.post("/api/admin/tickets/:id/revertir-factura", auth, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [[ticket]] = await db.query("SELECT id, status, comercio FROM tickets WHERE id = ?", [id]);
+    if (!ticket) return res.json({ ok: false, msg: "Ticket no encontrado" });
+
+    const [[factura]] = await db.query(
+      "SELECT id, xml_url, pdf_url FROM facturas WHERE ticket_id = ? ORDER BY id DESC LIMIT 1",
+      [id]
+    );
+
+    const borrados = [];
+    if (factura) {
+      const r2Base = process.env.R2_PUBLIC_URL || '';
+      for (const url of [factura.xml_url, factura.pdf_url].filter(Boolean)) {
+        const key = url.startsWith(r2Base) ? url.slice(r2Base.length + 1) : url;
+        try { await borrarArchivoR2(key); borrados.push(key); }
+        catch (e) { console.log(`⚠️ No se pudo borrar ${key}:`, e.message); }
+      }
+      await db.query("DELETE FROM facturas WHERE id = ?", [factura.id]);
+      console.log(`🗑️ Admin: factura #${factura.id} del ticket #${id} eliminada. R2: ${borrados.join(', ')}`);
+    } else {
+      console.log(`ℹ️ Admin: ticket #${id} no tiene factura registrada`);
+    }
+
+    // Resetear a procesando_correo con timestamp fresco para que el job IMAP reintente
+    await db.query(
+      "UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW(), error_msg = NULL WHERE id = ?",
+      [id]
+    );
+
+    console.log(`🔄 Admin: ticket #${id} (${ticket.comercio}) revertido → procesando_correo`);
+    res.json({
+      ok: true,
+      msg: `Ticket #${id} revertido. Factura eliminada. Archivos borrados de R2: ${borrados.join(', ') || 'ninguno'}. El job IMAP lo reintentará en los próximos 2 minutos.`,
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
 app.post("/api/admin/tickets/:id/reprocess-imap", auth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
