@@ -21,7 +21,7 @@ async function fillInput(page, selector, value) {
 // Hace click en el botón "Siguiente"
 async function clickSiguiente(page) {
   const clicked = await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll("button, input[type='submit']"));
+    const btns = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button'], a"));
     const btn = btns.find(b =>
       /siguiente/i.test((b.textContent || "") + (b.value || ""))
     );
