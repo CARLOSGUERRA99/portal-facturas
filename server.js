@@ -356,14 +356,17 @@ await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura genera
     // ── Ticket vencido — portal no acepta facturación en plazo ──
     if (resultado.error_code === 'ticket_vencido') {
       const emailContacto = resultado.email_contacto || null;
+      // Separar en dos queries: error_msg siempre se guarda aunque email_contacto falle
       await db.query(
-        "UPDATE tickets SET status = 'error', error_msg = 'ticket_vencido', email_contacto = ?, reintento_programado = NULL WHERE id = ?",
-        [emailContacto, ticketId]
+        "UPDATE tickets SET status = 'error', error_msg = 'ticket_vencido', reintento_programado = NULL WHERE id = ?",
+        [ticketId]
       );
+      await db.query("UPDATE tickets SET email_contacto = ? WHERE id = ?", [emailContacto, ticketId])
+        .catch(e => console.log(`⚠️ email_contacto no guardado (${e.message})`));
       await registrarIntento(ticketId, botNombre, 'error', `ticket_vencido|email_contacto:${emailContacto}`, duracionMs);
       await crearNotificacion(userId, 'factura_error',
         `El plazo para facturar tu ticket de ${ticket.comercio || 'este comercio'} ha vencido. Puedes solicitar la factura por correo desde "Mis Tickets".`
-      );
+      ).catch(() => {});
       return { ok: false, error_code: 'ticket_vencido', email_contacto: emailContacto };
     }
 

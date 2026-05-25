@@ -545,6 +545,41 @@
     cargarTickets();
     cargarTabs();
     initNotificaciones();
+
+    // Auto-poll: cuando hay tickets procesando, refrescar cada 6s hasta que terminen
+    let _pollInterval = null;
+    function iniciarPoll() {
+      if (_pollInterval) return;
+      _pollInterval = setInterval(async () => {
+        const res = await fetch('/api/tickets').then(r => r.json()).catch(() => null);
+        if (!res?.ok) return;
+        const hayProcesando = res.tickets.some(t =>
+          t.status === 'procesando' || t.status === 'procesando_correo'
+        );
+        if (hayProcesando) {
+          await cargarTickets();
+        } else {
+          clearInterval(_pollInterval);
+          _pollInterval = null;
+          await cargarTickets(); // último refresh para mostrar estado final
+          await cargarTabs();
+        }
+      }, 6000);
+    }
+
+    // Arrancar poll si hay tickets procesando al cargar
+    fetch('/api/tickets').then(r => r.json()).then(data => {
+      if (data.ok && data.tickets.some(t => t.status === 'procesando' || t.status === 'procesando_correo')) {
+        iniciarPoll();
+      }
+    }).catch(() => {});
+
+    // Arrancar poll cuando el usuario dispara una facturación
+    const _origFacturar = facturar;
+    window.facturar = async function(id) {
+      await _origFacturar(id);
+      iniciarPoll();
+    };
   </script>
   <!-- WhatsApp bubble -->
   <style>
