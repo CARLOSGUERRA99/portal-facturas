@@ -2009,12 +2009,12 @@ async function procesarTicketsPorCorreo() {
   for (const ticket of rows) {
     const datos = JSON.parse(ticket.ocr_json || "{}");
     const codigoTicket = datos.codigoTicket || String(ticket.id);
-    // Referencia/folio usada para validar que el XML del correo pertenece a este ticket
-    const expectedRef = datos.referencia || datos.folio || datos.idVenta || datos.codigoTicket || null;
-    console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo${expectedRef ? ` [ref: ${expectedRef}]` : ''}...`);
+    // Comercio usado para filtrar emails y no asignar facturas de otro portal
+    const expectedComercio = ticket.comercio || datos.comercio || null;
+    console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo${expectedComercio ? ` [comercio: ${expectedComercio}]` : ''}...`);
 
     try {
-      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000, expectedRef);
+      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000, expectedComercio);
 
       // UUID desde el contenido del XML (fuente canónica del CFDI)
       // Fallback: timestamp si el XML no está disponible

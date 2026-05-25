@@ -56,7 +56,7 @@ async function extraerAdjuntos(parsed) {
 // imap.search() devuelve UIDs (no sequence numbers). Se usa imap.fetch() (UID-based)
 // en lugar de imap.seq.fetch() para evitar "Invalid messageset" cuando los
 // sequence numbers no coinciden con los UIDs tras expunge/delete en el buzón.
-async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedRef = null) {
+async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedComercio = null) {
   return new Promise((resolve, reject) => {
     const imap = new Imap({
       user:     process.env.IMAP_USER,
@@ -88,12 +88,12 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedR
                   imap.end();
                   return reject(new Error('No se encontró correo de factura'));
                 }
-                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject, expectedRef);
+                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject, expectedComercio);
               });
             }, 15000);
             return;
           }
-          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedRef);
+          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedComercio);
         });
       });
     });
@@ -103,7 +103,7 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedR
   });
 }
 
-async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedRef = null) {
+async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedComercio = null) {
   console.log(`📨 Correos sin leer encontrados: ${uids.length} (UIDs: ${uids.join(', ')})`);
 
   // Usar imap.fetch() (UID-based) — imap.search() devuelve UIDs, no seq numbers.
@@ -151,11 +151,17 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
           const { xmlBuffer, pdfBuffer } = await extraerAdjuntos(parsed);
 
           if (xmlBuffer || pdfBuffer) {
-            // Validar que el XML pertenece al ticket correcto (por referencia/folio)
-            if (expectedRef && xmlBuffer) {
-              const xmlStr = xmlBuffer.toString('utf8');
-              if (!xmlStr.includes(String(expectedRef))) {
-                console.log(`   ↳ ⚠️ XML no contiene ref "${expectedRef}" — es de otro ticket, ignorando`);
+            // Filtrar por comercio: si el subject o remitente no mencionan el comercio esperado, ignorar.
+            // Evita asignar facturas de ICR al ticket OXXO y viceversa.
+            if (expectedComercio) {
+              const keywords = expectedComercio.toLowerCase()
+                .split(/[\s,./]+/)
+                .filter(w => w.length >= 3 && !['s.a', 'de', 'c.v', 'sab', 'del', 'los'].includes(w));
+              const hayMatch = keywords.some(kw =>
+                subject.toLowerCase().includes(kw) || from.toLowerCase().includes(kw)
+              );
+              if (!hayMatch) {
+                console.log(`   ↳ ⚠️ Correo no menciona "${expectedComercio}" — es de otro comercio, ignorando`);
                 continue;
               }
             }
