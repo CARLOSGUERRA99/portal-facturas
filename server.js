@@ -231,6 +231,17 @@ function proximaMedianoche() {
 
 const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara', 'rendichicas', 'benavides', 'panama'];
 
+// Cola por portal: garantiza que solo un bot del mismo portal corre a la vez.
+// Portales distintos siguen corriendo en paralelo entre sí.
+const _portalColas = new Map();
+function conColaPortal(portalKey, fn) {
+  const key = portalKey || 'desconocido';
+  const anterior = _portalColas.get(key) || Promise.resolve();
+  const siguiente = anterior.then(fn, fn); // corre aunque el anterior haya fallado
+  _portalColas.set(key, siguiente.catch(() => {}));
+  return siguiente;
+}
+
 // ── LÓGICA COMPARTIDA DE FACTURACIÓN (usada por auto-facturar y endpoint manual) ──
 async function ejecutarFacturacion(ticketId, userId) {
   try {
@@ -256,7 +267,10 @@ async function ejecutarFacturacion(ticketId, userId) {
     const inicioMs = Date.now();
     await db.query("UPDATE tickets SET status = 'procesando', reintento_programado = NULL WHERE id = ?", [ticketId]);
 
-    const resultado = await detectarYFacturar({
+    const portalKey = datos.portal || (ticket.comercio || '').toLowerCase().replace(/\s+/g, '') || 'desconocido';
+    console.log(`🔒 Cola portal [${portalKey}] — ticket #${ticketId} en espera si hay otro corriendo`);
+
+    const resultado = await conColaPortal(portalKey, () => detectarYFacturar({
       ...datos,
       rfc: ticket.rfc,
       razonSocial: ticket.razon_social,
@@ -274,7 +288,7 @@ async function ejecutarFacturacion(ticketId, userId) {
       ocr_text: ticket.ocr_text,
       portalUrl: datos.portalUrl || ticket.portal_url || null,
       comercio: ticket.comercio,
-    }, db);
+    }, db));
 
     const duracionMs = Date.now() - inicioMs;
     const botNombre = datos.portal || ticket.comercio || 'desconocido';
