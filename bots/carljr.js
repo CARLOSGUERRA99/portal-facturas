@@ -95,9 +95,8 @@ async function facturarCarlsJr({
     }
     await page.waitForSelector("#txt_ticket", { timeout: 15000 });
 
-    // ── PASO 2 — Ingresar referencia, total y RFC ─────────────────────────
+    // ── PASO 2 — Ingresar referencia y RFC (ICR4 no tiene campo total en paso 1) ──
     await fillInput(page, "#txt_ticket",     codigoPortal);
-    await fillInput(page, "#txt_total",      parseFloat(total).toFixed(2));
     await fillInput(page, "#txt_rfccliente", rfc);
     await screenshot("p2_ticket_llenado");
 
