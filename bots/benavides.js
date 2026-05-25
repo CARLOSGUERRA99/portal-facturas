@@ -106,45 +106,31 @@ async function facturarBenavides({
       return null;
     });
     if (errTexto === "YA_FACTURADO") {
-      console.log("⚠️ Ya facturado — intentando descargar factura existente del modal...");
+      console.log("⚠️ Ya facturado — enviando factura existente por correo...");
       await screenshot("ya_facturado_modal");
-      // El modal tiene "Descargar XML + PDF" — intentar descargarlo
-      const zipYaFact = await new Promise(resolve => {
-        page.on("response", async resp => {
-          try {
-            const ct = resp.headers()["content-type"] || "";
-            const url = resp.url();
-            if (ct.includes("zip") || ct.includes("octet-stream") || url.toLowerCase().includes(".zip")) {
-              const buf = await resp.buffer().catch(() => null);
-              if (buf && buf.length > 100) resolve(buf);
-            }
-          } catch {}
+      // El modal tiene "Enviar a:" + botón "Enviar" — usamos eso para recibirla vía IMAP
+      await page.evaluate(() => {
+        const inputs = Array.from(document.querySelectorAll("input[type='text'], input[type='email'], input:not([type])"));
+        const inp = inputs.find(i => {
+          const label = (i.placeholder || i.name || i.id || "").toLowerCase();
+          const nearby = (i.closest("td,div,label")?.innerText || "").toLowerCase();
+          return label.includes("correo") || label.includes("mail") || nearby.includes("enviar a");
         });
-        setTimeout(() => resolve(null), 8000);
-        page.evaluate(() => {
-          const btns = Array.from(document.querySelectorAll("button, input[type='button'], a"));
-          const btn = btns.find(b => /descargar xml|descargar.*pdf/i.test(b.textContent || b.value || ""));
-          if (btn) btn.click();
-        });
+        if (inp) {
+          inp.value = "buzonfacturas@serviciosga.site";
+          inp.dispatchEvent(new Event("input",  { bubbles: true }));
+          inp.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       });
-      if (zipYaFact) {
-        const dir = await unzipper.Open.buffer(zipYaFact);
-        let pdfBuf = null, xmlBuf = null;
-        for (const file of dir.files) {
-          const content = await file.buffer();
-          if (file.path.toLowerCase().endsWith(".pdf")) pdfBuf = content;
-          else if (file.path.toLowerCase().endsWith(".xml")) xmlBuf = content;
-        }
-        const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `facturas/benavides_${ts}.pdf`, "application/pdf") : null;
-        const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `facturas/benavides_${ts}.xml`, "application/xml") : null;
-        await browser.close();
-        if (pdfUrl || xmlUrl) {
-          console.log("✅ Factura existente descargada del modal ya_facturado");
-          return { ok: true, xmlUrl, pdfUrl };
-        }
-      }
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit']"));
+        const btn = btns.find(b => /^enviar$/i.test((b.textContent || b.value || "").trim()));
+        if (btn) btn.click();
+      });
+      console.log("📧 Correo de factura existente solicitado — esperando vía IMAP");
+      await page.waitForTimeout(2000);
       await browser.close();
-      return { ok: false, error_code: "ya_facturado", msg: "Benavides: el ticket ya fue facturado" };
+      return { ok: true, procesandoCorreo: true };
     }
     if (errTexto) {
       await browser.close();
