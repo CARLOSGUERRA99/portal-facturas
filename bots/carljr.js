@@ -196,6 +196,18 @@ async function facturarCarlsJr({
     );
     await screenshot("p6_descarga");
 
+    // Cerrar modal "La factura se generó exitosamente — Haga clic en Aceptar"
+    const modalAceptado = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit']"));
+      const btn = btns.find(b => /aceptar/i.test((b.textContent || b.value || "")));
+      if (btn) { btn.click(); return true; }
+      return false;
+    });
+    if (modalAceptado) {
+      console.log("✅ Modal de confirmación aceptado");
+      await page.waitForTimeout(1500);
+    }
+
     // ── PASO 7 — Descargar ZIP (PDF + XML) ───────────────────────────────
     console.log("📥 Descargando ZIP...");
 
@@ -213,10 +225,19 @@ async function facturarCarlsJr({
       setTimeout(() => resolve(null), 10000);
     });
 
-    const btnZip = await page.$("#btn_dxmlpdf");
-    if (btnZip) {
-      await btnZip.click();
-      console.log("✅ Click en Descargar PDF+XML");
+    // Intentar por ID (#btn_dxmlpdf — Benavides), luego por texto (ICR4)
+    const clicDescarga = await page.evaluate(() => {
+      const porId = document.querySelector("#btn_dxmlpdf");
+      if (porId) { porId.click(); return "id"; }
+      const all = Array.from(document.querySelectorAll("a, button, input[type='button']"));
+      const porTexto = all.find(el =>
+        /descargar\s+pdf\s*\+\s*xml|pdf\s*\+\s*xml/i.test(el.textContent || el.value || "")
+      );
+      if (porTexto) { porTexto.click(); return "texto"; }
+      return null;
+    });
+    if (clicDescarga) {
+      console.log(`✅ Click en Descargar PDF+XML (${clicDescarga})`);
     }
 
     const zipBuffer = await zipPromise;

@@ -56,7 +56,7 @@ async function extraerAdjuntos(parsed) {
 // imap.search() devuelve UIDs (no sequence numbers). Se usa imap.fetch() (UID-based)
 // en lugar de imap.seq.fetch() para evitar "Invalid messageset" cuando los
 // sequence numbers no coinciden con los UIDs tras expunge/delete en el buzón.
-async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
+async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedRef = null) {
   return new Promise((resolve, reject) => {
     const imap = new Imap({
       user:     process.env.IMAP_USER,
@@ -88,12 +88,12 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
                   imap.end();
                   return reject(new Error('No se encontró correo de factura'));
                 }
-                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject);
+                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject, expectedRef);
               });
             }, 15000);
             return;
           }
-          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject);
+          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedRef);
         });
       });
     });
@@ -103,7 +103,7 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000) {
   });
 }
 
-async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject) {
+async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedRef = null) {
   console.log(`📨 Correos sin leer encontrados: ${uids.length} (UIDs: ${uids.join(', ')})`);
 
   // Usar imap.fetch() (UID-based) — imap.search() devuelve UIDs, no seq numbers.
@@ -151,6 +151,14 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject) {
           const { xmlBuffer, pdfBuffer } = await extraerAdjuntos(parsed);
 
           if (xmlBuffer || pdfBuffer) {
+            // Validar que el XML pertenece al ticket correcto (por referencia/folio)
+            if (expectedRef && xmlBuffer) {
+              const xmlStr = xmlBuffer.toString('utf8');
+              if (!xmlStr.includes(String(expectedRef))) {
+                console.log(`   ↳ ⚠️ XML no contiene ref "${expectedRef}" — es de otro ticket, ignorando`);
+                continue;
+              }
+            }
             console.log(`   ↳ ✅ Archivos extraídos — XML: ${!!xmlBuffer} | PDF: ${!!pdfBuffer}`);
             encontrado = { xmlBuffer, pdfBuffer, subject, uid: msgUid };
             break;
