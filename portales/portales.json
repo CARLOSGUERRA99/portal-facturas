@@ -419,7 +419,7 @@
       "nombre": "Carl's Jr (ICR S.A. de C.V.)",
       "bot": "bots/carljr.js",
       "estado": "produccion",
-      "url_base": "http://facturacion4.icr.mx/",
+      "url_base": "https://retailedx.com/ICR4/",
       "tecnologia": "EDX Retail (jQuery + Bootstrap), wizard 4 pasos",
       "stealth": true,
       "comercios": ["Carl's Jr (cualquier sucursal México)", "ICR S.A. DE C.V."],

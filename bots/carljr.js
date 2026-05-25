@@ -76,9 +76,24 @@ async function facturarCarlsJr({
   try {
     // ── PASO 1 — Cargar portal ────────────────────────────────────────────
     console.log("🌐 Cargando portal Carl's Jr...");
-    await page.goto("http://facturacion4.icr.mx/", { waitUntil: "load", timeout: 30000 });
-    await page.waitForSelector("#txt_ticket", { timeout: 15000 });
+    await page.goto("https://retailedx.com/ICR4/", { waitUntil: "load", timeout: 30000 });
     await screenshot("p1_cargado");
+
+    // Si hay pantalla de bienvenida con "Genere su factura aquí", hacer click
+    const btnGenerar = await page.$('a[href*="factura"], button, input[type="button"], input[type="submit"]');
+    const tieneFormulario = await page.$('#txt_ticket');
+    if (!tieneFormulario) {
+      console.log("🖱️ Click en 'Genere su factura aquí'...");
+      await page.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a, button, input[type="button"], input[type="submit"]'));
+        const btn = links.find(el =>
+          /genere|factura|generar|iniciar/i.test((el.textContent || el.value || ''))
+        );
+        if (btn) btn.click();
+      });
+      await page.waitForTimeout(3000);
+    }
+    await page.waitForSelector("#txt_ticket", { timeout: 15000 });
 
     // ── PASO 2 — Ingresar referencia, total y RFC ─────────────────────────
     await fillInput(page, "#txt_ticket",     codigoPortal);
