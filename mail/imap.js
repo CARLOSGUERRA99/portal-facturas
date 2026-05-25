@@ -20,7 +20,9 @@ function esCFDI(subject, from) {
     f.includes('noreply') ||
     f.includes('no-responder') ||
     f.includes('factura') ||
-    f.includes('pade.mx')   // Rendichicas y Caffenio envían desde envios@pade.mx
+    f.includes('pade.mx') ||      // Rendichicas y Caffenio
+    f.includes('e-facturate') ||  // Benavides (plataforma RetailEDX)
+    f.includes('retailedx')       // Carl's Jr (plataforma RetailEDX)
   );
 }
 
@@ -151,9 +153,12 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
           const { xmlBuffer, pdfBuffer } = await extraerAdjuntos(parsed);
 
           if (xmlBuffer || pdfBuffer) {
-            // Filtrar por comercio: si el subject o remitente no mencionan el comercio esperado, ignorar.
-            // Evita asignar facturas de ICR al ticket OXXO y viceversa.
-            if (expectedComercio) {
+            // Filtrar por comercio para evitar cruzar facturas entre tickets.
+            // Los portales de plataformas propias (e-facturate, retailedx, pade.mx)
+            // envían desde dominios que no mencionan el comercio — no aplicar filtro.
+            const platformDomains = ['e-facturate', 'retailedx', 'pade.mx'];
+            const fromPlatform = platformDomains.some(d => from.toLowerCase().includes(d));
+            if (expectedComercio && !fromPlatform) {
               const keywords = expectedComercio.toLowerCase()
                 .split(/[\s,./]+/)
                 .filter(w => w.length >= 3 && !['s.a', 'de', 'c.v', 'sab', 'del', 'los'].includes(w));

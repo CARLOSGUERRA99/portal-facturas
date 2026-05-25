@@ -47,66 +47,77 @@ async function clickSiguiente(page) {
   await page.waitForTimeout(5000); // portal pide ~5s entre pasos
 }
 
-// Captura el ZIP que genera DescargarArchivoPet() parcheando XHR/fetch en el browser.
-// Benavides usa AJAX para generar la descarga; el body binario no llega a page.on("response")
-// porque Chrome lo procesa como file-download antes de exponerlo a Puppeteer.
+// Captura el ZIP de DescargarArchivoPet() usando request-interception de Puppeteer.
+// El botón hace un POST (posiblemente a través de un form o iframe) — interceptamos
+// la petición para saber la URL exacta y la replicamos con fetch() desde el browser.
 async function capturaDescargaZip(page) {
-  return page.evaluate(() => new Promise(resolve => {
-    let done = false;
-    const fin = v => { if (!done) { done = true; resolve(v); } };
+  await page.setRequestInterception(true);
+  let capturedPost = null;
 
-    // Parchear XHR — overrideMimeType preserva bytes binarios como Latin-1
-    const ox = XMLHttpRequest.prototype.open;
-    const os = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(m, u, ...a) {
-      this._u = u;
-      const r = ox.call(this, m, u, ...a);
-      try { this.overrideMimeType('text/plain; charset=x-user-defined'); } catch {}
-      return r;
-    };
-    XMLHttpRequest.prototype.send = function(b) {
-      this.addEventListener('load', function() {
-        const t = this.responseText || '';
-        // ZIP magic bytes: PK = 0x50 0x4B
-        if (this.status === 200 && t.length > 200 &&
-            t.charCodeAt(0) === 0x50 && t.charCodeAt(1) === 0x4B) {
-          let bin = '';
-          for (let i = 0; i < t.length; i++) bin += String.fromCharCode(t.charCodeAt(i) & 0xFF);
-          fin({ ok: true, data: btoa(bin), via: 'xhr' });
-        }
-      });
-      return os.call(this, b);
-    };
+  const reqHandler = req => {
+    const url  = req.url();
+    const meth = req.method();
+    // Capturar sólo el primer POST distinto a assets
+    if (meth === 'POST' && !capturedPost && !/\.(js|css|png|jpg|gif|ico|woff)$/i.test(url)) {
+      capturedPost = { url, postData: req.postData() || '' };
+      console.log(`🎯 POST interceptado: ${url} | body: ${capturedPost.postData.substring(0, 200)}`);
+    }
+    req.continue();
+  };
+  page.on('request', reqHandler);
 
-    // Parchear fetch (por si la plataforma lo usa en lugar de XHR)
-    const of_ = window.fetch;
-    window.fetch = async function(url, opts) {
-      const res = await of_(url, opts);
-      try {
-        const arr = new Uint8Array(await res.clone().arrayBuffer());
-        if (arr[0] === 0x50 && arr[1] === 0x4B && arr.length > 200) {
-          let bin = '';
-          arr.forEach(x => bin += String.fromCharCode(x));
-          fin({ ok: true, data: btoa(bin), via: 'fetch' });
-        }
-      } catch {}
-      return res;
-    };
-
-    // Click en el botón de descarga — prioriza name*="AMBOS" del modal, luego IDs fijos
+  // Click en el botón de descarga
+  await page.evaluate(() => {
     const btn =
       document.querySelector('[name*="AMBOS"]') ||
       document.querySelector('#btn_dxmlpet')    ||
       document.querySelector('#btn_dxmlpdf')    ||
       [...document.querySelectorAll('button, a')].find(b =>
-        /descargar\s*xml\s*\+\s*pdf|xml\s*\+\s*pdf/i.test(b.textContent)
+        /descargar\s*xml\s*\+\s*pdf/i.test(b.textContent)
       );
+    if (btn) {
+      console.log('🖱️ click descarga:', btn.id || btn.name || btn.textContent.trim());
+      btn.click();
+    }
+  });
 
-    if (btn) { console.log('🖱️ click descarga:', btn.id || btn.name || btn.textContent.trim()); btn.click(); }
-    else fin({ error: 'no-btn' });
+  await page.waitForTimeout(5000);
+  page.off('request', reqHandler);
+  try { await page.setRequestInterception(false); } catch {}
 
-    setTimeout(() => fin({ error: 'timeout' }), 12000);
-  }));
+  if (!capturedPost) {
+    console.log('⚠️ capturaDescargaZip: no se interceptó POST — DescargarArchivoPet usa otro mecanismo');
+    return { error: 'no-post' };
+  }
+
+  // Re-fetch con las mismas credenciales (cookies de sesión del browser)
+  const result = await page.evaluate(async ({ url, postData }) => {
+    try {
+      const res = await fetch(url, {
+        method:      'POST',
+        credentials: 'include',
+        body:        postData,
+        headers:     { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      if (!res.ok) return { error: `http:${res.status}` };
+      const buf = await res.arrayBuffer();
+      const arr = new Uint8Array(buf);
+      if (arr.length < 100) return { error: `too-small:${arr.length}` };
+      if (arr[0] !== 0x50 || arr[1] !== 0x4B) {
+        // No es ZIP — mostrar primeros bytes para diagnóstico
+        const hex = Array.from(arr.slice(0, 20)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+        return { error: `not-zip:${hex}` };
+      }
+      let bin = '';
+      arr.forEach(x => bin += String.fromCharCode(x));
+      return { ok: true, data: btoa(bin) };
+    } catch (e) {
+      return { error: e.message };
+    }
+  }, capturedPost);
+
+  console.log(`📋 capturaDescargaZip re-fetch: ${JSON.stringify({ ...result, data: result?.data ? `[${result.data.length}b64]` : undefined })}`);
+  return result;
 }
 
 // ── Bot principal ─────────────────────────────────────────────────────────
