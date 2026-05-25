@@ -106,13 +106,60 @@ async function facturarBenavides({
       return null;
     });
     if (errTexto === "YA_FACTURADO") {
-      console.log("⚠️ Ya facturado — enviando factura existente por correo...");
+      console.log("⚠️ Ya facturado — intentando descargar factura existente...");
       await screenshot("ya_facturado_modal");
-      // El modal tiene "Enviar a:" + botón "Enviar" — usamos eso para recibirla vía IMAP
+
+      // Intento 1: interceptar ZIP igual que el flujo normal
+      const zipModal = new Promise(resolve => {
+        page.on("response", async resp => {
+          try {
+            const ct  = resp.headers()["content-type"] || "";
+            const url = resp.url();
+            if (ct.includes("zip") || ct.includes("octet-stream") || url.toLowerCase().includes(".zip")) {
+              const buf = await resp.buffer().catch(() => null);
+              if (buf && buf.length > 100) resolve(buf);
+            }
+          } catch {}
+        });
+        setTimeout(() => resolve(null), 10000);
+      });
+
+      await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit'], a"));
+        const btn  = btns.find(b => /descargar\s*xml|xml\s*\+\s*pdf|descargar.*pdf/i.test(b.textContent || b.value || ""));
+        if (btn) btn.click();
+      });
+
+      const zipYaFact = await zipModal;
+
+      if (zipYaFact) {
+        console.log(`📦 ZIP del modal: ${zipYaFact.length} bytes — extrayendo...`);
+        let pdfBuf = null, xmlBuf = null;
+        try {
+          const dir = await unzipper.Open.buffer(zipYaFact);
+          for (const file of dir.files) {
+            const content = await file.buffer();
+            if (file.path.toLowerCase().endsWith(".pdf")) pdfBuf = content;
+            else if (file.path.toLowerCase().endsWith(".xml")) xmlBuf = content;
+          }
+        } catch (e) { console.log("⚠️ Error extrayendo ZIP modal:", e.message); }
+
+        const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `facturas/benavides_${ts}.pdf`, "application/pdf") : null;
+        const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `facturas/benavides_${ts}.xml`, "application/xml") : null;
+
+        if (pdfUrl || xmlUrl) {
+          await browser.close();
+          console.log("✅ Factura existente descargada directamente del modal");
+          return { ok: true, xmlUrl, pdfUrl };
+        }
+      }
+
+      // Intento 2 (fallback): enviar al buzón y esperar vía IMAP
+      console.log("📧 Descarga directa sin resultado — enviando por correo (IMAP)...");
       await page.evaluate(() => {
         const inputs = Array.from(document.querySelectorAll("input[type='text'], input[type='email'], input:not([type])"));
         const inp = inputs.find(i => {
-          const label = (i.placeholder || i.name || i.id || "").toLowerCase();
+          const label  = (i.placeholder || i.name || i.id || "").toLowerCase();
           const nearby = (i.closest("td,div,label")?.innerText || "").toLowerCase();
           return label.includes("correo") || label.includes("mail") || nearby.includes("enviar a");
         });
@@ -124,10 +171,10 @@ async function facturarBenavides({
       });
       await page.evaluate(() => {
         const btns = Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit']"));
-        const btn = btns.find(b => /^enviar$/i.test((b.textContent || b.value || "").trim()));
+        const btn  = btns.find(b => /^enviar$/i.test((b.textContent || b.value || "").trim()));
         if (btn) btn.click();
       });
-      console.log("📧 Correo de factura existente solicitado — esperando vía IMAP");
+      console.log("📧 Correo solicitado — esperando vía IMAP");
       await page.waitForTimeout(2000);
       await browser.close();
       return { ok: true, procesandoCorreo: true };
