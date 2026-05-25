@@ -7,6 +7,7 @@ const { facturarRendichicas } = require('./rendichicasestacionpirusadecv');
 const { facturarBenavides } = require('./benavides');
 const { facturarPanama } = require('./panama');
 const { facturarCarlsJr } = require('./carljr');
+const { facturarSushito } = require('./sushito');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -123,6 +124,17 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log("🎯 Portal detectado: Carl's Jr (ICR S.A. de C.V.)");
     return await facturarCarlsJr(datos);
+  }
+
+  if (
+    portal === 'sushito' ||
+    portal === 'sushio' ||
+    comercio.includes('sushi o') ||
+    comercio.includes('sushio') ||
+    portalUrl.includes('mefacturo.mx/sushio')
+  ) {
+    console.log('🎯 Portal detectado: SushiO');
+    return await facturarSushito(datos);
   }
 
   if (

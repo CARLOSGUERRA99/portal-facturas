@@ -353,6 +353,20 @@ await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura genera
       return { ok: true, pdfUrl, xmlUrl };
     }
 
+    // ── Ticket vencido — portal no acepta facturación en plazo ──
+    if (resultado.error_code === 'ticket_vencido') {
+      const emailContacto = resultado.email_contacto || null;
+      await db.query(
+        "UPDATE tickets SET status = 'error', error_msg = 'ticket_vencido', email_contacto = ?, reintento_programado = NULL WHERE id = ?",
+        [emailContacto, ticketId]
+      );
+      await registrarIntento(ticketId, botNombre, 'error', `ticket_vencido|email_contacto:${emailContacto}`, duracionMs);
+      await crearNotificacion(userId, 'factura_error',
+        `El plazo para facturar tu ticket de ${ticket.comercio || 'este comercio'} ha vencido. Puedes solicitar la factura por correo desde "Mis Tickets".`
+      );
+      return { ok: false, error_code: 'ticket_vencido', email_contacto: emailContacto };
+    }
+
     // ── Error del bot ──
     // Detectar folio no disponible en OXXO (escalación)
     if (resultado.tipo === 'folio_no_disponible') {
@@ -495,7 +509,7 @@ async function procesarCola() {
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'pendiente_confirmacion' AND t.requiere_confirmacion = 0
        AND u.rfc IS NOT NULL AND u.rfc != ''
-       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama')
+       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr')
        ORDER BY t.creado ASC LIMIT ?`,
       [slots]
     );
@@ -615,6 +629,30 @@ async function initDB() {
   try {
     await db.query("ALTER TABLE ticket_intentos MODIFY COLUMN resultado VARCHAR(30) NOT NULL");
   } catch(e) { /* ya modificado */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN email_contacto VARCHAR(255) NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN constancia_path TEXT NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN solicitud_correo_enviada TINYINT(1) NOT NULL DEFAULT 0");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN solicitud_correo_fecha TIMESTAMP NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE tickets ADD COLUMN solicitud_correo_error TEXT NULL");
+  } catch(e) { /* columna ya existe */ }
+
+  try {
+    await db.query("ALTER TABLE users ADD COLUMN constancia_url TEXT NULL");
+  } catch(e) { /* columna ya existe */ }
 
   try {
     await db.query(`CREATE TABLE IF NOT EXISTS notificaciones (
@@ -793,7 +831,7 @@ app.get("/logout", (req, res) => req.session.destroy(() => res.redirect("/")));
 app.get("/api/perfil", auth, async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi FROM users WHERE id = ?",
+      "SELECT rfc, razon_social, calle, num_ext, num_int, colonia, municipio, estado, codigo_postal, regimen_fiscal, uso_cfdi, constancia_url FROM users WHERE id = ?",
       [req.session.userId]
     );
     res.json({ ok: true, perfil: rows[0] });
@@ -813,6 +851,32 @@ app.post("/api/perfil", auth, async (req, res) => {
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }
+});
+
+// ── CONSTANCIA DE SITUACIÓN FISCAL ──
+const multerConstancia = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    cb(null, allowed.includes(file.mimetype));
+  },
+}).single('constancia');
+
+app.post("/api/perfil/constancia", auth, (req, res) => {
+  multerConstancia(req, res, async (err) => {
+    if (err) return res.json({ ok: false, msg: err.message || 'Archivo inválido (máx 5 MB, PDF/JPG/PNG)' });
+    if (!req.file) return res.json({ ok: false, msg: 'No se recibió archivo' });
+    try {
+      const ext = req.file.originalname.split('.').pop().toLowerCase();
+      const key = `constancias/user_${req.session.userId}_${Date.now()}.${ext}`;
+      const url = await subirArchivoR2(req.file.buffer, key, req.file.mimetype);
+      await db.query("UPDATE users SET constancia_url = ? WHERE id = ?", [url, req.session.userId]);
+      res.json({ ok: true, constancia_url: url });
+    } catch (e) {
+      res.json({ ok: false, msg: e.message });
+    }
+  });
 });
 
 // ── RESIDENTES ──
@@ -1213,6 +1277,8 @@ ${INSTRUCCION_CONFIANZA}`,
       benavides:           ['folio', 'fecha', 'total'],
       carljr:              ['referencia', 'total'],
       panama:              ['idFacturacion', 'total', 'comercio'],
+      sushito:             ['referencia', 'folio', 'total'],
+      sushio:              ['referencia', 'folio', 'total'],
       desconocido:         ['fecha', 'total'],
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
@@ -1388,7 +1454,7 @@ app.delete("/api/tickets/:id", auth, async (req, res) => {
 app.get("/api/tickets", auth, async (req, res) => {
   try {
     const { residente_id } = req.query;
-    let query = "SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id, error_msg FROM tickets WHERE user_id = ?";
+    let query = "SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id, error_msg, email_contacto, solicitud_correo_enviada, solicitud_correo_fecha, solicitud_correo_error FROM tickets WHERE user_id = ?";
     const params = [req.session.userId];
     if (residente_id === 'sin_asignar') {
       query += " AND residente_id IS NULL";
@@ -1417,6 +1483,138 @@ app.put("/api/tickets/:id/residente", auth, async (req, res) => {
     res.status(500).json({ ok: false, msg: e.message });
   }
 });
+
+// ── SOLICITAR FACTURA POR CORREO (ticket vencido) ──
+app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
+  try {
+    const ticketId = parseInt(req.params.id);
+    const userId = req.session.userId;
+
+    const [[ticket]] = await db.query(
+      `SELECT t.id, t.comercio, t.email_contacto, t.solicitud_correo_enviada,
+              t.ocr_json, t.nombre_archivo,
+              u.nombre AS user_nombre, u.email AS user_email,
+              u.rfc, u.razon_social, u.constancia_url
+       FROM tickets t JOIN users u ON t.user_id = u.id
+       WHERE t.id = ? AND t.user_id = ?`,
+      [ticketId, userId]
+    );
+    if (!ticket) return res.status(404).json({ ok: false, msg: "Ticket no encontrado" });
+    if (!ticket.email_contacto) return res.json({ ok: false, msg: "Este ticket no tiene correo de contacto configurado" });
+    if (!ticket.constancia_url) return res.json({ ok: false, msg: "Debes subir tu constancia de situación fiscal en tu perfil antes de solicitar" });
+    if (ticket.solicitud_correo_enviada) return res.json({ ok: false, msg: "Ya se envió una solicitud por correo para este ticket" });
+
+    // Marcar como en proceso de envío
+    await db.query(
+      "UPDATE tickets SET solicitud_correo_enviada = 0, solicitud_correo_error = NULL WHERE id = ?",
+      [ticketId]
+    );
+
+    res.json({ ok: true, msg: "Solicitud recibida — enviando correo al comercio" });
+
+    // Envío asíncrono (no bloquea respuesta al cliente)
+    setImmediate(() => enviarSolicitudPorCorreo(ticket).catch(e =>
+      console.error(`❌ enviarSolicitudPorCorreo #${ticketId}:`, e.message)
+    ));
+
+  } catch (err) {
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
+async function enviarSolicitudPorCorreo(ticket) {
+  const { id: ticketId, comercio, email_contacto, user_nombre, user_email,
+          rfc, razon_social, constancia_url, ocr_json } = ticket;
+
+  console.log(`📨 Enviando solicitud de factura por correo — ticket #${ticketId} → ${email_contacto}`);
+
+  // Descargar constancia desde R2
+  let constanciaBuffer = null;
+  let constanciaFilename = 'constancia.pdf';
+  try {
+    const resp = await fetch(constancia_url);
+    if (resp.ok) {
+      constanciaBuffer = Buffer.from(await resp.arrayBuffer());
+      const ext = constancia_url.split('.').pop().split('?')[0].toLowerCase();
+      constanciaFilename = `constancia_${(rfc || 'cliente').replace(/[^a-z0-9]/gi, '')}.${ext}`;
+    }
+  } catch (e) {
+    console.log(`⚠️ No se pudo descargar constancia: ${e.message}`);
+  }
+
+  // Datos del ticket para el correo
+  let datosTicket = {};
+  try { datosTicket = JSON.parse(ocr_json || '{}'); } catch {}
+  const folioInfo = datosTicket.folio ? ` (Folio: ${datosTicket.folio})` : '';
+  const totalInfo = datosTicket.total ? ` — Total: $${datosTicket.total}` : '';
+  const fechaInfo = datosTicket.fecha ? ` del ${datosTicket.fecha}` : '';
+
+  const attachments = [];
+  if (constanciaBuffer) {
+    attachments.push({
+      filename: constanciaFilename,
+      content: constanciaBuffer,
+      contentType: constancia_url.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg',
+    });
+  }
+
+  const mailOptions = {
+    from: `"GPN Pinturas — Facturación" <${process.env.SMTP_USER || 'buzonfacturas@serviciosga.site'}>`,
+    to: email_contacto,
+    replyTo: user_email || undefined,
+    subject: `Solicitud de factura — ${rfc || 'Cliente'} — ${comercio || 'Ticket'}`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;">
+          <h2 style="color:#fff;margin:0;">Solicitud de Factura Electrónica</h2>
+          <p style="color:#C0DD97;margin:4px 0 0;">${comercio || 'Comercio'}</p>
+        </div>
+        <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
+          <p>Por este medio solicito la emisión de mi factura electrónica (CFDI) con los siguientes datos fiscales:</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+            <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:bold;width:40%;">RFC</td><td style="padding:8px 12px;">${rfc || 'N/A'}</td></tr>
+            <tr><td style="padding:8px 12px;font-weight:bold;">Razón Social</td><td style="padding:8px 12px;">${razon_social || 'N/A'}</td></tr>
+            <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:bold;">Ticket</td><td style="padding:8px 12px;">${comercio || ''}${folioInfo}${fechaInfo}${totalInfo}</td></tr>
+            <tr><td style="padding:8px 12px;font-weight:bold;">Correo de respuesta</td><td style="padding:8px 12px;">${user_email || 'Ver en adjunto'}</td></tr>
+          </table>
+          <p>Adjunto mi constancia de situación fiscal del SAT.</p>
+          <p style="color:#666;font-size:0.85rem;">Este correo fue generado automáticamente por GPN Pinturas y Recubrimientos — Portal de Facturación.</p>
+        </div>
+      </div>`,
+    attachments,
+  };
+
+  // Verificar SMTP disponible antes de intentar
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
+    const errMsg = 'SMTP no configurado — no se puede enviar correo';
+    console.log(`⚠️ ${errMsg}`);
+    await db.query(
+      "UPDATE tickets SET solicitud_correo_error = ? WHERE id = ?",
+      [errMsg, ticketId]
+    );
+    return;
+  }
+
+  try {
+    await transporter.sendMail(mailOptions);
+    await db.query(
+      "UPDATE tickets SET solicitud_correo_enviada = 1, solicitud_correo_fecha = NOW(), solicitud_correo_error = NULL WHERE id = ?",
+      [ticketId]
+    );
+    console.log(`✅ Solicitud de factura enviada — ticket #${ticketId} → ${email_contacto}`);
+
+    // Notificar al usuario que el correo fue enviado
+    await crearNotificacion(ticket.user_id || null, 'factura_ok',
+      `Tu solicitud de factura de ${comercio} fue enviada a ${email_contacto}. Te contactarán cuando esté lista.`
+    ).catch(() => {});
+  } catch (e) {
+    console.error(`❌ Error enviando correo ticket #${ticketId}:`, e.message);
+    await db.query(
+      "UPDATE tickets SET solicitud_correo_error = ? WHERE id = ?",
+      [e.message.substring(0, 500), ticketId]
+    );
+  }
+}
 
 // ── LISTAR FACTURAS ──
 app.get("/api/facturas", auth, async (req, res) => {

@@ -194,6 +194,29 @@
     </div>
   </div>
 
+  <!-- Constancia de situación fiscal -->
+  <div class="card perfil-card" style="margin-top:20px;">
+    <div class="card-title" style="margin-bottom:16px;">Constancia de situación fiscal</div>
+    <p style="font-size:0.875rem;color:#555;margin-bottom:16px;">Algunos comercios requieren tu constancia fiscal para emitir facturas cuando el plazo del portal ya venció. Sube el PDF o imagen que descargaste del SAT.</p>
+
+    <div id="constancia-actual" style="display:none;margin-bottom:12px;padding:12px 16px;background:#eaf3de;border-radius:8px;border:1px solid #b8d98a;display:flex;align-items:center;gap:12px;">
+      <span style="font-size:1.3rem;">📄</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:0.8rem;color:#555;">Constancia actual:</div>
+        <a id="constancia-link" href="#" target="_blank" style="font-size:0.85rem;color:#27500A;font-weight:600;word-break:break-all;">Ver archivo</a>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <label class="btn" style="background:#f5f5f5;color:#333;border:1.5px solid #ddd;cursor:pointer;font-size:0.85rem;padding:8px 16px;">
+        <input type="file" id="input-constancia" accept=".pdf,.jpg,.jpeg,.png" style="display:none;" onchange="subirConstancia()">
+        Seleccionar archivo (PDF, JPG, PNG — máx 5 MB)
+      </label>
+      <span id="constancia-filename" style="font-size:0.82rem;color:#666;"></span>
+    </div>
+    <div id="constancia-msg" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;font-size:0.85rem;"></div>
+  </div>
+
   <script>
     async function initNav() {
       try {
@@ -277,8 +300,61 @@
       btn.textContent = 'Guardar perfil';
     }
 
+    async function cargarConstancia() {
+      try {
+        const res = await fetch('/api/perfil');
+        const data = await res.json();
+        const url = data.perfil?.constancia_url;
+        const div = document.getElementById('constancia-actual');
+        if (url) {
+          div.style.display = 'flex';
+          document.getElementById('constancia-link').href = url;
+          const nombre = url.split('/').pop().split('?')[0];
+          document.getElementById('constancia-link').textContent = nombre || 'Ver archivo';
+        } else {
+          div.style.display = 'none';
+        }
+      } catch {}
+    }
+
+    async function subirConstancia() {
+      const input = document.getElementById('input-constancia');
+      const msg = document.getElementById('constancia-msg');
+      const filenameEl = document.getElementById('constancia-filename');
+      if (!input.files[0]) return;
+
+      const file = input.files[0];
+      if (file.size > 5 * 1024 * 1024) {
+        msg.style.cssText = 'display:block;background:#fef0ef;color:#c0392b;border:1px solid #fad7d5;';
+        msg.textContent = 'El archivo excede el límite de 5 MB.';
+        return;
+      }
+      filenameEl.textContent = file.name;
+      msg.style.cssText = 'display:block;background:#f5f5f5;color:#555;border:1px solid #ddd;';
+      msg.textContent = 'Subiendo...';
+
+      const form = new FormData();
+      form.append('constancia', file);
+      try {
+        const res = await fetch('/api/perfil/constancia', { method: 'POST', body: form });
+        const data = await res.json();
+        if (data.ok) {
+          msg.style.cssText = 'display:block;background:#eaf3de;color:#27500A;border:1px solid #b8d98a;';
+          msg.textContent = '✅ Constancia guardada correctamente.';
+          cargarConstancia();
+        } else {
+          msg.style.cssText = 'display:block;background:#fef0ef;color:#c0392b;border:1px solid #fad7d5;';
+          msg.textContent = 'Error: ' + (data.msg || 'No se pudo subir el archivo.');
+        }
+      } catch {
+        msg.style.cssText = 'display:block;background:#fef0ef;color:#c0392b;border:1px solid #fad7d5;';
+        msg.textContent = 'Error de conexión. Intenta de nuevo.';
+      }
+    }
+
     initNav();
     cargar();
+    cargarConstancia();
     initNotificaciones();
   </script>
   <!-- WhatsApp bubble -->

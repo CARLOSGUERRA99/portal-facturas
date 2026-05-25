@@ -306,6 +306,7 @@
         const isProcessed = t.status === 'procesado';
         const isProcessing = ['procesando', 'procesando_correo'].includes(t.status);
         const canDelete = isError || t.status === 'pendiente' || isPendingConfirm;
+        const isVencido = isError && t.error_msg === 'ticket_vencido';
 
         // Select de reasignación (visible solo si hay residentes configurados)
         const residenteSelect = _misResidentes.length > 0 ? `
@@ -314,13 +315,28 @@
             ${_misResidentes.map(r => `<option value="${r.id}" ${t.residente_id == r.id ? 'selected' : ''}>${r.nombre}</option>`).join('')}
           </select>` : '';
 
+        // Botón solicitar por correo (ticket vencido)
+        let btnSolicitar = '';
+        if (isVencido) {
+          if (t.solicitud_correo_enviada) {
+            btnSolicitar = `<button class="btn btn-sm" disabled style="background:#eaf3de;color:#27500A;border:1.5px solid #b8d98a;font-size:0.78rem;cursor:default;">✅ Solicitud enviada</button>`;
+          } else if (t.solicitud_correo_error) {
+            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id})" style="background:#fff8e6;color:#c97b00;border:1.5px solid #f5d76e;font-size:0.78rem;" title="${t.solicitud_correo_error}">⚠️ Reintentar solicitud</button>`;
+          } else {
+            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id})" style="background:#eaf3de;color:#27500A;border:1.5px solid #b8d98a;font-size:0.78rem;">📧 Solicitar por correo</button>`;
+          }
+        }
+
+        const errorMsg = isError && t.error_msg && t.error_msg !== 'ticket_vencido' ? t.error_msg : '';
+
         return `
           <div class="ticket-row" id="ticket-${t.id}">
             <div class="ticket-main">
               <div class="ticket-name">${t.comercio || 'Comercio desconocido'}</div>
               <div class="ticket-meta">${t.nombre_archivo} · ${new Date(t.creado).toLocaleDateString('es-MX', {day:'2-digit',month:'short',year:'numeric'})}</div>
               ${datosStr ? `<div class="ticket-datos">${datosStr}</div>` : ''}
-              ${isError && t.error_msg ? `<div style="font-size:0.75rem;color:#c0392b;margin-top:3px;">${t.error_msg}</div>` : ''}
+              ${isVencido ? `<div style="font-size:0.75rem;color:#c97b00;margin-top:3px;">⏰ Plazo vencido — puedes solicitar la factura por correo</div>` : ''}
+              ${errorMsg ? `<div style="font-size:0.75rem;color:#c0392b;margin-top:3px;">${errorMsg}</div>` : ''}
             </div>
             <div class="ticket-right">
               ${badge}
@@ -331,10 +347,11 @@
                   : isProcessing
                     ? `<button class="btn btn-primary btn-sm" disabled style="opacity:0.4;cursor:not-allowed;">Procesando...</button>`
                     : isError
-                      ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">Reintentar</button>
-                         <button class="btn btn-sm" onclick="abrirEditar(${t.id})" style="background:#f5f5f5;color:#555;border:1.5px solid #ddd;font-size:0.78rem;">Editar datos</button>`
+                      ? (!isVencido ? `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">Reintentar</button>
+                         <button class="btn btn-sm" onclick="abrirEditar(${t.id})" style="background:#f5f5f5;color:#555;border:1.5px solid #ddd;font-size:0.78rem;">Editar datos</button>` : '')
                       : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">Facturar</button>`
               }
+              ${btnSolicitar}
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
               ${residenteSelect}
             </div>
@@ -398,6 +415,43 @@
         await cargarTickets(); // refrescar lista
       } else {
         alert('Error al asignar: ' + (data.msg || 'intenta de nuevo'));
+      }
+    }
+
+    async function solicitarPorCorreo(ticketId) {
+      const btn = document.getElementById('sol-' + ticketId);
+      if (!btn) return;
+      if (!confirm('Se enviará un correo al comercio con tu constancia fiscal adjunta solicitando la factura. ¿Continuar?')) return;
+
+      btn.disabled = true;
+      btn.textContent = '📨 Enviando...';
+
+      try {
+        const res = await fetch(`/api/tickets/${ticketId}/solicitar-correo`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          btn.style.background = '#eaf3de';
+          btn.style.color = '#27500A';
+          btn.style.border = '1.5px solid #b8d98a';
+          btn.textContent = '✅ Solicitud enviada';
+          // Refrescar en 3s para reflejar el estado actualizado
+          setTimeout(() => cargarTickets(), 3000);
+        } else {
+          btn.disabled = false;
+          btn.textContent = '📧 Solicitar por correo';
+          const alertEl = document.getElementById('alert-factura');
+          if (alertEl) {
+            alertEl.className = 'alert alert-error';
+            alertEl.textContent = data.msg || 'No se pudo enviar la solicitud';
+            alertEl.style.display = 'block';
+          } else {
+            alert('Error: ' + (data.msg || 'No se pudo enviar la solicitud'));
+          }
+        }
+      } catch {
+        btn.disabled = false;
+        btn.textContent = '📧 Solicitar por correo';
+        alert('Error de conexión. Intenta de nuevo.');
       }
     }
 
