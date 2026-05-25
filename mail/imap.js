@@ -21,8 +21,9 @@ function esCFDI(subject, from) {
     f.includes('no-responder') ||
     f.includes('factura') ||
     f.includes('pade.mx') ||      // Rendichicas y Caffenio
-    f.includes('e-facturate') ||  // Benavides (plataforma RetailEDX)
-    f.includes('retailedx')       // Carl's Jr (plataforma RetailEDX)
+    f.includes('e-facturate')  ||  // Benavides (plataforma RetailEDX)
+    f.includes('retailedx')    ||  // Carl's Jr (plataforma RetailEDX)
+    f.includes('edxsolutions')     // EDX Retail portal — "Solicitud de ayuda Retail"
   );
 }
 
@@ -156,7 +157,7 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
             // Filtrar por comercio para evitar cruzar facturas entre tickets.
             // Los portales de plataformas propias (e-facturate, retailedx, pade.mx)
             // envían desde dominios que no mencionan el comercio — no aplicar filtro.
-            const platformDomains = ['e-facturate', 'retailedx', 'pade.mx'];
+            const platformDomains = ['e-facturate', 'retailedx', 'edxsolutions', 'pade.mx'];
             const fromPlatform = platformDomains.some(d => from.toLowerCase().includes(d));
             if (expectedComercio && !fromPlatform) {
               const keywords = expectedComercio.toLowerCase()
