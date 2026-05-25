@@ -47,6 +47,68 @@ async function clickSiguiente(page) {
   await page.waitForTimeout(5000); // portal pide ~5s entre pasos
 }
 
+// Captura el ZIP que genera DescargarArchivoPet() parcheando XHR/fetch en el browser.
+// Benavides usa AJAX para generar la descarga; el body binario no llega a page.on("response")
+// porque Chrome lo procesa como file-download antes de exponerlo a Puppeteer.
+async function capturaDescargaZip(page) {
+  return page.evaluate(() => new Promise(resolve => {
+    let done = false;
+    const fin = v => { if (!done) { done = true; resolve(v); } };
+
+    // Parchear XHR — overrideMimeType preserva bytes binarios como Latin-1
+    const ox = XMLHttpRequest.prototype.open;
+    const os = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(m, u, ...a) {
+      this._u = u;
+      const r = ox.call(this, m, u, ...a);
+      try { this.overrideMimeType('text/plain; charset=x-user-defined'); } catch {}
+      return r;
+    };
+    XMLHttpRequest.prototype.send = function(b) {
+      this.addEventListener('load', function() {
+        const t = this.responseText || '';
+        // ZIP magic bytes: PK = 0x50 0x4B
+        if (this.status === 200 && t.length > 200 &&
+            t.charCodeAt(0) === 0x50 && t.charCodeAt(1) === 0x4B) {
+          let bin = '';
+          for (let i = 0; i < t.length; i++) bin += String.fromCharCode(t.charCodeAt(i) & 0xFF);
+          fin({ ok: true, data: btoa(bin), via: 'xhr' });
+        }
+      });
+      return os.call(this, b);
+    };
+
+    // Parchear fetch (por si la plataforma lo usa en lugar de XHR)
+    const of_ = window.fetch;
+    window.fetch = async function(url, opts) {
+      const res = await of_(url, opts);
+      try {
+        const arr = new Uint8Array(await res.clone().arrayBuffer());
+        if (arr[0] === 0x50 && arr[1] === 0x4B && arr.length > 200) {
+          let bin = '';
+          arr.forEach(x => bin += String.fromCharCode(x));
+          fin({ ok: true, data: btoa(bin), via: 'fetch' });
+        }
+      } catch {}
+      return res;
+    };
+
+    // Click en el botón de descarga — prioriza name*="AMBOS" del modal, luego IDs fijos
+    const btn =
+      document.querySelector('[name*="AMBOS"]') ||
+      document.querySelector('#btn_dxmlpet')    ||
+      document.querySelector('#btn_dxmlpdf')    ||
+      [...document.querySelectorAll('button, a')].find(b =>
+        /descargar\s*xml\s*\+\s*pdf|xml\s*\+\s*pdf/i.test(b.textContent)
+      );
+
+    if (btn) { console.log('🖱️ click descarga:', btn.id || btn.name || btn.textContent.trim()); btn.click(); }
+    else fin({ error: 'no-btn' });
+
+    setTimeout(() => fin({ error: 'timeout' }), 12000);
+  }));
+}
+
 // ── Bot principal ─────────────────────────────────────────────────────────
 
 async function facturarBenavides({
@@ -106,63 +168,39 @@ async function facturarBenavides({
       return null;
     });
     if (errTexto === "YA_FACTURADO") {
-      console.log("⚠️ Ya facturado — intentando descargar factura existente...");
+      console.log("⚠️ Ya facturado — descargando factura existente del modal...");
       await screenshot("ya_facturado_modal");
 
-      // Intento 1: interceptar ZIP igual que el flujo normal
-      const zipModal = new Promise(resolve => {
-        page.on("response", async resp => {
-          try {
-            const ct  = resp.headers()["content-type"] || "";
-            const url = resp.url();
-            if (ct.includes("zip") || ct.includes("octet-stream") || url.toLowerCase().includes(".zip")) {
-              const buf = await resp.buffer().catch(() => null);
-              if (buf && buf.length > 100) resolve(buf);
-            }
-          } catch {}
-        });
-        setTimeout(() => resolve(null), 10000);
-      });
+      const zipRes = await capturaDescargaZip(page);
+      console.log(`📋 capturaDescargaZip (ya_facturado): ${JSON.stringify({ ...zipRes, data: zipRes?.data ? `[${zipRes.data.length}b64]` : undefined })}`);
 
-      await page.evaluate(() => {
-        const btns = Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit'], a"));
-        const btn  = btns.find(b => /descargar\s*xml|xml\s*\+\s*pdf|descargar.*pdf/i.test(b.textContent || b.value || ""));
-        if (btn) btn.click();
-      });
-
-      const zipYaFact = await zipModal;
-
-      if (zipYaFact) {
-        console.log(`📦 ZIP del modal: ${zipYaFact.length} bytes — extrayendo...`);
+      if (zipRes?.ok) {
+        const zipBuf = Buffer.from(zipRes.data, "base64");
+        console.log(`📦 ZIP: ${zipBuf.length} bytes (vía ${zipRes.via}) — extrayendo...`);
         let pdfBuf = null, xmlBuf = null;
         try {
-          const dir = await unzipper.Open.buffer(zipYaFact);
-          for (const file of dir.files) {
-            const content = await file.buffer();
-            if (file.path.toLowerCase().endsWith(".pdf")) pdfBuf = content;
-            else if (file.path.toLowerCase().endsWith(".xml")) xmlBuf = content;
+          const dir = await unzipper.Open.buffer(zipBuf);
+          for (const f of dir.files) {
+            const c = await f.buffer();
+            if (f.path.toLowerCase().endsWith(".pdf")) pdfBuf = c;
+            else if (f.path.toLowerCase().endsWith(".xml")) xmlBuf = c;
           }
-        } catch (e) { console.log("⚠️ Error extrayendo ZIP modal:", e.message); }
+        } catch (e) { console.log("⚠️ Error extrayendo ZIP:", e.message); }
 
         const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `facturas/benavides_${ts}.pdf`, "application/pdf") : null;
         const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `facturas/benavides_${ts}.xml`, "application/xml") : null;
 
         if (pdfUrl || xmlUrl) {
           await browser.close();
-          console.log("✅ Factura existente descargada directamente del modal");
+          console.log("✅ Factura existente descargada directamente");
           return { ok: true, xmlUrl, pdfUrl };
         }
       }
 
-      // Intento 2 (fallback): enviar al buzón y esperar vía IMAP
-      console.log("📧 Descarga directa sin resultado — enviando por correo (IMAP)...");
+      // Fallback email — selectores correctos del modal: #txt_dcorreopet + #btn_denviarpet
+      console.log("📧 Fallback: enviando al buzón por correo (IMAP)...");
       await page.evaluate(() => {
-        const inputs = Array.from(document.querySelectorAll("input[type='text'], input[type='email'], input:not([type])"));
-        const inp = inputs.find(i => {
-          const label  = (i.placeholder || i.name || i.id || "").toLowerCase();
-          const nearby = (i.closest("td,div,label")?.innerText || "").toLowerCase();
-          return label.includes("correo") || label.includes("mail") || nearby.includes("enviar a");
-        });
+        const inp = document.querySelector("#txt_dcorreopet");
         if (inp) {
           inp.value = "buzonfacturas@serviciosga.site";
           inp.dispatchEvent(new Event("input",  { bubbles: true }));
@@ -170,11 +208,9 @@ async function facturarBenavides({
         }
       });
       await page.evaluate(() => {
-        const btns = Array.from(document.querySelectorAll("button, input[type='button'], input[type='submit']"));
-        const btn  = btns.find(b => /^enviar$/i.test((b.textContent || b.value || "").trim()));
+        const btn = document.querySelector("#btn_denviarpet");
         if (btn) btn.click();
       });
-      console.log("📧 Correo solicitado — esperando vía IMAP");
       await page.waitForTimeout(2000);
       await browser.close();
       return { ok: true, procesandoCorreo: true };
@@ -258,44 +294,23 @@ async function facturarBenavides({
     console.log("🧾 Generando factura...");
     await clickSiguiente(page);
 
-    // Esperar paso 4 (Descargar Factura)
+    // Esperar paso 4 (modal o página de descarga)
     await page.waitForFunction(
-      () => /Descargar Factura|exitosamente|Enhorabuena/i.test(document.body.textContent) ||
-            document.querySelector("#btn_dxmlpdf") !== null,
+      () => /Descargar Factura|exitosamente|Enhorabuena|ha sido generada/i.test(document.body.textContent) ||
+            document.querySelector("#btn_dxmlpdf, #btn_dxmlpet, [name*='AMBOS']") !== null,
       { timeout: 30000 }
     );
     await screenshot("p6_descarga");
 
     // ── PASO 6 — Descargar ZIP (PDF + XML) ───────────────────────────────
-    console.log("📥 Descargando ZIP...");
+    console.log("📥 Descargando ZIP vía XHR intercept...");
 
-    let zipBuffer = null;
+    const zipRes = await capturaDescargaZip(page);
+    console.log(`📋 capturaDescargaZip (normal): ${JSON.stringify({ ...zipRes, data: zipRes?.data ? `[${zipRes.data.length}b64]` : undefined })}`);
 
-    // Interceptar respuesta del ZIP al hacer click en btn_dxmlpdf
-    const zipPromise = new Promise(resolve => {
-      page.on("response", async resp => {
-        try {
-          const ct = resp.headers()["content-type"] || "";
-          const url = resp.url();
-          if (ct.includes("zip") || ct.includes("octet-stream") || url.toLowerCase().includes(".zip")) {
-            const buf = await resp.buffer().catch(() => null);
-            if (buf && buf.length > 100) resolve(buf);
-          }
-        } catch {}
-      });
-      setTimeout(() => resolve(null), 10000);
-    });
-
-    const btnZip = await page.$("#btn_dxmlpdf");
-    if (btnZip) {
-      await btnZip.click();
-      console.log("✅ Click en Descargar PDF+XML");
-    }
-
-    zipBuffer = await zipPromise;
-
-    if (zipBuffer) {
-      console.log(`📦 ZIP recibido: ${zipBuffer.length} bytes — extrayendo...`);
+    if (zipRes?.ok) {
+      const zipBuffer = Buffer.from(zipRes.data, "base64");
+      console.log(`📦 ZIP: ${zipBuffer.length} bytes (vía ${zipRes.via}) — extrayendo...`);
       let pdfBuf = null, xmlBuf = null;
       try {
         const dir = await unzipper.Open.buffer(zipBuffer);
@@ -304,16 +319,10 @@ async function facturarBenavides({
           if (file.path.toLowerCase().endsWith(".pdf")) pdfBuf = content;
           else if (file.path.toLowerCase().endsWith(".xml")) xmlBuf = content;
         }
-      } catch (e) {
-        console.log("⚠️ Error extrayendo ZIP:", e.message);
-      }
+      } catch (e) { console.log("⚠️ Error extrayendo ZIP:", e.message); }
 
-      const pdfUrl = pdfBuf
-        ? await subirArchivoR2(pdfBuf, `facturas/benavides_${ts}.pdf`, "application/pdf")
-        : null;
-      const xmlUrl = xmlBuf
-        ? await subirArchivoR2(xmlBuf, `facturas/benavides_${ts}.xml`, "application/xml")
-        : null;
+      const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `facturas/benavides_${ts}.pdf`, "application/pdf") : null;
+      const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `facturas/benavides_${ts}.xml`, "application/xml") : null;
 
       await browser.close();
 
@@ -325,16 +334,17 @@ async function facturarBenavides({
       return { ok: true, xmlUrl, pdfUrl };
     }
 
-    // Fallback: enviar por correo y esperar IMAP
-    console.log("📧 Sin descarga directa — enviando por correo (IMAP)...");
+    // Fallback email — intentar ambos selector sets (modal: *pet, página normal: sin sufijo)
+    console.log("📧 Sin ZIP — enviando por correo (IMAP)...");
     await page.evaluate(() => {
-      const inp = document.querySelector("#txt_dcorreo");
+      const inp = document.querySelector("#txt_dcorreopet") || document.querySelector("#txt_dcorreo");
       if (inp) {
         inp.value = "buzonfacturas@serviciosga.site";
+        inp.dispatchEvent(new Event("input",  { bubbles: true }));
         inp.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
-    const btnEnviar = await page.$("#btn_denviar");
+    const btnEnviar = await page.$("#btn_denviarpet") || await page.$("#btn_denviar");
     if (btnEnviar) await btnEnviar.click();
     await page.waitForTimeout(2000);
 
