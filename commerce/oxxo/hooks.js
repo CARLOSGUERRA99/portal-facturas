@@ -134,21 +134,31 @@ async function validarTicket(page, context) {
   const resultado = await Promise.race([
     page.waitForFunction(
       () => { const b = document.querySelector('#form\\:continuar'); return b && !b.disabled; },
-      { timeout: 15000 }
+      { timeout: 20000 }
     ).then(() => 'continuar'),
     page.waitForFunction(
       () => /facturado previamente|el ticket fue facturado/i
             .test(document.body.innerText || ''),
-      { timeout: 15000 }
+      { timeout: 20000 }
     ).then(() => 'ya_facturado'),
     page.waitForFunction(
-      () => /no tuvo éxito|no encontr|folio.*no.*valid|favor de volver/i.test(document.body.innerText || ''),
-      { timeout: 15000 }
+      () => /no tuvo éxito|no encontr|folio.*no.*valid|favor de volver|no es v[aá]lido|datos incorrectos|no se pudo|error al validar|intente nuevamente|lo sentimos/i
+            .test(document.body.innerText || ''),
+      { timeout: 20000 }
     ).then(() => 'folio_no_disponible'),
   ]).catch(() => 'timeout');
 
   if (resultado === 'timeout') {
-    throw new Error('Timeout validando ticket OXXO — portal no respondió');
+    // Screenshot de diagnóstico antes de lanzar error
+    try {
+      const { subirArchivoR2 } = require('../../storage/r2');
+      const buf = await page.screenshot({ fullPage: false });
+      const key = `debug/oxxo_${context.ticketId}_validar_timeout_${Date.now()}.png`;
+      await subirArchivoR2(buf, key, 'image/png');
+      console.log(`[OXXO] Screenshot timeout: ${key}`);
+    } catch {}
+    const pageText = await page.evaluate(() => document.body.innerText.slice(0, 300)).catch(() => '');
+    throw new Error(`Timeout validando ticket OXXO — portal no respondió. Texto en pantalla: ${pageText.replace(/\n/g, ' ').trim()}`);
   }
 
   context.resultadoValidacion = resultado;

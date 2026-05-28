@@ -262,6 +262,19 @@ async function ejecutarFacturacion(ticketId, userId) {
     if (datos.portal === 'oxxo' || (ticket.comercio || '').toLowerCase().includes('oxxo')) {
       datos.folio = corregirFolioOxxo(datos.folio);
       datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
+
+      // Validar datos ANTES de invocar el engine/bot (catch temprano → mejor UX)
+      const erroresOxxo = validarDatosOxxo(datos);
+      if (erroresOxxo.length > 0) {
+        const msg = 'Datos OXXO inválidos: ' + erroresOxxo.join('; ');
+        console.log(`⚠️ [OXXO] Validación fallida ticket #${ticketId}: ${msg}`);
+        await db.query("UPDATE tickets SET status = 'error', error_msg = ? WHERE id = ?", [msg, ticketId]);
+        await registrarIntento(ticketId, 'oxxo', 'error', msg, 0);
+        await crearNotificacion(userId, 'factura_error',
+          `Tu ticket OXXO tiene datos que no pudimos leer correctamente (${erroresOxxo.join(', ')}). Por favor edita los datos y vuelve a intentarlo.`
+        );
+        return { ok: false, msg };
+      }
     }
 
     const inicioMs = Date.now();
@@ -568,9 +581,9 @@ function validarDatosOxxo(datos) {
   const errores = [];
   if (!datos.folio || !/^\d+$/.test(String(datos.folio).replace(/\s/, '')))
     errores.push('folio inválido: ' + datos.folio);
-  if (!datos.idVenta || !/^\d{2}[A-Z]{3}\d{2}[A-Z0-9]+\d{1,2}$/.test(
-    corregirIdVentaOxxo(String(datos.idVenta).toUpperCase())
-  )) errores.push('idVenta inválido: ' + datos.idVenta);
+  const idVentaNorm = corregirIdVentaOxxo(String(datos.idVenta || '').toUpperCase().replace(/\s/g, ''));
+  if (!idVentaNorm || idVentaNorm.length !== 11 || !/^\d{2}[A-Z]{3}\d{2}[A-Z0-9]+\d{1,2}$/.test(idVentaNorm))
+    errores.push(`idVenta inválido (${idVentaNorm.length} chars, esperado 11): ${datos.idVenta}`);
   if (!datos.total || isNaN(parseFloat(datos.total)))
     errores.push('total inválido: ' + datos.total);
   return errores;

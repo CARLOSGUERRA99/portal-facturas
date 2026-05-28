@@ -104,11 +104,21 @@ async function facturarCarlsJr({
     console.log("➡️ Avanzando a Datos Fiscales...");
     await clickSiguiente(page);
 
-    // Detectar errores del portal
+    // Esperar a que el portal reaccione (puede ser lento en validar la referencia)
+    await page.waitForTimeout(2000);
+    await screenshot("p3_post_siguiente");
+
+    // Detectar errores del portal (patrones ampliados)
     const errTexto = await page.evaluate(() => {
       const body = document.body.innerText;
-      if (/ya fue facturado|ya facturado/i.test(body)) return "YA_FACTURADO";
-      if (/no encontrado|no existe|datos incorrectos|ticket inv/i.test(body)) return "DATOS_INVALIDOS";
+      if (/ya fue facturado|ya facturado|factura.*ya.*generada/i.test(body)) return "YA_FACTURADO";
+      if (/no encontrado|no existe|datos incorrectos|ticket inv|referencia.*inv|inv.*referencia|no.*v[aá]lido|no se encontr/i.test(body)) return "DATOS_INVALIDOS";
+      // Capturar cualquier mensaje de alerta/error genérico visible
+      const alertas = document.querySelectorAll('.alert, .error, .mensaje-error, [class*="error"], [class*="alert"], .ui-state-error');
+      for (const el of alertas) {
+        const txt = (el.textContent || '').trim();
+        if (txt.length > 5 && txt.length < 300) return 'ERROR_PORTAL: ' + txt;
+      }
       return null;
     });
     if (errTexto === "YA_FACTURADO") {
@@ -120,8 +130,19 @@ async function facturarCarlsJr({
       return { ok: false, error_code: "datos_invalidos", msg: `Carl's Jr: ${errTexto}` };
     }
 
-    // Esperar paso 2 (campo Uso CFDI)
-    await page.waitForSelector("#txt_cucfdi", { visible: true, timeout: 20000 });
+    // Esperar paso 2 (campo Uso CFDI) — si no aparece, capturar pantalla y reportar
+    const cfdiInput = await page.waitForSelector("#txt_cucfdi", { visible: true, timeout: 20000 })
+      .catch(async () => {
+        await screenshot("p3_cucfdi_timeout");
+        // Capturar texto actual de la página para diagnóstico
+        const pageText = await page.evaluate(() => document.body.innerText.slice(0, 500));
+        console.log(`⚠️ #txt_cucfdi no apareció. Texto en pantalla: ${pageText}`);
+        return null;
+      });
+    if (!cfdiInput) {
+      await browser.close();
+      return { ok: false, error_code: "datos_invalidos", msg: "Carl's Jr: referencia no encontrada o datos del ticket inválidos" };
+    }
     await screenshot("p3_datos_fiscales");
 
     // ── PASO 4 — Llenar datos fiscales ────────────────────────────────────
