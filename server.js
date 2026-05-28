@@ -512,7 +512,27 @@ async function procesarCola() {
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'pendiente_confirmacion' AND t.requiere_confirmacion = 0
        AND u.rfc IS NOT NULL AND u.rfc != ''
-       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr','elcaporal','elcaporalrestaurante','allegro','allegrecaffe','allegrezonadorada','autozone')
+       AND (
+         JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr','elcaporal','elcaporalrestaurante','allegro','allegrecaffe','allegrezonadorada','autozone')
+         OR (
+           -- Portales con portal=desconocido pero portalUrl conocida
+           JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) = 'desconocido'
+           AND t.portal_url IS NOT NULL
+           AND (
+             t.portal_url LIKE '%autozone%'         OR
+             t.portal_url LIKE '%origon.cloud%'     OR
+             t.portal_url LIKE '%mefacturo.mx%'     OR
+             t.portal_url LIKE '%elcaporal%'        OR
+             t.portal_url LIKE '%allegre%'          OR
+             t.portal_url LIKE '%sushio%'
+           )
+         )
+         OR (
+           -- Fallback por comercio cuando portal=desconocido
+           JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) = 'desconocido'
+           AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.comercio'))) LIKE '%autozone%'
+         )
+       )
        ORDER BY t.creado ASC LIMIT ?`,
       [slots]
     );
