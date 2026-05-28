@@ -154,6 +154,37 @@ function crearMcpServer() {
     }
   );
 
+  // ── TOOL: resetear_ticket ──────────────────────────────────────────────────
+  server.tool(
+    "resetear_ticket",
+    "Resetea un ticket en status error a pendiente_confirmacion para que el auto-processor lo reintente. Borra la fila de facturas asociada si existe.",
+    {
+      ticket_id: z.number().describe("ID del ticket a resetear"),
+    },
+    async ({ ticket_id }) => {
+      const [[ticket]] = await db.query(
+        "SELECT id, status, comercio, error_msg FROM tickets WHERE id = ?",
+        [ticket_id]
+      );
+      if (!ticket) return { content: [{ type: "text", text: `Ticket #${ticket_id} no encontrado` }] };
+      if (ticket.status !== 'error') {
+        return { content: [{ type: "text", text: `⚠️ Ticket #${ticket_id} tiene status '${ticket.status}', no 'error'. No se resetea.` }] };
+      }
+
+      await db.query("DELETE FROM facturas WHERE ticket_id = ?", [ticket_id]);
+      await db.query(
+        "UPDATE tickets SET status='pendiente_confirmacion', error_msg=NULL, procesando_correo_desde=NULL, reintento_programado=NULL WHERE id=?",
+        [ticket_id]
+      );
+      return {
+        content: [{
+          type: "text",
+          text: `✅ Ticket #${ticket_id} (${ticket.comercio}) reseteado a pendiente_confirmacion.\nError anterior: ${ticket.error_msg || 'n/a'}`
+        }]
+      };
+    }
+  );
+
   // ── TOOL: estado_r2 ────────────────────────────────────────────────────────
   server.tool(
     "estado_r2",
