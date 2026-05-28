@@ -2596,6 +2596,14 @@ app.delete("/api/admin/limpiar-comercio/:slug", auth, requireAdmin, async (req, 
   }
 });
 
+// ── Endpoint de versión (diagnóstico) ─────────────────────────────────────────
+app.get('/api/version', (req, res) => {
+  const { execSync } = require('child_process');
+  let commit = 'desconocido';
+  try { commit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim(); } catch {}
+  res.json({ commit, ts: new Date().toISOString(), node: process.version });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 4000;
