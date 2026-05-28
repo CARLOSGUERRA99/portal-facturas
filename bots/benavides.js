@@ -59,8 +59,12 @@ async function capturaDescargaZip(page) {
     const meth = req.method();
     // Capturar sólo el primer POST distinto a assets
     if (meth === 'POST' && !capturedPost && !/\.(js|css|png|jpg|gif|ico|woff)$/i.test(url)) {
-      capturedPost = { url, postData: req.postData() || '' };
-      console.log(`🎯 POST interceptado: ${url} | body: ${capturedPost.postData.substring(0, 200)}`);
+      capturedPost = {
+        url,
+        postData: req.postData() || '',
+        contentType: req.headers()['content-type'] || 'application/x-www-form-urlencoded',
+      };
+      console.log(`🎯 POST interceptado: ${url} | CT: ${capturedPost.contentType} | body: ${capturedPost.postData.substring(0, 200)}`);
     }
     req.continue();
   };
@@ -91,13 +95,13 @@ async function capturaDescargaZip(page) {
   }
 
   // Re-fetch con las mismas credenciales (cookies de sesión del browser)
-  const result = await page.evaluate(async ({ url, postData }) => {
+  const result = await page.evaluate(async ({ url, postData, contentType }) => {
     try {
       const res = await fetch(url, {
         method:      'POST',
         credentials: 'include',
         body:        postData,
-        headers:     { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers:     { 'Content-Type': contentType || 'application/x-www-form-urlencoded' },
       });
       if (!res.ok) return { error: `http:${res.status}` };
       const buf = await res.arrayBuffer();

@@ -8,6 +8,7 @@ const { facturarBenavides } = require('./benavides');
 const { facturarPanama } = require('./panama');
 const { facturarCarlsJr } = require('./carljr');
 const { facturarSushito } = require('./sushito');
+const { facturarAutoZone } = require('./autozone');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -127,13 +128,33 @@ async function detectarYFacturar(datos, db = null) {
   }
 
   if (
+    portal === 'autozone' ||
+    comercio.includes('autozone') ||
+    portalUrl.includes('autozone.cdc.origon.cloud') ||
+    portalUrl.includes('origon.cloud')
+  ) {
+    console.log('🎯 Portal detectado: AutoZone (CDC Origon Cloud)');
+    return await facturarAutoZone(datos);
+  }
+
+  if (
     portal === 'sushito' ||
     portal === 'sushio' ||
+    portal === 'elcaporal' ||
+    portal === 'elcaporalrestaurante' ||
+    portal === 'allegro' ||
+    portal === 'allegrecaffe' ||
+    portal === 'allegrezonadorada' ||
     comercio.includes('sushi o') ||
     comercio.includes('sushio') ||
-    portalUrl.includes('mefacturo.mx/sushio')
+    comercio.includes('el caporal') ||
+    comercio.includes('caporal') ||
+    comercio.includes('allegro') ||
+    portalUrl.includes('mefacturo.mx/sushio') ||
+    portalUrl.includes('mefacturo.mx/elcaporal') ||
+    portalUrl.includes('mefacturo.mx/allegre')
   ) {
-    console.log('🎯 Portal detectado: SushiO');
+    console.log('🎯 Portal detectado: mefacturo.mx (SushiO / El Caporal / Allegro)');
     return await facturarSushito(datos);
   }
 

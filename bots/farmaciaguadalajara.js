@@ -225,12 +225,12 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
         return { ok: true, procesandoCorreo: true };
       }
 
-      // tipo === "confirmacion" — click en Sí / botón de confirmar
+      // tipo === "confirmacion" — click en Sí / Aceptar / botón de confirmar
       const siClicked = await page.evaluate(() => {
         const btns = Array.from(document.querySelectorAll(".swal2-popup button"));
         const si = btns.find(b =>
           b.classList.contains("swal2-confirm") ||
-          /^s[ií]$/i.test(b.textContent.trim())
+          /^(s[ií]|aceptar|ok|confirmar|continuar)$/i.test(b.textContent.trim())
         );
         if (si) { si.click(); return si.textContent.trim(); }
         // Fallback: primer botón visible no-cancel
@@ -261,12 +261,17 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     await page.select("select#usoCfdi", usoCfdi || "G03");
     await page.waitForTimeout(300);
 
-    const envioChecked = await page.$eval("input#envioCorreo-input", el => el.checked).catch(() => false);
-    if (!envioChecked) {
-      await page.click("input#envioCorreo-input");
-      await page.waitForTimeout(800);
+    // Checkbox "Enviar por correo" — puede no existir en todos los flujos; manejar con waitForSelector
+    const envioInput = await page.waitForSelector("input#envioCorreo-input", { timeout: 5000 }).catch(() => null);
+    if (envioInput) {
+      const envioChecked = await page.$eval("input#envioCorreo-input", el => el.checked).catch(() => false);
+      if (!envioChecked) {
+        await envioInput.click();
+        await page.waitForTimeout(800);
+      }
     }
-    const emailInput = await page.waitForSelector("input[type='email']", { timeout: 5000 }).catch(() => null);
+    // Aumentado de 5s a 15s: el campo puede tardar en aparecer tras click del checkbox
+    const emailInput = await page.waitForSelector("input[type='email']", { timeout: 15000 }).catch(() => null);
     if (emailInput) {
       await emailInput.click({ clickCount: 3 });
       await emailInput.type("buzonfacturas@serviciosga.site", { delay: 50 });
@@ -275,6 +280,8 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
         el.dispatchEvent(new Event("blur", { bubbles: true }));
       });
       console.log("📧 Correo de captura ingresado");
+    } else {
+      console.log("⚠️ Campo de correo no apareció — continuando sin email explícito");
     }
 
     await screenshot("paso5_datos_fiscales");

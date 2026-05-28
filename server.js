@@ -512,7 +512,7 @@ async function procesarCola() {
        JOIN users u ON t.user_id = u.id
        WHERE t.status = 'pendiente_confirmacion' AND t.requiere_confirmacion = 0
        AND u.rfc IS NOT NULL AND u.rfc != ''
-       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr')
+       AND JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr','elcaporal','elcaporalrestaurante','allegro','allegrecaffe','allegrezonadorada','autozone')
        ORDER BY t.creado ASC LIMIT ?`,
       [slots]
     );
@@ -2231,12 +2231,12 @@ app.post("/api/admin/facturas/renombrar-uuid", auth, requireAdmin, async (req, r
 async function procesarTicketsPorCorreo() {
   let rows;
   try {
-    // Hacer timeout de seguridad: tickets en procesando_correo por más de 30 min → error
+    // Hacer timeout de seguridad: tickets en procesando_correo por más de 60 min → error
     // Usa procesando_correo_desde (cuándo entró al estado) no creado (cuándo se creó el ticket)
     const [atascados] = await db.query(
       `SELECT t.id, t.user_id, t.comercio FROM tickets t
        WHERE t.status = 'procesando_correo'
-         AND procesando_correo_desde < DATE_SUB(NOW(), INTERVAL 30 MINUTE)`
+         AND procesando_correo_desde < DATE_SUB(NOW(), INTERVAL 60 MINUTE)`
     );
     for (const t of atascados) {
       await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [t.id]);
@@ -2245,7 +2245,7 @@ async function procesarTicketsPorCorreo() {
         "factura_error",
         `El correo con tu factura de ${t.comercio || "comercio"} no llegó en el tiempo esperado. Por favor intenta facturar de nuevo.`
       );
-      console.log(`⏰ Job IMAP: ticket #${t.id} expirado (>30 min en procesando_correo) → error`);
+      console.log(`⏰ Job IMAP: ticket #${t.id} expirado (>60 min en procesando_correo) → error`);
     }
 
     [rows] = await db.query(

@@ -20,10 +20,12 @@ function esCFDI(subject, from) {
     f.includes('noreply') ||
     f.includes('no-responder') ||
     f.includes('factura') ||
-    f.includes('pade.mx') ||      // Rendichicas y Caffenio
-    f.includes('e-facturate')  ||  // Benavides (plataforma RetailEDX)
-    f.includes('retailedx')    ||  // Carl's Jr (plataforma RetailEDX)
-    f.includes('edxsolutions')     // EDX Retail portal — "Solicitud de ayuda Retail"
+    f.includes('pade.mx') ||           // Rendichicas y Caffenio
+    f.includes('e-facturate')  ||      // Benavides (plataforma RetailEDX)
+    f.includes('retailedx')    ||      // Carl's Jr (plataforma RetailEDX)
+    f.includes('edxsolutions') ||      // EDX Retail portal — "Solicitud de ayuda Retail"
+    f.includes('mefacturo')    ||      // SushiO, El Caporal, Allegro Caffe (mefacturo.mx)
+    f.includes('farmaciasguadalajara') // Farmacias Guadalajara
   );
 }
 
@@ -162,6 +164,8 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
             const platformPortalMap = [
               { domains: ['e-facturate', 'retailedx', 'edxsolutions'], portals: ['benavides', 'carl', 'icr', 'retailedx'] },
               { domains: ['pade.mx'], portals: ['rendichicas', 'caffenio'] },
+              // mefacturo.mx es la plataforma SoftRestaurant usada por SushiO, El Caporal, Allegro
+              { domains: ['mefacturo', 'softrestaurant'], portals: ['sushito', 'sushio', 'elcaporal', 'allegro', 'caporal', 'allegrezona'] },
             ];
             const fromLower = from.toLowerCase();
             const expectedLower = (expectedComercio || '').toLowerCase();

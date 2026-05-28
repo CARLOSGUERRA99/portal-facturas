@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-05-24b",
+  "actualizado": "2026-05-28",
   "portales": {
     "oxxo": {
       "nombre": "OXXO Facturación Electrónica",
@@ -10,15 +10,38 @@
       "url_reimpresion": "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/reimpresionFactura.do",
       "tecnologia": "JSF PrimeFaces (Java)",
       "stealth": false,
-      "comercios": ["OXXO (cualquier sucursal — San Javier, Misiones, Centro, etc.)"],
+      "comercios": [
+        "OXXO (cualquier sucursal — San Javier, Misiones, Centro, etc.)"
+      ],
       "deteccion": {
         "por_portal_field": "oxxo",
-        "por_texto_ocr": ["oxxo"],
-        "por_comercio": ["oxxo"],
+        "por_texto_ocr": [
+          "oxxo"
+        ],
+        "por_comercio": [
+          "oxxo"
+        ],
         "por_url_qr": []
       },
-      "campos_ticket": ["fecha", "folio", "idVenta", "total"],
-      "campos_fiscales": ["rfc", "razonSocial", "calle", "ext", "int", "colonia", "municipio", "codigoPostal", "estado", "regimenFiscal", "usoCfdi"],
+      "campos_ticket": [
+        "fecha",
+        "folio",
+        "idVenta",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "calle",
+        "ext",
+        "int",
+        "colonia",
+        "municipio",
+        "codigoPostal",
+        "estado",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
       "flujo": [
         "Paso 1: Abrir portal, cerrar popup inicial (.ui-dialog-titlebar-close)",
         "Paso 2: Fecha con datepicker jQuery UI (#form:fecha_input) — navegar mes a mes",
@@ -76,7 +99,6 @@
         "idVenta": "Código después de 'ID=' — formato 2dig+3let+2dig+alfanum+1dig — corregir O→0 en posiciones 0,1,5,6"
       }
     },
-
     "arco": {
       "nombre": "BuzonFacturas (ARCO)",
       "bot": "bots/buzonfacturas.js",
@@ -85,15 +107,33 @@
       "url_descarga": "https://buzonfacturas.com/CFDI/DescargarFactura",
       "tecnologia": "ASP.NET MVC",
       "stealth": false,
-      "comercios": ["Gasolineras ARCO (cualquier sucursal)"],
+      "comercios": [
+        "Gasolineras ARCO (cualquier sucursal)"
+      ],
       "deteccion": {
         "por_portal_field": "arco",
-        "por_texto_ocr": ["buzonfacturas", "arco"],
-        "por_comercio": ["arco"],
-        "por_url_qr": ["buzonfacturas.com", "buzonfacturas", "arco"]
+        "por_texto_ocr": [
+          "buzonfacturas",
+          "arco"
+        ],
+        "por_comercio": [
+          "arco"
+        ],
+        "por_url_qr": [
+          "buzonfacturas.com",
+          "buzonfacturas",
+          "arco"
+        ]
       },
-      "campos_ticket": ["codigoTicket", "total"],
-      "campos_fiscales": ["rfc", "razonSocial", "usoCfdi"],
+      "campos_ticket": [
+        "codigoTicket",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "usoCfdi"
+      ],
       "flujo": [
         "Paso 1: Navegar a URL (del QR o base), llenar RFC (input#RFC), click submit",
         "Paso 2: Click 'Guardar y continuar' → navega a /DatosTicket",
@@ -135,7 +175,6 @@
         "email_captura": "buzonfacturas@serviciosga.site"
       }
     },
-
     "gasmaz": {
       "nombre": "NexusFuel / Gasmaz",
       "bot": "bots/gasmaz.js",
@@ -143,15 +182,38 @@
       "url_base": "https://redmaxfactura.nexusfuel.mx/",
       "tecnologia": "ASP.NET WebForms + AJAX",
       "stealth": true,
-      "comercios": ["Gasmaz", "RedMax", "otras gasolineras con portal NexusFuel"],
+      "comercios": [
+        "Gasmaz",
+        "RedMax",
+        "otras gasolineras con portal NexusFuel"
+      ],
       "deteccion": {
         "por_portal_field": "gasmaz",
-        "por_texto_ocr": ["nexusfuel", "gasmaz"],
-        "por_comercio": ["gasmaz"],
-        "por_url_qr": ["nexusfuel.mx", "nexusfuel", "gasmaz"]
+        "por_texto_ocr": [
+          "nexusfuel",
+          "gasmaz"
+        ],
+        "por_comercio": [
+          "gasmaz"
+        ],
+        "por_url_qr": [
+          "nexusfuel.mx",
+          "nexusfuel",
+          "gasmaz"
+        ]
       },
-      "campos_ticket": ["referencia", "folio", "total", "portalUrl"],
-      "campos_fiscales": ["rfc", "razonSocial", "regimenFiscal", "usoCfdi"],
+      "campos_ticket": [
+        "referencia",
+        "folio",
+        "total",
+        "portalUrl"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
       "flujo": [
         "Paso 1: Cargar portal (URL del QR o redmaxfactura.nexusfuel.mx)",
         "Paso 2: Llenar #txtReferencia, #txtFolio, #txtAmount, #txtRFC",
@@ -195,11 +257,22 @@
         "fiscalFolioId": "fileName.split('_')[3].replace('.xml', '') donde fileName viene del href"
       },
       "cfdi_keywords": {
-        "G01": ["Adquisición de mercancias", "Adquisicion de mercancias"],
-        "G03": ["Gastos en general"],
-        "G02": ["Devoluciones, descuentos"],
-        "S01": ["Sin efectos fiscales"],
-        "CP01": ["Pagos"]
+        "G01": [
+          "Adquisición de mercancias",
+          "Adquisicion de mercancias"
+        ],
+        "G03": [
+          "Gastos en general"
+        ],
+        "G02": [
+          "Devoluciones, descuentos"
+        ],
+        "S01": [
+          "Sin efectos fiscales"
+        ],
+        "CP01": [
+          "Pagos"
+        ]
       },
       "datos_fijos": {
         "formaPago": "Tarjeta de débito",
@@ -207,7 +280,6 @@
         "email_captura": "buzonfacturas@serviciosga.site"
       }
     },
-
     "homedepot": {
       "nombre": "Home Depot Mexico",
       "bot": "bots/homedepot.js",
@@ -215,15 +287,31 @@
       "url_base": "https://facturacion.homedepot.com.mx:2053/FacturacionWeb/#/portalweb",
       "tecnologia": "Angular SPA (puerto 2053, HTTPS propio)",
       "stealth": true,
-      "comercios": ["Home Depot (cualquier sucursal en México)"],
+      "comercios": [
+        "Home Depot (cualquier sucursal en México)"
+      ],
       "deteccion": {
         "por_portal_field": "homedepot",
-        "por_texto_ocr": ["home depot"],
-        "por_comercio": ["home depot"],
-        "por_url_qr": ["homedepot.com.mx"]
+        "por_texto_ocr": [
+          "home depot"
+        ],
+        "por_comercio": [
+          "home depot"
+        ],
+        "por_url_qr": [
+          "homedepot.com.mx"
+        ]
       },
-      "campos_ticket": ["barcode"],
-      "campos_fiscales": ["rfc", "razonSocial", "regimenFiscal", "usoCfdi", "codigoPostal"],
+      "campos_ticket": [
+        "barcode"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "regimenFiscal",
+        "usoCfdi",
+        "codigoPostal"
+      ],
       "flujo": [
         "Paso 1: Cargar portal Angular en puerto 2053 (ignoreHTTPSErrors: true)",
         "Paso 2: Llenar barcode (folio) en input:nth-of-type(1) y RFC en input:nth-of-type(2)",
@@ -247,7 +335,6 @@
         "email_captura": "buzonfacturas@serviciosga.site"
       }
     },
-
     "farmaciaguadalajara": {
       "nombre": "Farmacias Guadalajara",
       "bot": "bots/farmaciaguadalajara.js",
@@ -255,15 +342,37 @@
       "url_base": "https://www.movil.farmaciasguadalajara.com/facturacion/",
       "tecnologia": "Angular 15 con reactive forms y ng-mask",
       "stealth": true,
-      "comercios": ["Farmacias Guadalajara (cualquier sucursal)"],
+      "comercios": [
+        "Farmacias Guadalajara (cualquier sucursal)"
+      ],
       "deteccion": {
         "por_portal_field": "farmaciaguadalajara",
-        "por_texto_ocr": ["farmacia guadalajara", "farmaciasguadalajara", "fragua"],
-        "por_comercio": ["farmacia guadalajara", "fragua"],
-        "por_url_qr": ["farmaciasguadalajara.com"]
+        "por_texto_ocr": [
+          "farmacia guadalajara",
+          "farmaciasguadalajara",
+          "fragua"
+        ],
+        "por_comercio": [
+          "farmacia guadalajara",
+          "fragua"
+        ],
+        "por_url_qr": [
+          "farmaciasguadalajara.com"
+        ]
       },
-      "campos_ticket": ["folioFactura", "caja", "fechaCompra", "noTicket"],
-      "campos_fiscales": ["rfc", "codigoPostal", "razonSocial", "regimenFiscal", "usoCfdi"],
+      "campos_ticket": [
+        "folioFactura",
+        "caja",
+        "fechaCompra",
+        "noTicket"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "codigoPostal",
+        "razonSocial",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
       "flujo": [
         "Paso 1: Cargar portal Angular",
         "Paso 2: Llenar folioFactura (formato XXXXXX-XXXXXX-X con guiones)",
@@ -283,7 +392,6 @@
       ],
       "notas_desarrollo": "Bot tiene lógica correcta pero aún no tiene caso de éxito end-to-end validado"
     },
-
     "panama": {
       "nombre": "Panamá Restaurante y Pastelería",
       "bot": "bots/panama.js",
@@ -291,15 +399,36 @@
       "url_base": "https://portalfacturacion.grupopanama.mx/",
       "tecnologia": "Next.js + Material UI v5 (React SPA) — sin IDs en inputs, MUI Selects",
       "stealth": true,
-      "comercios": ["Panamá Restaurante y Pastelería (Culiacán, Mazatlán, Los Mochis)"],
+      "comercios": [
+        "Panamá Restaurante y Pastelería (Culiacán, Mazatlán, Los Mochis)"
+      ],
       "deteccion": {
         "por_portal_field": "panama",
-        "por_texto_ocr": ["grupopanama", "pastelerias panama", "restaurante panama"],
-        "por_comercio": ["pasteleria panama", "pastelerias panama", "restaurante panama"],
-        "por_url_qr": ["grupopanama.mx"]
+        "por_texto_ocr": [
+          "grupopanama",
+          "pastelerias panama",
+          "restaurante panama"
+        ],
+        "por_comercio": [
+          "pasteleria panama",
+          "pastelerias panama",
+          "restaurante panama"
+        ],
+        "por_url_qr": [
+          "grupopanama.mx"
+        ]
       },
-      "campos_ticket": ["idFacturacion", "total", "comercio"],
-      "campos_fiscales": ["rfc", "regimenFiscal", "usoCfdi", "codigoPostal"],
+      "campos_ticket": [
+        "idFacturacion",
+        "total",
+        "comercio"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "regimenFiscal",
+        "usoCfdi",
+        "codigoPostal"
+      ],
       "flujo": [
         "Paso 0: Cargar https://portalfacturacion.grupopanama.mx/",
         "Paso 1: Click 'Generar Factura' por texto",
@@ -355,7 +484,6 @@
         "email_captura": "buzonfacturas@serviciosga.site"
       }
     },
-
     "benavides": {
       "nombre": "Farmacias Benavides",
       "bot": "bots/benavides.js",
@@ -363,15 +491,31 @@
       "url_base": "https://e-facturate.com/benavides/",
       "tecnologia": "EDX Retail (jQuery + Bootstrap), wizard 4 pasos",
       "stealth": true,
-      "comercios": ["Farmacias Benavides (cualquier sucursal)"],
+      "comercios": [
+        "Farmacias Benavides (cualquier sucursal)"
+      ],
       "deteccion": {
         "por_portal_field": "benavides",
-        "por_texto_ocr": ["benavides"],
-        "por_comercio": ["benavides"],
-        "por_url_qr": ["e-facturate.com/benavides"]
+        "por_texto_ocr": [
+          "benavides"
+        ],
+        "por_comercio": [
+          "benavides"
+        ],
+        "por_url_qr": [
+          "e-facturate.com/benavides"
+        ]
       },
-      "campos_ticket": ["folio", "fecha", "total"],
-      "campos_fiscales": ["rfc", "regimenFiscal", "usoCfdi"],
+      "campos_ticket": [
+        "folio",
+        "fecha",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
       "flujo": [
         "Paso 1: Cargar portal, llenar #txt_ticket (folio sin asteriscos), #txt_total (2 decimales), #txt_rfccliente",
         "Paso 2: Click Siguiente → waitForSelector #txt_cucfdi (Datos Fiscales)",
@@ -414,7 +558,6 @@
         "email_captura": "buzonfacturas@serviciosga.site"
       }
     },
-
     "carljr": {
       "nombre": "Carl's Jr (ICR S.A. de C.V.)",
       "bot": "bots/carljr.js",
@@ -422,15 +565,36 @@
       "url_base": "https://retailedx.com/ICR4/",
       "tecnologia": "EDX Retail (jQuery + Bootstrap), wizard 4 pasos",
       "stealth": true,
-      "comercios": ["Carl's Jr (cualquier sucursal México)", "ICR S.A. DE C.V."],
+      "comercios": [
+        "Carl's Jr (cualquier sucursal México)",
+        "ICR S.A. DE C.V."
+      ],
       "deteccion": {
         "por_portal_field": "carljr",
-        "por_texto_ocr": ["carls jr", "carl's jr", "icr s.a"],
-        "por_comercio": ["carls jr", "carl's jr", "icr s.a"],
-        "por_url_qr": ["facturacion4.icr.mx", "icr.mx"]
+        "por_texto_ocr": [
+          "carls jr",
+          "carl's jr",
+          "icr s.a"
+        ],
+        "por_comercio": [
+          "carls jr",
+          "carl's jr",
+          "icr s.a"
+        ],
+        "por_url_qr": [
+          "facturacion4.icr.mx",
+          "icr.mx"
+        ]
       },
-      "campos_ticket": ["referencia", "total"],
-      "campos_fiscales": ["rfc", "regimenFiscal", "usoCfdi"],
+      "campos_ticket": [
+        "referencia",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
       "flujo": [
         "Paso 1: Cargar http://facturacion4.icr.mx/, llenar #txt_ticket (referencia ~14 dígitos), #txt_total (2 decimales), #txt_rfccliente",
         "Paso 2: Click Siguiente → detectar errores (ya_facturado / datos_invalidos) → waitForSelector #txt_cucfdi",
@@ -472,7 +636,6 @@
         "email_captura": "buzonfacturas@serviciosga.site"
       }
     },
-
     "rendichicas": {
       "nombre": "Rendichicas / Rendilitros",
       "bot": "bots/rendichicasestacionpirusadecv.js",
@@ -480,20 +643,384 @@
       "url_base": "https://facturacion.rendilitros.com/",
       "tecnologia": "AngularJS SPA",
       "stealth": true,
-      "comercios": ["Estacion Piru SA de CV", "Caffenio", "gasolineras con portal rendilitros.com"],
+      "comercios": [
+        "Estacion Piru SA de CV",
+        "Caffenio",
+        "gasolineras con portal rendilitros.com"
+      ],
       "deteccion": {
         "por_portal_field": "rendichicas",
-        "por_texto_ocr": ["rendichicas", "rendilitros", "estacion piru"],
-        "por_comercio": ["rendichicas", "estacion piru"],
-        "por_url_qr": ["rendilitros.com", "rendichicas.com", "rendilitros", "rendichicas"]
+        "por_texto_ocr": [
+          "rendichicas",
+          "rendilitros",
+          "estacion piru"
+        ],
+        "por_comercio": [
+          "rendichicas",
+          "estacion piru"
+        ],
+        "por_url_qr": [
+          "rendilitros.com",
+          "rendichicas.com",
+          "rendilitros",
+          "rendichicas"
+        ]
       },
-      "campos_ticket": ["folio", "fecha", "total"],
-      "campos_fiscales": ["rfc", "razonSocial", "regimenFiscal", "usoCfdi", "codigoPostal"],
+      "campos_ticket": [
+        "folio",
+        "fecha",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "regimenFiscal",
+        "usoCfdi",
+        "codigoPostal"
+      ],
       "datos_fijos": {
         "formaPago": "28 — Tarjeta de débito",
         "usoCfdi": "G03 — Gastos en general",
         "email_captura": "buzonfacturas@serviciosga.site",
         "remitente_factura": "envios@pade.mx"
+      }
+    },
+    "sushito": {
+      "nombre": "SushiO (mefacturo.mx)",
+      "bot": "bots/sushito.js",
+      "estado": "produccion",
+      "url_base": "https://mefacturo.mx/sushio",
+      "tecnologia": "SoftRestaurant / mefacturo.mx (ASP.NET MVC)",
+      "stealth": true,
+      "comercios": [
+        "SushiO (cualquier sucursal)"
+      ],
+      "deteccion": {
+        "por_portal_field": "sushito",
+        "por_texto_ocr": [
+          "sushi o",
+          "sushio"
+        ],
+        "por_comercio": [
+          "sushi o",
+          "sushio"
+        ],
+        "por_url_qr": [
+          "mefacturo.mx/sushio"
+        ]
+      },
+      "campos_ticket": [
+        "referencia",
+        "folio",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
+      "flujo": [
+        "Paso 1: Cargar portal, llenar #CodigoUnicoTicket, #FolioTicket (si existe), #RFC",
+        "Paso 2: Click 'Facturar' — esperar resultado: vencido | ya_facturado | invalido | paso2",
+        "Paso 3 (si paso2): Llenar correo, régimen fiscal, click 'Facturar/Generar'",
+        "Paso 4: Esperar confirmación → intentar descarga directa o procesandoCorreo"
+      ],
+      "comportamientos_especiales": [
+        "ticket_vencido: retorna { error_code:'ticket_vencido', email_contacto, permite_solicitud_correo:true }",
+        "ya_facturado: retorna { error_code:'ya_facturado' }",
+        "Si el plazo venció el comercio envía la factura por correo si el cliente la solicita"
+      ],
+      "datos_fijos": {
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+    "elcaporal": {
+      "nombre": "El Caporal Restaurante (mefacturo.mx)",
+      "bot": "bots/sushito.js",
+      "estado": "produccion",
+      "url_base": "https://mefacturo.mx/elcaporalrestaurante",
+      "tecnologia": "SoftRestaurant / mefacturo.mx — misma plataforma que SushiO",
+      "stealth": true,
+      "comercios": [
+        "El Caporal (restaurante)"
+      ],
+      "deteccion": {
+        "por_portal_field": "elcaporal",
+        "por_texto_ocr": [
+          "el caporal",
+          "caporal"
+        ],
+        "por_comercio": [
+          "el caporal",
+          "caporal"
+        ],
+        "por_url_qr": [
+          "mefacturo.mx/elcaporal"
+        ]
+      },
+      "campos_ticket": [
+        "referencia",
+        "folio",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
+      "datos_fijos": {
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+    "allegro": {
+      "nombre": "Allegro Caffe / Txutxu Food (mefacturo.mx)",
+      "bot": "bots/sushito.js",
+      "estado": "produccion",
+      "url_base": "https://mefacturo.mx/allegrezonadorada",
+      "tecnologia": "SoftRestaurant / mefacturo.mx — misma plataforma que SushiO",
+      "stealth": true,
+      "comercios": [
+        "Allegro Caffe",
+        "Txutxu Food"
+      ],
+      "deteccion": {
+        "por_portal_field": "allegro",
+        "por_texto_ocr": [
+          "allegro",
+          "txutxu"
+        ],
+        "por_comercio": [
+          "allegro",
+          "txutxu"
+        ],
+        "por_url_qr": [
+          "mefacturo.mx/allegre"
+        ]
+      },
+      "campos_ticket": [
+        "referencia",
+        "folio",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "razonSocial",
+        "regimenFiscal",
+        "usoCfdi"
+      ],
+      "datos_fijos": {
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+    "autozone": {
+      "nombre": "AutoZone de México",
+      "bot": null,
+      "estado": "pendiente",
+      "url_base": "https://autozone.cdc.origon.cloud/facturacion/autozone",
+      "tecnologia": "Origon Cloud — plataforma SaaS de facturación",
+      "stealth": true,
+      "comercios": [
+        "AutoZone (cualquier sucursal México)"
+      ],
+      "deteccion": {
+        "por_portal_field": "autozone",
+        "por_texto_ocr": [
+          "autozone"
+        ],
+        "por_comercio": [
+          "autozone"
+        ],
+        "por_url_qr": [
+          "autozone.cdc.origon.cloud",
+          "origon.cloud"
+        ]
+      },
+      "notas_desarrollo": "Bot pendiente de crear. Plataforma Origon Cloud. Campos esperados: folio, fecha, total, barcode, RFC, razón social, CP, correo."
+    },
+    "littlecaesars": {
+      "nombre": "Little Caesars Navojoa",
+      "bot": null,
+      "estado": "pendiente",
+      "url_base": "https://cfdi.analytix360.cloud/cafrena/lc/crear-cvo/",
+      "tecnologia": "Analytix360 Cloud — plataforma SaaS de facturación",
+      "stealth": true,
+      "comercios": [
+        "Little Caesars Navojoa",
+        "CAFRENA"
+      ],
+      "deteccion": {
+        "por_portal_field": "littlecaesars",
+        "por_texto_ocr": [
+          "little caesars",
+          "little caesar"
+        ],
+        "por_comercio": [
+          "little caesars",
+          "little caesar"
+        ],
+        "por_url_qr": [
+          "cfdi.analytix360.cloud",
+          "analytix360"
+        ]
+      },
+      "notas_desarrollo": "Bot pendiente. Plataforma Analytix360. Verificar campos del formulario."
+    },
+    "tufesa": {
+      "nombre": "TUFESA",
+      "bot": null,
+      "estado": "pendiente",
+      "url_base": "https://www.tufesa.com.mx/facturacion",
+      "tecnologia": "Por determinar",
+      "stealth": true,
+      "comercios": [
+        "TUFESA (empresa de autobuses)"
+      ],
+      "deteccion": {
+        "por_portal_field": "tufesa",
+        "por_texto_ocr": [
+          "tufesa"
+        ],
+        "por_comercio": [
+          "tufesa"
+        ],
+        "por_url_qr": [
+          "tufesa.com.mx"
+        ]
+      },
+      "notas_desarrollo": "Bot pendiente. Analizar formulario de facturación de boletos de autobús."
+    },
+    "puentecolorado": {
+      "nombre": "Puente Colorado",
+      "bot": null,
+      "estado": "pendiente",
+      "url_base": "https://www.puentecoloradofacturacion.com.mx",
+      "tecnologia": "Por determinar",
+      "stealth": true,
+      "comercios": [
+        "Puente Colorado"
+      ],
+      "deteccion": {
+        "por_portal_field": "puentecolorado",
+        "por_texto_ocr": [
+          "puente colorado"
+        ],
+        "por_comercio": [
+          "puente colorado"
+        ],
+        "por_url_qr": [
+          "puentecoloradofacturacion.com.mx"
+        ]
+      },
+      "notas_desarrollo": "Bot pendiente. Analizar portal de facturación."
+    },
+    "allegrocaffezonadoradatxutxufo": {
+      "nombre": "Allegro Caffe Zona Dorada / Txutxu Food",
+      "bot": "bots/allegrocaffezonadoradatxutxufo.js",
+      "estado": "produccion",
+      "url_base": "https://mefacturo.mx/allegrezonadorada",
+      "tecnologia": "Desconocida",
+      "stealth": false,
+      "comercios": [
+        "Allegro Caffe Zona Dorada / Txutxu Food"
+      ],
+      "deteccion": {
+        "por_portal_field": "allegrocaffezonadoradatxutxufo",
+        "por_texto_ocr": [
+          "allegrocaffezonadoradatxutxufo",
+          "allegro caffe zona dorada / txutxu food"
+        ],
+        "por_comercio": [
+          "allegrocaffezonadoradatxutxufo"
+        ],
+        "por_url_qr": []
+      },
+      "campos_ticket": [],
+      "datos_fijos": {
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+    "elcaporalrestaurantecampestre": {
+      "nombre": "El Caporal Restaurante Campestre",
+      "bot": "bots/elcaporalrestaurantecampestre.js",
+      "estado": "produccion",
+      "url_base": "https://mefacturo.mx/elcaporalrestaurante",
+      "tecnologia": "Desconocida",
+      "stealth": false,
+      "comercios": [
+        "El Caporal Restaurante Campestre"
+      ],
+      "deteccion": {
+        "por_portal_field": "elcaporalrestaurantecampestre",
+        "por_texto_ocr": [
+          "elcaporalrestaurantecampestre",
+          "el caporal restaurante campestre"
+        ],
+        "por_comercio": [
+          "elcaporalrestaurantecampestre"
+        ],
+        "por_url_qr": []
+      },
+      "campos_ticket": [],
+      "datos_fijos": {
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+    "autozonedemexico": {
+      "nombre": "AutoZone de Mexico",
+      "bot": "bots/autozonedemexico.js",
+      "estado": "produccion",
+      "url_base": "https://autozone.cdc.origon.cloud/facturacion/autozone",
+      "tecnologia": "Desconocida",
+      "stealth": false,
+      "comercios": [
+        "AutoZone de Mexico"
+      ],
+      "deteccion": {
+        "por_portal_field": "autozonedemexico",
+        "por_texto_ocr": [
+          "autozonedemexico",
+          "autozone de mexico"
+        ],
+        "por_comercio": [
+          "autozonedemexico"
+        ],
+        "por_url_qr": []
+      },
+      "campos_ticket": [],
+      "datos_fijos": {
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
+    "littlecaesarsnavojoa": {
+      "nombre": "Little Caesars Navojoa",
+      "bot": "bots/littlecaesarsnavojoa.js",
+      "estado": "produccion",
+      "url_base": "https://cfdi.analytix360.cloud/cafrena/lc/crear-cvo/",
+      "tecnologia": "Desconocida",
+      "stealth": false,
+      "comercios": [
+        "Little Caesars Navojoa"
+      ],
+      "deteccion": {
+        "por_portal_field": "littlecaesarsnavojoa",
+        "por_texto_ocr": [
+          "littlecaesarsnavojoa",
+          "little caesars navojoa"
+        ],
+        "por_comercio": [
+          "littlecaesarsnavojoa"
+        ],
+        "por_url_qr": []
+      },
+      "campos_ticket": [],
+      "datos_fijos": {
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
       }
     }
   }

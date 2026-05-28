@@ -295,66 +295,130 @@ async function generarYEnviar(page, context) {
     const btn = document.querySelector('#form\\:generarFactura');
     if (btn) btn.click();
   });
-  await page.waitForTimeout(5000);
+  await page.waitForTimeout(3000);
 
-  // Esperar diálogo con opciones (email / PDF / XML)
+  // Esperar diálogo completo: exigir AMBOS botones de descarga para evitar falsos positivos.
+  // La condición anterior incluía body.includes('enviar') que era demasiado amplia
+  // y disparaba antes de que el diálogo cargara completamente.
   await page.waitForFunction(() => {
     const body = document.body.innerText;
-    return body.includes('Descargar PDF') || body.includes('Descargar XML') ||
-           body.includes('Enviar correo')  || body.includes('Envía o descarga') ||
-           body.includes('correo electrónico') || body.includes('enviar');
-  }, { timeout: 25000 });
+    return body.includes('Descargar PDF') && body.includes('Descargar XML');
+  }, { timeout: 30000 });
 
   await page.waitForTimeout(1500);
   await snap('generacion_dialogo');
 
-  // Llenar email y enviar
-  const emailInput = await page.$(
-    'input[type="email"], input[placeholder*="orreo"], input[placeholder*="ORREO"], input[id*="mail"]'
-  );
-  if (emailInput) {
-    await emailInput.click({ clickCount: 3 });
-    await emailInput.type('buzonfacturas@serviciosga.site', { delay: 50 });
-    await page.waitForTimeout(500);
-    await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('a, button, input[type="submit"], span'));
-      const btn = btns.find(b =>
-        b.textContent?.toLowerCase().includes('enviar') ||
-        b.value?.toLowerCase().includes('enviar')
-      );
-      if (btn) btn.click();
-    });
-    await page.waitForTimeout(3000);
-    await snap('generacion_postenvio');
-  } else {
-    await snap('generacion_sin_emailinput');
-  }
-
-  // Intentar también descargar PDF y XML si están en el mismo diálogo
-  // (pueden abrirse en nueva pestaña; si fallan, IMAP cubre el correo)
-  const browser = page.browser();
-  const newTabPromise = new Promise(resolve => {
-    browser.once('targetcreated', async t => {
+  // ── Plan A: descargar XML y PDF vía fetch (misma sesión JSF) ─────────────────
+  // Mismo patrón que reimprimir() — funciona para links directos y form POST PrimeFaces.
+  const descargarViaFetch = async (textoBuscar) => {
+    const arr = await page.evaluate(async (texto) => {
+      const btn = Array.from(document.querySelectorAll('a, button'))
+        .find(el => el.textContent?.trim().includes(texto));
+      if (!btn) return null;
       try {
-        const p = await t.page();
-        await p.waitForTimeout(2000);
-        const xmlBuf = await p.evaluate(() => document.body.innerText).catch(() => null);
-        resolve({ page: p, text: xmlBuf });
-      } catch { resolve(null); }
-    });
-    setTimeout(() => resolve(null), 8000);
-  });
+        if (btn.tagName === 'A' && btn.href && !btn.href.startsWith('javascript')) {
+          const resp = await fetch(btn.href, { credentials: 'include' });
+          if (!resp.ok) return null;
+          const ct = resp.headers.get('content-type') || '';
+          const cd = resp.headers.get('content-disposition') || '';
+          if (!ct.includes('xml') && !ct.includes('pdf') && !ct.includes('octet') && !cd.includes('attach')) return null;
+          return Array.from(new Uint8Array(await resp.arrayBuffer()));
+        }
+        const form = btn.closest('form');
+        if (form) {
+          const fd = new FormData(form);
+          if (btn.name) fd.set(btn.name, btn.value || '');
+          const resp = await fetch(form.action || window.location.href, {
+            method: 'POST', body: fd, credentials: 'include',
+          });
+          if (!resp.ok) return null;
+          const ct = resp.headers.get('content-type') || '';
+          const cd = resp.headers.get('content-disposition') || '';
+          if (!ct.includes('xml') && !ct.includes('pdf') && !ct.includes('octet') && !cd.includes('attach')) return null;
+          return Array.from(new Uint8Array(await resp.arrayBuffer()));
+        }
+      } catch (e) { console.error('[fetch descarga]', e.message); }
+      return null;
+    }, textoBuscar).catch(() => null);
+    return arr ? Buffer.from(arr) : null;
+  };
 
-  await page.evaluate(() => {
-    const links = Array.from(document.querySelectorAll('a, button'));
-    const xml = links.find(l => l.textContent?.includes('XML') || l.href?.includes('.xml'));
-    if (xml) xml.click();
-  });
+  const xmlBuf = await descargarViaFetch('Descargar XML').catch(() => null);
+  console.log(`[OXXO][generarYEnviar] XML Plan A: ${xmlBuf ? xmlBuf.length + ' bytes' : 'null'}`);
+  const pdfBuf = await descargarViaFetch('Descargar PDF').catch(() => null);
+  console.log(`[OXXO][generarYEnviar] PDF Plan A: ${pdfBuf ? pdfBuf.length + ' bytes' : 'null'}`);
 
-  const newTab = await newTabPromise;
-  if (newTab?.page) {
-    try { await newTab.page.close(); } catch {}
+  if (xmlBuf || pdfBuf) {
+    const extraerUUID = (buf) => {
+      try {
+        const xml = buf.toString('utf8');
+        const m = xml.match(/UUID="([^"]+)"/i) || xml.match(/uuid="([^"]+)"/i);
+        return m ? m[1].toLowerCase() : null;
+      } catch { return null; }
+    };
+    const uuid = xmlBuf ? extraerUUID(xmlBuf) : null;
+    const prefijo = `facturas/${uuid || Date.now()}`;
+    const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `${prefijo}.xml`, 'application/xml').catch(() => null) : null;
+    const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `${prefijo}.pdf`, 'application/pdf').catch(() => null) : null;
+    console.log(`[OXXO][generarYEnviar] Plan A OK — xml: ${xmlUrl} pdf: ${pdfUrl}`);
+    await snap('generacion_plan_a_ok');
+    return { ok: true, xmlUrl, pdfUrl };
   }
+
+  // ── Plan B: enviar por correo electrónico ─────────────────────────────────────
+  await snap('generacion_plan_b_correo');
+  console.log('[OXXO][generarYEnviar] Plan A falló — Plan B: enviando correo al buzón');
+
+  // Llenar campo de correo. En OXXO el campo tiene id="form:emailEnv" (PrimeFaces JSF).
+  // Usamos evaluate() en lugar de page.type() para mayor confiabilidad en JSF.
+  const emailLlenado = await page.evaluate(() => {
+    const sels = [
+      '#form\\:emailEnv',       // ID exacto confirmado del portal OXXO
+      'input[id*="emailEnv"]',
+      'input[id*="Email"]',
+      'input[id*="mail"]',
+      'input[type="email"]',
+      'input[placeholder*="orreo"]',
+      'input[placeholder*="ORREO"]',
+    ];
+    for (const s of sels) {
+      try {
+        const el = document.querySelector(s);
+        if (el && el.offsetParent !== null) {
+          el.value = 'buzonfacturas@serviciosga.site';
+          el.dispatchEvent(new Event('input',  { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('blur',   { bubbles: true }));
+          return s;
+        }
+      } catch {}
+    }
+    return null;
+  });
+  console.log(`[OXXO][generarYEnviar] Email llenado con selector: ${emailLlenado}`);
+
+  if (!emailLlenado) {
+    await snap('generacion_sin_email_input');
+    return { ok: true, procesandoCorreo: true };
+  }
+
+  await page.waitForTimeout(500);
+
+  // Click en "Enviar correo" — texto exacto primero, luego partial match
+  const enviado = await page.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll('a, button, input[type="submit"], span'));
+    // Texto exacto
+    const exact = btns.find(b => b.textContent?.trim() === 'Enviar correo');
+    if (exact) { exact.click(); return 'exact'; }
+    // Partial (evitar hacer click en "Descargar" que también contiene verbos)
+    const partial = btns.find(b => /enviar\s+correo/i.test(b.textContent?.trim() || ''));
+    if (partial) { partial.click(); return 'partial'; }
+    return null;
+  });
+  console.log(`[OXXO][generarYEnviar] Click "Enviar correo": ${enviado}`);
+
+  await page.waitForTimeout(3000);
+  await snap('generacion_postenvio');
 
   return { ok: true, procesandoCorreo: true };
 }
