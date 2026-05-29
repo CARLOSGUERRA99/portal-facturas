@@ -257,10 +257,13 @@ async function facturarOXXO({ fecha, folio, idVenta, total, rfc, razonSocial, ca
 
     // ── VALIDAR TICKET — reactivo ──
     console.log("✅ Validando ticket...");
+    // El botón real es el commandLink <a id="form:validarTicket"> (no el <span> decorativo).
     await page.evaluate(() => {
-      const spans = Array.from(document.querySelectorAll("span"));
-      const validar = spans.find(s => s.textContent.trim() === "Validar Ticket");
-      if (validar) validar.click();
+      const link = document.querySelector("#form\\:validarTicket");
+      if (link) { link.click(); return; }
+      const a = Array.from(document.querySelectorAll("a"))
+        .find(x => /^validar ticket$/i.test((x.textContent || "").trim()));
+      if (a) a.click();
     });
 
     // Esperar: continuar habilitado O modal de error (folio no encontrado)

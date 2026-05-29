@@ -123,45 +123,106 @@ async function llenarTicket(page, context) {
   await page.waitForTimeout(150);
 }
 
-// ── Validar Ticket (botón PrimeFaces por texto) ──────────────────────────────
+// ── Validar Ticket (PrimeFaces commandLink) ──────────────────────────────────
+// IMPORTANTE: el botón real es <a id="form:validarTicket"> con onclick=PrimeFaces.ab(...).
+// Existe ADEMÁS un <span>Validar Ticket</span> decorativo SIN onclick. Clickear el span
+// (lo que hacía el código anterior) no disparaba la validación → el ticket quedaba
+// "pendiente por validar" indefinidamente y el hook expiraba por timeout.
 async function validarTicket(page, context) {
-  await page.evaluate(() => {
-    const spans = Array.from(document.querySelectorAll('span'));
-    const btn = spans.find(s => s.textContent.trim() === 'Validar Ticket');
-    if (btn) btn.click();
+  const clicked = await page.evaluate(() => {
+    const link = document.querySelector('#form\\:validarTicket');
+    if (link) { link.click(); return 'id'; }
+    // Fallback: el <a> (no <span>) cuyo texto sea "Validar Ticket"
+    const a = Array.from(document.querySelectorAll('a'))
+      .find(x => /^validar ticket$/i.test((x.textContent || '').trim()));
+    if (a) { a.click(); return 'texto'; }
+    return null;
   });
 
-  const resultado = await Promise.race([
-    page.waitForFunction(
-      () => { const b = document.querySelector('#form\\:continuar'); return b && !b.disabled; },
-      { timeout: 20000 }
-    ).then(() => 'continuar'),
-    page.waitForFunction(
-      () => /facturado previamente|el ticket fue facturado/i
-            .test(document.body.innerText || ''),
-      { timeout: 20000 }
-    ).then(() => 'ya_facturado'),
-    page.waitForFunction(
-      () => /no tuvo éxito|no encontr|folio.*no.*valid|favor de volver|no es v[aá]lido|datos incorrectos|no se pudo|error al validar|intente nuevamente|lo sentimos/i
-            .test(document.body.innerText || ''),
-      { timeout: 20000 }
-    ).then(() => 'folio_no_disponible'),
-  ]).catch(() => 'timeout');
-
-  if (resultado === 'timeout') {
-    // Screenshot de diagnóstico antes de lanzar error
+  if (!clicked) {
     try {
       const { subirArchivoR2 } = require('../../storage/r2');
       const buf = await page.screenshot({ fullPage: false });
-      const key = `debug/oxxo_${context.ticketId}_validar_timeout_${Date.now()}.png`;
-      await subirArchivoR2(buf, key, 'image/png');
-      console.log(`[OXXO] Screenshot timeout: ${key}`);
+      await subirArchivoR2(buf, `debug/oxxo_${context.ticketId}_sin_boton_validar_${Date.now()}.png`, 'image/png');
     } catch {}
-    const pageText = await page.evaluate(() => document.body.innerText.slice(0, 300)).catch(() => '');
-    throw new Error(`Timeout validando ticket OXXO — portal no respondió. Texto en pantalla: ${pageText.replace(/\n/g, ' ').trim()}`);
+    throw new Error('No se encontró el botón "Validar Ticket" (#form:validarTicket) en el portal OXXO.');
+  }
+  console.log(`[OXXO] "Validar Ticket" clickeado (vía ${clicked})`);
+
+  // El portal responde por AJAX: habilita #form:continuar (éxito) o muestra un
+  // growl (#form:growl → .ui-growl-item) con el motivo del rechazo. El growl es
+  // la fuente autoritativa del mensaje (ej. "ejercicio fiscal diferente").
+  await Promise.race([
+    page.waitForFunction(
+      () => { const b = document.querySelector('#form\\:continuar'); return b && !b.disabled; },
+      { timeout: 25000 }
+    ),
+    page.waitForFunction(
+      () => {
+        const g = document.querySelector('.ui-growl-item .ui-growl-title');
+        return g && (g.textContent || '').trim().length > 3;
+      },
+      { timeout: 25000 }
+    ),
+  ]).catch(() => {});
+
+  await page.waitForTimeout(500); // dejar que continuar/growl terminen de actualizarse
+
+  const estado = await page.evaluate(() => {
+    const cont  = document.querySelector('#form\\:continuar');
+    const growl = document.querySelector('.ui-growl-item .ui-growl-title');
+    return {
+      continuarOk: !!(cont && !cont.disabled),
+      growlMsg: growl ? (growl.textContent || '').trim() : '',
+      bodyText: (document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 1200),
+    };
+  });
+
+  // Éxito: el botón Continuar quedó habilitado
+  if (estado.continuarOk) { context.resultadoValidacion = 'continuar'; return; }
+
+  const reason = estado.growlMsg || estado.bodyText;
+
+  // Ya facturado → flujo de reimpresión
+  if (/facturado previamente|facturado con anterioridad|ya.*facturad/i.test(reason)) {
+    console.log(`[OXXO] Ya facturado: ${estado.growlMsg}`);
+    context.resultadoValidacion = 'ya_facturado';
+    return;
   }
 
-  context.resultadoValidacion = resultado;
+  // Auto-corrección de año: OXXO sólo permite facturar el ejercicio fiscal (año) actual.
+  // El OCR a veces lee mal el año (p.ej. 2026→2025). Si el portal rechaza por ejercicio
+  // fiscal y el año capturado no es el actual, reintentamos UNA vez con el año actual.
+  if (/ejercicio fiscal/i.test(reason) && !context._oxxoYearRetried) {
+    const anioActual = new Date().getFullYear();
+    const partes = String(context.fechaDMY || '').split('/');
+    if (partes.length === 3 && parseInt(partes[2]) !== anioActual) {
+      context._oxxoYearRetried = true;
+      const nuevaFecha = `${partes[0]}/${partes[1]}/${anioActual}`;
+      console.log(`[OXXO] Rechazo por ejercicio fiscal — reintentando con año actual: ${context.fechaDMY} → ${nuevaFecha}`);
+      context.fechaDMY = nuevaFecha;
+      await seleccionarFecha(page, context);
+      return validarTicket(page, context);
+    }
+  }
+
+  // Rechazo del portal con mensaje claro (ejercicio fiscal, no encontrado, datos incorrectos…)
+  if (estado.growlMsg) {
+    console.log(`[OXXO] Rechazo del portal: ${estado.growlMsg}`);
+    context.mensajeValidacionOxxo = estado.growlMsg;
+    context.resultadoValidacion = 'folio_no_disponible';
+    return;
+  }
+
+  // Sin mensaje detectable → timeout real (screenshot de diagnóstico + throw)
+  try {
+    const { subirArchivoR2 } = require('../../storage/r2');
+    const buf = await page.screenshot({ fullPage: false });
+    const key = `debug/oxxo_${context.ticketId}_validar_timeout_${Date.now()}.png`;
+    await subirArchivoR2(buf, key, 'image/png');
+    console.log(`[OXXO] Screenshot timeout: ${key}`);
+  } catch {}
+  throw new Error(`Timeout validando ticket OXXO — portal no respondió. Texto en pantalla: ${estado.bodyText}`);
 }
 
 // ── RFC, Razón Social, Dirección, CP, Estado, Régimen, CFDI ─────────────────

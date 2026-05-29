@@ -3,6 +3,7 @@
   "folio":         "#form\\:folio",
   "venta":         "#form\\:venta",
   "total":         "#form\\:total",
+  "validarTicket": "#form\\:validarTicket",
   "continuar":     "#form\\:continuar",
   "rfc":           "#form\\:rfc",
   "razon":         "#form\\:razon",

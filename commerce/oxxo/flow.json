@@ -19,7 +19,7 @@
     "value":  "resultadoValidacion",
     "equals": "folio_no_disponible",
     "steps":  [
-      { "action": "exit", "result": { "ok": false, "error_code": "datos_invalidos", "msg": "El folio no está disponible en OXXO. Verifica los datos del ticket." } }
+      { "action": "exit", "result": { "ok": false, "error_code": "datos_invalidos", "msg": "OXXO no pudo facturar el ticket: {{mensajeValidacionOxxo}}" } }
     ]
   },
   { "action": "hook",       "name": "llenarDatosFactura" },
