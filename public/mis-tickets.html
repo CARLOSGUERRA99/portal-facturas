@@ -315,15 +315,18 @@
             ${_misResidentes.map(r => `<option value="${r.id}" ${t.residente_id == r.id ? 'selected' : ''}>${r.nombre}</option>`).join('')}
           </select>` : '';
 
-        // Botón solicitar por correo (ticket vencido)
+        // Botón solicitar por correo — disponible para cualquier ticket en error
+        // (vencido o fallo del bot, p.ej. SushiO). El usuario indica el correo del
+        // comercio si el ticket no tiene uno configurado.
         let btnSolicitar = '';
-        if (isVencido) {
+        if (isError) {
+          const emailCfg = (t.email_contacto || '').replace(/'/g, '');
           if (t.solicitud_correo_enviada) {
             btnSolicitar = `<button class="btn btn-sm" disabled style="background:#eaf3de;color:#27500A;border:1.5px solid #b8d98a;font-size:0.78rem;cursor:default;">✅ Solicitud enviada</button>`;
           } else if (t.solicitud_correo_error) {
-            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id})" style="background:#fff8e6;color:#c97b00;border:1.5px solid #f5d76e;font-size:0.78rem;" title="${t.solicitud_correo_error}">⚠️ Reintentar solicitud</button>`;
+            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id}, '${emailCfg}')" style="background:#fff8e6;color:#c97b00;border:1.5px solid #f5d76e;font-size:0.78rem;" title="${t.solicitud_correo_error}">⚠️ Reintentar solicitud</button>`;
           } else {
-            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id})" style="background:#eaf3de;color:#27500A;border:1.5px solid #b8d98a;font-size:0.78rem;">📧 Solicitar por correo</button>`;
+            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id}, '${emailCfg}')" style="background:#eaf3de;color:#27500A;border:1.5px solid #b8d98a;font-size:0.78rem;">📧 Solicitar por correo</button>`;
           }
         }
 
@@ -418,16 +421,32 @@
       }
     }
 
-    async function solicitarPorCorreo(ticketId) {
+    async function solicitarPorCorreo(ticketId, emailContacto) {
       const btn = document.getElementById('sol-' + ticketId);
       if (!btn) return;
-      if (!confirm('Se enviará un correo al comercio con tu constancia fiscal adjunta solicitando la factura. ¿Continuar?')) return;
+
+      // Si el ticket no trae correo del comercio, pedirlo al usuario.
+      let correo = (emailContacto || '').trim();
+      correo = prompt(
+        'Correo de facturación del comercio al que enviaremos la solicitud (se adjunta tu constancia fiscal):',
+        correo
+      );
+      if (correo === null) return; // canceló
+      correo = correo.trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) {
+        alert('Escribe un correo válido del comercio.');
+        return;
+      }
 
       btn.disabled = true;
       btn.textContent = '📨 Enviando...';
 
       try {
-        const res = await fetch(`/api/tickets/${ticketId}/solicitar-correo`, { method: 'POST' });
+        const res = await fetch(`/api/tickets/${ticketId}/solicitar-correo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: correo }),
+        });
         const data = await res.json();
         if (data.ok) {
           btn.style.background = '#eaf3de';

@@ -1580,10 +1580,13 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
   try {
     const ticketId = parseInt(req.params.id);
     const userId = req.session.userId;
+    // Correo del comercio escrito manualmente por el usuario (portales sin
+    // email_contacto pre-configurado, p.ej. SushiO/mefacturo). Opcional.
+    const emailManual = (req.body && req.body.email) ? String(req.body.email).trim() : null;
 
     const [[ticket]] = await db.query(
       `SELECT t.id, t.comercio, t.email_contacto, t.solicitud_correo_enviada,
-              t.ocr_json, t.nombre_archivo,
+              t.ocr_json, t.nombre_archivo, t.user_id,
               u.nombre AS user_nombre, u.email AS user_email,
               u.rfc, u.razon_social, u.constancia_url
        FROM tickets t JOIN users u ON t.user_id = u.id
@@ -1591,9 +1594,20 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
       [ticketId, userId]
     );
     if (!ticket) return res.status(404).json({ ok: false, msg: "Ticket no encontrado" });
-    if (!ticket.email_contacto) return res.json({ ok: false, msg: "Este ticket no tiene correo de contacto configurado" });
+
+    // Correo destino: el pre-configurado o el que el usuario escribió ahora.
+    const correoDestino = ticket.email_contacto || emailManual;
+    if (!correoDestino) return res.json({ ok: false, msg: "Indica el correo de facturación del comercio para enviar la solicitud" });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correoDestino)) return res.json({ ok: false, msg: "El correo del comercio no es válido" });
     if (!ticket.constancia_url) return res.json({ ok: false, msg: "Debes subir tu constancia de situación fiscal en tu perfil antes de solicitar" });
     if (ticket.solicitud_correo_enviada) return res.json({ ok: false, msg: "Ya se envió una solicitud por correo para este ticket" });
+
+    // Persistir el correo manual y usarlo en el envío.
+    if (!ticket.email_contacto && emailManual) {
+      await db.query("UPDATE tickets SET email_contacto = ? WHERE id = ?", [emailManual, ticketId])
+        .catch(e => console.log(`⚠️ email_contacto manual no guardado (${e.message})`));
+    }
+    ticket.email_contacto = correoDestino;
 
     // Marcar como en proceso de envío
     await db.query(
