@@ -30,8 +30,21 @@ function slugify(nombre) {
     .slice(0, 30);
 }
 
+// Serializa el orquestador por slug: si llegan 2 tickets del MISMO portal nuevo
+// a la vez, el segundo espera al primero y luego cae en la guarda de "ya existe"
+// (estado activo/pendiente_aprobacion), evitando filas duplicadas en
+// portales_agente y dobles sesiones de Browserless corriendo el mismo análisis.
+const _orquestarColas = new Map();
+function orquestar(args) {
+  const slug = slugify(args.comercioNombre || '');
+  const anterior = _orquestarColas.get(slug) || Promise.resolve();
+  const siguiente = anterior.then(() => _orquestarImpl(args), () => _orquestarImpl(args));
+  _orquestarColas.set(slug, siguiente.catch(() => {}));
+  return siguiente;
+}
+
 // ── Orquestar: analizar → generar → validar → [corregir×N] → pendiente_aprobacion ──────────
-async function orquestar({ db, ticketId, portalUrl, comercioNombre, instrucciones = '' }) {
+async function _orquestarImpl({ db, ticketId, portalUrl, comercioNombre, instrucciones = '' }) {
   const slug = slugify(comercioNombre);
   console.log(`🎯 [Orquestador] Iniciando: ${slug} (${comercioNombre})`);
 

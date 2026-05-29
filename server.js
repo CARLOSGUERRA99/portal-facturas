@@ -242,6 +242,25 @@ function conColaPortal(portalKey, fn) {
   return siguiente;
 }
 
+// Envuelve un job de setInterval para que NUNCA se solape consigo mismo: si la
+// corrida anterior aún no termina (p.ej. el job IMAP espera hasta 10 min/ticket),
+// el siguiente tick se omite. Sin esto se acumulaban corridas concurrentes que
+// abrían múltiples conexiones IMAP/sesiones Browserless y competían por los mismos
+// correos — causa raíz de "se bugea con 2-3 tickets" y "no descarga XML/PDF".
+function sinSolape(fn, nombre) {
+  let corriendo = false;
+  return async function () {
+    if (corriendo) {
+      console.log(`⏭️ [job:${nombre}] ciclo anterior aún en ejecución — se omite este tick`);
+      return;
+    }
+    corriendo = true;
+    try { await fn(); }
+    catch (e) { console.error(`❌ [job:${nombre}]`, e?.message || e); }
+    finally { corriendo = false; }
+  };
+}
+
 // ── LÓGICA COMPARTIDA DE FACTURACIÓN (usada por auto-facturar y endpoint manual) ──
 async function ejecutarFacturacion(ticketId, userId) {
   try {
@@ -554,7 +573,7 @@ async function procesarCola() {
     }
   } catch {}
 }
-setInterval(procesarCola, 30 * 1000);
+setInterval(sinSolape(procesarCola, 'procesarCola'), 30 * 1000);
 
 function corregirIdVentaOxxo(id) {
   if (!id) return id;
@@ -1085,6 +1104,32 @@ app.get("/api/admin/usuarios", auth, requireAdmin, async (req, res) => {
   }
 });
 
+// Corrige el AÑO mal leído por el OCR. Los tickets siempre son recientes (días),
+// así que si el OCR leyó un año implausible (ej. 2026→2025, o 2020), reasignamos
+// el año más reciente —entre el actual y el anterior— que NO caiga en el futuro,
+// conservando día y mes. Soporta "DD/MM/YYYY" y "YYYY-MM-DD". Si no puede parsear,
+// devuelve el string original sin tocarlo. Es no-op cuando el año ya es correcto.
+function corregirAnioReciente(fechaStr) {
+  if (!fechaStr || typeof fechaStr !== 'string') return fechaStr;
+  const s = fechaStr.trim();
+  let dd, mm, yyyy, formato, m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)))      { yyyy = +m[1]; mm = +m[2]; dd = +m[3]; formato = 'YMD'; }
+  else if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) { dd = +m[1]; mm = +m[2]; yyyy = +m[3]; formato = 'DMY'; }
+  else return fechaStr;
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return fechaStr;
+
+  const hoy = new Date();
+  const cap = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 2); // tolera 2 días (desfase/dígito mal leído)
+  let mejor = null;
+  for (const a of [hoy.getFullYear(), hoy.getFullYear() - 1]) {
+    const d = new Date(a, mm - 1, dd);
+    if (d <= cap && (!mejor || d > mejor.d)) mejor = { a, d };
+  }
+  if (!mejor || mejor.a === yyyy) return fechaStr;
+  const p2 = (n) => String(n).padStart(2, '0');
+  return formato === 'YMD' ? `${mejor.a}-${p2(mm)}-${p2(dd)}` : `${p2(dd)}/${p2(mm)}/${mejor.a}`;
+}
+
 // ── SUBIR TICKET + OCR ──
 app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   try {
@@ -1272,6 +1317,16 @@ ${INSTRUCCION_CONFIANZA}`,
       textoOCR = resp2.content[0].text;
       const extraido = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
       datosOCR = { ...datosOCR, ...extraido };
+      // Corrección de año mal leído por el OCR (2026→2025, 2020, etc.)
+      for (const campo of ['fecha', 'fechaCompra']) {
+        if (datosOCR[campo]) {
+          const corr = corregirAnioReciente(datosOCR[campo]);
+          if (corr !== datosOCR[campo]) {
+            console.log(`📅 Año corregido en '${campo}': ${datosOCR[campo]} → ${corr}`);
+            datosOCR[campo] = corr;
+          }
+        }
+      }
       const nCampos = Object.values(datosOCR).filter(v => v !== null && v !== undefined).length;
       console.log(`⏱️ Sonnet extracción: ${t2ms}ms | Campos: ${nCampos}`);
       console.log("✅ Datos extraídos:", datosOCR);
@@ -2306,7 +2361,10 @@ async function procesarTicketsPorCorreo() {
     console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo${expectedComercio ? ` [comercio: ${expectedComercio}]` : ''}...`);
 
     try {
-      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 10 * 60 * 1000, expectedComercio);
+      // Espera corta por ticket (3 min): si el correo no llegó, se deja en
+      // procesando_correo y el siguiente ciclo (cada 2 min) reintenta. Evita que
+      // un ticket sin correo bloquee a los demás del lote hasta 10 min cada uno.
+      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 3 * 60 * 1000, expectedComercio);
 
       // UUID desde el contenido del XML (fuente canónica del CFDI)
       // Fallback: timestamp si el XML no está disponible
@@ -2403,7 +2461,7 @@ async function procesarTicketsPorCorreo() {
     }
   }
 }
-setInterval(procesarTicketsPorCorreo, 2 * 60 * 1000);
+setInterval(sinSolape(procesarTicketsPorCorreo, 'IMAP-correo'), 2 * 60 * 1000);
 
 // ── JOB REINTENTOS AUTOMÁTICOS: corre cada 5 min, procesa tickets con reintento_programado <= NOW() ──
 async function procesarReintentos() {
@@ -2474,7 +2532,7 @@ async function procesarReintentos() {
     }
   }
 }
-setInterval(procesarReintentos, 5 * 60 * 1000);
+setInterval(sinSolape(procesarReintentos, 'reintentos'), 5 * 60 * 1000);
 
 // ── AGENTES — Fase 5: CRUD portales gestionados ──────────────────────────────
 
