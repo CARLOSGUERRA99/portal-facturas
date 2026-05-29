@@ -556,7 +556,9 @@ async function procesarCola() {
              t.portal_url LIKE '%mefacturo.mx%'     OR
              t.portal_url LIKE '%elcaporal%'        OR
              t.portal_url LIKE '%allegre%'          OR
-             t.portal_url LIKE '%sushio%'
+             t.portal_url LIKE '%sushio%'           OR
+             t.portal_url LIKE '%analytix360%'      OR
+             t.portal_url LIKE '%tufesa%'
            )
          )
          OR (
