@@ -112,6 +112,7 @@ async function _orquestarImpl({ db, ticketId, portalUrl, comercioNombre, instruc
   console.log(`✅ [Orquestador] Bot generado: ${genResult.nombreArchivo}`);
 
   // ── PASO 3+: Validar → corregir → validar (loop) ────────────────────────────
+  let ultimaValidacion = null;
   for (let intento = 0; intento <= MAX_CORRECCIONES; intento++) {
     console.log(`🧪 [Orquestador] Validando (intento ${intento + 1}/${MAX_CORRECCIONES + 1})...`);
 
@@ -120,6 +121,7 @@ async function _orquestarImpl({ db, ticketId, portalUrl, comercioNombre, instruc
       nombrePortal: comercioNombre,
       datosTest: process.env.BROWSERLESS_TOKEN ? DATOS_TEST : null,
     });
+    ultimaValidacion = validacion;
 
     await db.query('UPDATE portales_agente SET intentos_correccion=? WHERE id=?', [intento, portalId]);
 
@@ -161,7 +163,25 @@ async function _orquestarImpl({ db, ticketId, portalUrl, comercioNombre, instruc
     }
   }
 
-  // Llegamos aquí con errores pendientes — igual pasamos a revisión manual
+  // Llegamos aquí porque la última validación NO pasó (ok: false).
+  // Si hay errores duros (sintaxis, falta puppeteer, sin module.exports, etc.) el bot
+  // NO sirve y no debe ofrecerse para aprobación: lo marcamos 'error'.
+  const erroresDuros = (ultimaValidacion && ultimaValidacion.errores) || [];
+  if (erroresDuros.length > 0) {
+    const detalle = erroresDuros.join('; ');
+    await db.query('UPDATE portales_agente SET estado=?, error_msg=?, bot_code=? WHERE id=?',
+      ['error', `Validación: ${detalle}`, codigoActual, portalId]);
+    console.log(`❌ [Orquestador] Bot inválido — no se ofrece para aprobación. Errores: ${detalle}`);
+    return {
+      ok: false,
+      etapa: 'validacion',
+      portalId,
+      msg: `El bot generado tiene errores que impiden su uso: ${detalle}`,
+      validacion: ultimaValidacion,
+    };
+  }
+
+  // Solo advertencias (sin errores duros) — pasamos a revisión manual.
   await db.query('UPDATE portales_agente SET estado=?, bot_code=? WHERE id=?', ['pendiente_aprobacion', codigoActual, portalId]);
   return {
     ok: true,

@@ -1,6 +1,7 @@
 const Anthropic = require("@anthropic-ai/sdk");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 
 function nombreFuncionDesde(nombrePortal) {
   const limpio = nombrePortal
@@ -71,9 +72,17 @@ Responde SOLO con el código JavaScript completo. Sin texto adicional, sin bloqu
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
-    max_tokens: 5000,
+    max_tokens: 20000,
     messages: [{ role: "user", content: prompt }],
   });
+
+  // Si el modelo se quedó sin tokens, el código viene truncado a media instrucción.
+  // Detectarlo aquí evita guardar bots inválidos que luego rompen producción.
+  if (response.stop_reason === "max_tokens") {
+    throw new Error(
+      `Generación truncada: el bot excedió max_tokens (20000). El portal ${nombrePortal} es demasiado complejo para un solo paso — divide el flujo o sube el límite.`
+    );
+  }
 
   let codigo = response.content[0].text;
   codigo = codigo
@@ -82,6 +91,23 @@ Responde SOLO con el código JavaScript completo. Sin texto adicional, sin bloqu
     .replace(/^```\n?/m, "")
     .replace(/\n?```$/m, "")
     .trim();
+
+  // Validación de sintaxis: compila (sin ejecutar) para garantizar que el bot
+  // generado es JavaScript válido y completo. Un bot truncado falla aquí.
+  try {
+    new vm.Script(codigo, { filename: nombreArchivo });
+  } catch (e) {
+    throw new Error(
+      `El bot generado para ${nombrePortal} tiene un error de sintaxis (${e.message}). Probablemente está incompleto o malformado — no se guardará.`
+    );
+  }
+
+  // Verificación mínima de contrato: debe exportar la función esperada.
+  if (!codigo.includes(`function ${nombreFuncion}`)) {
+    throw new Error(
+      `El bot generado para ${nombrePortal} no contiene la función esperada "${nombreFuncion}".`
+    );
+  }
 
   return { codigo, nombreArchivo, nombreFuncion };
 }

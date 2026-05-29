@@ -1,9 +1,28 @@
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 
 async function validarBot({ codigo, nombrePortal, datosTest }) {
   const errores = [];
   const advertencias = [];
+
+  // ── Sintaxis (bloqueante) ──────────────────────────────────────────────────────
+  // Compila sin ejecutar. Un bot truncado o malformado falla aquí y NUNCA llega a
+  // pendiente_aprobacion. Es la primera barrera: sin código válido, nada más importa.
+  try {
+    new vm.Script(codigo, { filename: `${nombrePortal}.js` });
+  } catch (e) {
+    errores.push(`Error de sintaxis (bot incompleto o malformado): ${e.message}`);
+    // Sin sintaxis válida no tiene sentido seguir analizando — abortamos temprano.
+    return {
+      ok: false,
+      errores,
+      advertencias,
+      pasos_detectados: 0,
+      test_live: { skipped: true, razon: "Código con error de sintaxis" },
+      puede_desplegar: false,
+    };
+  }
 
   // ── Análisis estático ────────────────────────────────────────────────────────
   if (!/puppeteer/i.test(codigo))

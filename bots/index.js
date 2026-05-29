@@ -210,6 +210,14 @@ async function detectarYFacturar(datos, db = null) {
     ];
     for (const botPath of candidatos) {
       if (fs.existsSync(botPath)) {
+        // Pre-chequeo de sintaxis: un bot truncado/malformado (p.ej. generado por
+        // una versión vieja del agente) se descarta aquí en vez de reventar el require.
+        try {
+          new (require('vm').Script)(fs.readFileSync(botPath, 'utf8'), { filename: botPath });
+        } catch (e) {
+          console.log(`⚠️ Bot dinámico inválido (sintaxis), se ignora ${path.basename(botPath)}:`, e.message);
+          continue;
+        }
         try {
           delete require.cache[require.resolve(botPath)];
           const botModule = require(botPath);
@@ -238,6 +246,13 @@ async function detectarYFacturar(datos, db = null) {
         const row = rows[0];
         const archivo = row.nombre_archivo || `${row.comercio}.js`;
         const botPath = path.join(__dirname, archivo);
+        // No restaurar ni ejecutar código de DB que esté truncado/malformado.
+        try {
+          new (require('vm').Script)(row.bot_code || '', { filename: archivo });
+        } catch (e) {
+          console.log(`⚠️ Bot en DB inválido (sintaxis), se ignora ${archivo}:`, e.message);
+          throw e; // sale del bloque try externo → cae a "Portal no reconocido"
+        }
         if (!fs.existsSync(botPath)) {
           fs.writeFileSync(botPath, row.bot_code, 'utf8');
           console.log(`♻️ Bot restaurado desde DB: ${archivo}`);
