@@ -131,25 +131,56 @@ transporter.verify((error) => {
   else console.log(`✅ SMTP conectado correctamente (${SMTP_PORT}/secure=${SMTP_SECURE})`);
 });
 
-// ── Diagnóstico TEMPORAL de conectividad SMTP desde Railway (no expone la contraseña) ──
-app.get('/api/diag-smtp', async (req, res) => {
-  const host = process.env.SMTP_HOST;
-  const out = {
-    host, user: process.env.SMTP_USER, passSet: !!process.env.SMTP_PASS,
-    envPort: process.env.SMTP_PORT || '(unset)', envSecure: process.env.SMTP_SECURE || '(unset)',
-    efectivo: { port: SMTP_PORT, secure: SMTP_SECURE }, tests: {},
-  };
-  const auth = { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS };
-  const variantes = [
-    ['p465ssl', { port: 465, secure: true }],
-    ['p587tls', { port: 587, secure: false, requireTLS: true }],
-    ['p2525',   { port: 2525, secure: false }],
-  ];
-  for (const [name, cfg] of variantes) {
-    const t = nodemailer.createTransport({ host, auth, connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 10000, ...cfg });
-    const ini = Date.now();
-    try { await t.verify(); out.tests[name] = { ok: true, ms: Date.now() - ini }; }
-    catch (e) { out.tests[name] = { ok: false, err: e.message, code: e.code || null, ms: Date.now() - ini }; }
+// ── Envío de correo: API HTTP de Brevo (funciona en Railway, puerto 443) con
+// fallback a SMTP para entorno local. Railway BLOQUEA el SMTP saliente (probado:
+// 465/587/2525 dan ETIMEDOUT), por eso en producción se usa la API HTTP.
+// Acepta el mismo shape que nodemailer.sendMail(): { from, to, replyTo, subject, html, attachments }.
+function _parseFrom(from) {
+  const m = String(from || '').match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
+  if (m) return { name: (m[1] || '').trim() || undefined, email: m[2].trim() };
+  return { email: String(from || process.env.SMTP_USER || 'buzonfacturas@serviciosga.site').trim() };
+}
+
+async function enviarCorreo(opts) {
+  if (process.env.BREVO_API_KEY) {
+    const sender = _parseFrom(opts.from);
+    const destinatarios = (Array.isArray(opts.to) ? opts.to : String(opts.to || '').split(','))
+      .map(e => String(e).trim()).filter(Boolean).map(email => ({ email }));
+    const body = { sender, to: destinatarios, subject: opts.subject || '', htmlContent: opts.html || opts.text || ' ' };
+    if (opts.replyTo) body.replyTo = { email: String(opts.replyTo).trim() };
+    if (opts.attachments && opts.attachments.length) {
+      body.attachment = opts.attachments.map(a => ({
+        name: a.filename || 'adjunto',
+        content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : Buffer.from(a.content || '').toString('base64'),
+      }));
+    }
+    const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      throw new Error(`Brevo ${resp.status}: ${txt.slice(0, 300)}`);
+    }
+    return { via: 'brevo' };
+  }
+  // Fallback SMTP (entorno local / dev donde el puerto no está bloqueado)
+  return transporter.sendMail(opts).then(() => ({ via: 'smtp' }));
+}
+
+// ── Diagnóstico TEMPORAL: valida la llave de Brevo desde Railway (sin enviar correo) ──
+app.get('/api/diag-mail', async (req, res) => {
+  const out = { brevoKeySet: !!process.env.BREVO_API_KEY };
+  if (process.env.BREVO_API_KEY) {
+    try {
+      const r = await fetch('https://api.brevo.com/v3/account', {
+        headers: { 'api-key': process.env.BREVO_API_KEY, accept: 'application/json' },
+      });
+      out.brevoKeyValid = r.ok;
+      out.brevoStatus = r.status;
+      if (!r.ok) out.brevoBody = (await r.text().catch(() => '')).slice(0, 200);
+    } catch (e) { out.brevoError = e.message; }
   }
   res.json(out);
 });
@@ -387,7 +418,7 @@ await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura genera
       await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticketId]);
       try {
         if (ticket.email) {
-          await transporter.sendMail({
+          await enviarCorreo({
             from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
             to: ticket.email,
             subject: '✅ Tu factura está lista — GPN Pinturas y Recubrimientos',
@@ -1731,7 +1762,7 @@ async function enviarSolicitudPorCorreo(ticket) {
   }
 
   try {
-    await transporter.sendMail(mailOptions);
+    await enviarCorreo(mailOptions);
     await db.query(
       "UPDATE tickets SET solicitud_correo_enviada = 1, solicitud_correo_fecha = NOW(), solicitud_correo_error = NULL WHERE id = ?",
       [ticketId]
@@ -2429,7 +2460,7 @@ async function procesarTicketsPorCorreo() {
 
       try {
         if (ticket.email) {
-          await transporter.sendMail({
+          await enviarCorreo({
             from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
             to: ticket.email,
             subject: "✅ Tu factura está lista — GPN Pinturas y Recubrimientos",
