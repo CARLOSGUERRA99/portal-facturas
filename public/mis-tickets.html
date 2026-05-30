@@ -560,24 +560,31 @@
         if (el && el.value.trim() !== '') body[c.key] = el.value.trim();
       });
 
-      const res = await fetch(`/api/tickets/${editarTicketId}/datos`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      cerrarModal();
-
-      if (data.ok) {
-        // Lanzar reintento automático
-        await facturar(editarTicketId);
-      } else {
-        const alertEl = document.getElementById('alert-factura');
-        alertEl.className = 'alert alert-error';
-        alertEl.textContent = 'Error al guardar: ' + (data.msg || 'intenta de nuevo');
-        alertEl.style.display = 'block';
+      try {
+        const res = await fetch(`/api/tickets/${editarTicketId}/datos`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        cerrarModal();
+        if (data.ok) {
+          await facturar(editarTicketId);
+        } else {
+          const alertEl = document.getElementById('alert-factura');
+          if (alertEl) {
+            alertEl.className = 'alert alert-error';
+            alertEl.textContent = 'Error al guardar: ' + (data.msg || 'intenta de nuevo');
+            alertEl.style.display = 'block';
+          } else {
+            alert('Error al guardar: ' + (data.msg || 'intenta de nuevo'));
+          }
+        }
+        cargarTickets();
+      } catch (e) {
+        cerrarModal();
+        alert('Error de conexión al guardar. Intenta de nuevo.');
       }
-      cargarTickets();
     }
 
     document.getElementById('modal-editar').addEventListener('click', e => {

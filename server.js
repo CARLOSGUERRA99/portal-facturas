@@ -1378,7 +1378,7 @@ Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
   "fecha": "DD/MM/YYYY",
-  "folio": "número de folio o ticket, o null. IMPORTANTE: si es AutoZone, aquí va el NÚMERO LARGO DEBAJO DEL CÓDIGO DE BARRAS (la tira de ~20+ dígitos para facturar), NO el folio corto — léelo dígito por dígito.",
+  "folio": "número de folio o ticket, o null. IMPORTANTE: si es AutoZone, aquí va el NÚMERO LARGO DEBAJO DEL CÓDIGO DE BARRAS (la tira de ~20+ dígitos), NO el folio corto. Si es 7-Eleven (e7-eleven.com.mx), el folio es el CÓDIGO DE BARRAS de EXACTAMENTE 35 dígitos — CUÉNTALOS, deben ser 35, NO omitas el último dígito (el portal rechaza si son menos). Léelo dígito por dígito.",
   "referencia": "para portales SoftRestaurant/restaurante (SushiO, Dana Comida Mexicana, El Caporal, Allegro): el CÓDIGO DE FACTURACIÓN o código único (alfanumérico, distinto del folio). Si no aplica, null",
   "origen": "para TUFESA (boletos de autobús): la CIUDAD DE ORIGEN del viaje impresa en el boleto. Si no aplica, null",
   "total": número sin signos,
@@ -1562,8 +1562,10 @@ app.put("/api/tickets/:id/datos", auth, async (req, res) => {
     if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = rows[0];
 
-    if (!['error', 'pendiente', 'pendiente_confirmacion'].includes(ticket.status)) {
-      return res.json({ ok: false, msg: "Solo puedes editar tickets en estado error o pendiente" });
+    // Permitir editar también tickets atascados en 'procesando'/'procesado' (p.ej.
+    // los que pasaron por el agente). Solo bloqueamos los que esperan correo (IMAP).
+    if (ticket.status === 'procesando_correo') {
+      return res.json({ ok: false, msg: "El ticket está esperando su factura por correo — espera unos minutos" });
     }
 
     const datosActuales = JSON.parse(ticket.ocr_json || '{}');
