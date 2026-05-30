@@ -485,6 +485,19 @@ await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura genera
       return { ok: false, error_code: 'ticket_vencido', email_contacto: emailContacto };
     }
 
+    // ── Portal requiere CAPTCHA — solo facturación manual (no se automatiza) ──
+    if (resultado.error_code === 'captcha') {
+      await db.query(
+        "UPDATE tickets SET status = 'error', error_msg = ?, reintento_programado = NULL WHERE id = ?",
+        [(resultado.msg || 'Requiere CAPTCHA — factura manual').slice(0, 500), ticketId]
+      );
+      await registrarIntento(ticketId, botNombre, 'error', `captcha|${resultado.portal_url || ''}`, duracionMs);
+      await crearNotificacion(userId, 'factura_error',
+        `Tu ticket de ${ticket.comercio || 'este comercio'} debe facturarse MANUALMENTE: el portal pide CAPTCHA. Tus datos ya están extraídos y listos.`
+      ).catch(() => {});
+      return { ok: false, error_code: 'captcha', msg: resultado.msg };
+    }
+
     // ── Error del bot ──
     // Detectar folio no disponible en OXXO (escalación)
     if (resultado.tipo === 'folio_no_disponible') {
