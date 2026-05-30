@@ -1463,10 +1463,21 @@ ${INSTRUCCION_CONFIANZA}`,
     const camposDudosos = Array.isArray(datosOCR.campos_dudosos) ? datosOCR.campos_dudosos : [];
     const requiereConfirmacion = (portalDetectado !== 'desconocido') && (confianza !== 'alta' || camposDudosos.length > 0) ? 1 : 0;
 
+    // Persistir la imagen del ticket en R2 (el disco de Railway es efímero) para
+    // poder adjuntarla luego, p.ej. en la solicitud de factura por correo.
+    let imagenTicketUrl = req.file.path;
+    try {
+      const extImg = ((req.file.originalname || '').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      imagenTicketUrl = await subirArchivoR2(imageData, `tickets/${req.session.userId}_${Date.now()}.${extImg}`, req.file.mimetype || 'image/jpeg');
+      console.log(`🖼️ Imagen de ticket guardada en R2: ${imagenTicketUrl}`);
+    } catch (e) {
+      console.log(`⚠️ No se pudo subir imagen del ticket a R2: ${e.message}`);
+    }
+
     console.log(`💾 Insertando ticket — portal: ${portalDetectado}, confianza: ${confianza}, requiere_confirmacion: ${requiereConfirmacion}`);
     const [insertResult] = await db.query(
       "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url, requiere_confirmacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [req.session.userId, req.file.originalname, req.file.path, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, datosOCR.portalUrl || portalUrl || null, requiereConfirmacion]
+      [req.session.userId, req.file.originalname, imagenTicketUrl, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, datosOCR.portalUrl || portalUrl || null, requiereConfirmacion]
     );
     const ticketId = insertResult.insertId;
     console.log(`✅ Ticket #${ticketId} insertado — enviando respuesta al cliente`);
@@ -1672,7 +1683,7 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
 
     const [[ticket]] = await db.query(
       `SELECT t.id, t.comercio, t.email_contacto, t.solicitud_correo_enviada,
-              t.ocr_json, t.nombre_archivo, t.user_id,
+              t.ocr_json, t.nombre_archivo, t.ruta_archivo, t.user_id,
               u.nombre AS user_nombre, u.email AS user_email,
               u.rfc, u.razon_social, u.constancia_url
        FROM tickets t JOIN users u ON t.user_id = u.id
@@ -1716,7 +1727,7 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
 
 async function enviarSolicitudPorCorreo(ticket) {
   const { id: ticketId, comercio, email_contacto, user_nombre, user_email,
-          rfc, razon_social, constancia_url, ocr_json, formaPago } = ticket;
+          rfc, razon_social, constancia_url, ocr_json, formaPago, ruta_archivo } = ticket;
 
   console.log(`📨 Enviando solicitud de factura por correo — ticket #${ticketId} → ${email_contacto}`);
 
@@ -1750,6 +1761,27 @@ async function enviarSolicitudPorCorreo(ticket) {
     });
   }
 
+  // Adjuntar la imagen del ticket original si está guardada en R2
+  let ticketAdjuntado = false;
+  if (ruta_archivo && /^https?:\/\//i.test(ruta_archivo)) {
+    try {
+      const respT = await fetch(ruta_archivo);
+      if (respT.ok) {
+        const ticketBuf = Buffer.from(await respT.arrayBuffer());
+        const extT = (ruta_archivo.split('.').pop().split('?')[0] || 'jpg').toLowerCase();
+        attachments.push({
+          filename: `ticket_${(comercio || 'compra').replace(/[^a-z0-9]/gi, '')}.${extT}`,
+          content: ticketBuf,
+          contentType: extT === 'pdf' ? 'application/pdf' : (extT === 'png' ? 'image/png' : 'image/jpeg'),
+        });
+        ticketAdjuntado = true;
+        console.log(`🖼️ Imagen del ticket adjuntada (${ticketBuf.length} bytes)`);
+      }
+    } catch (e) {
+      console.log(`⚠️ No se pudo adjuntar imagen del ticket: ${e.message}`);
+    }
+  }
+
   const mailOptions = {
     from: `"GPN Pinturas — Facturación" <${process.env.SMTP_USER || 'buzonfacturas@serviciosga.site'}>`,
     to: email_contacto,
@@ -1771,7 +1803,7 @@ async function enviarSolicitudPorCorreo(ticket) {
             <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:bold;">Uso de CFDI</td><td style="padding:8px 12px;">Gastos en general (G03)</td></tr>
             <tr><td style="padding:8px 12px;font-weight:bold;">Correo de respuesta</td><td style="padding:8px 12px;">${user_email || 'Ver en adjunto'}</td></tr>
           </table>
-          <p>Adjunto mi constancia de situación fiscal del SAT.</p>
+          <p>Adjunto mi constancia de situación fiscal del SAT${ticketAdjuntado ? ' y la imagen del ticket de compra' : ''}.</p>
           <p style="color:#666;font-size:0.85rem;">Este correo fue generado automáticamente por GPN Pinturas y Recubrimientos — Portal de Facturación.</p>
         </div>
       </div>`,
@@ -1809,6 +1841,27 @@ async function enviarSolicitudPorCorreo(ticket) {
     );
   }
 }
+
+// ── Prueba TEMPORAL: envía el correo de solicitud de un ticket a una dirección dada ──
+// No toca la BD (usa un id ficticio) ni notifica. Uso: /api/diag-mail-test?to=correo&ticket=72
+app.get('/api/diag-mail-test', async (req, res) => {
+  const to = (req.query.to || '').trim();
+  const ticketId = parseInt(req.query.ticket) || 72;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.json({ ok: false, msg: 'falta ?to=correo válido' });
+  try {
+    const [[ticket]] = await db.query(
+      `SELECT t.id, t.comercio, t.email_contacto, t.ocr_json, t.nombre_archivo, t.ruta_archivo, t.user_id,
+              u.nombre AS user_nombre, u.email AS user_email, u.rfc, u.razon_social, u.constancia_url
+       FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ?`, [ticketId]);
+    if (!ticket) return res.json({ ok: false, msg: 'ticket no existe' });
+    ticket.email_contacto = to;     // override destinatario (prueba)
+    ticket.formaPago = 'Efectivo';
+    ticket.id = 99999999;           // UPDATE WHERE id=99999999 no afecta filas reales
+    ticket.user_id = null;          // evita la notificación
+    await enviarSolicitudPorCorreo(ticket);
+    res.json({ ok: true, sentTo: to, ticketImagenEnR2: !!(ticket.ruta_archivo && /^https?:/i.test(ticket.ruta_archivo)) });
+  } catch (e) { res.json({ ok: false, err: e.message }); }
+});
 
 // ── LISTAR FACTURAS ──
 app.get("/api/facturas", auth, async (req, res) => {
