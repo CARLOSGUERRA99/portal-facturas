@@ -1372,15 +1372,15 @@ ${INSTRUCCION_CONFIANZA}`,
   "portal": "carljr",
 ${INSTRUCCION_CONFIANZA}`,
       desconocido: `Extrae los datos que puedas de este ticket. Si reconoces el portal, identifícalo.
-Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx), carljr (Carl's Jr / ICR S.A. de C.V., portal facturacion4.icr.mx).
+Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx), carljr (Carl's Jr / ICR S.A. de C.V., portal facturacion4.icr.mx), autozone (AutoZone de México, portal autozone.cdc.origon.cloud).
 Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
   "fecha": "DD/MM/YYYY",
-  "folio": "número de folio o ticket, o null",
+  "folio": "número de folio o ticket, o null. IMPORTANTE: si es AutoZone, aquí va el NÚMERO LARGO DEBAJO DEL CÓDIGO DE BARRAS (la tira de ~20+ dígitos para facturar), NO el folio corto — léelo dígito por dígito.",
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
-  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|desconocido",
+  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|autozone|desconocido",
 ${INSTRUCCION_CONFIANZA}`,
     };
 

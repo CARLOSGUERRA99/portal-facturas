@@ -127,7 +127,13 @@ async function facturarAutoZone({
     // ── PASO 2: Fecha de compra (calendario) ─────────────────────────────────
     // El portal muestra un calendario con <td> por día.
     // Navegar al mes/año correcto si es necesario.
-    const [fy, fm, fd] = fechaVal.split('-').map(Number);
+    // Aceptar fecha en YYYY-MM-DD o DD/MM/YYYY (el OCR de 'desconocido' usa DD/MM/YYYY)
+    let fy, fm, fd;
+    if (/^\d{4}-\d{1,2}-\d{1,2}/.test(fechaVal)) {
+      [fy, fm, fd] = fechaVal.split('-').map(Number);
+    } else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(fechaVal)) {
+      const p = fechaVal.split('/').map(Number); fd = p[0]; fm = p[1]; fy = p[2];
+    }
     if (fy && fm && fd) {
       await page.evaluate(async (targetY, targetM, targetD) => {
         const sleep = ms => new Promise(r => setTimeout(r, ms));
