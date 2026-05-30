@@ -58,10 +58,19 @@ async function validarBot({ codigo, nombrePortal, datosTest }) {
     testLive = { skipped: true, razon: "No se proporcionaron datos de prueba" };
   }
 
-  // Un fallo en la ejecución en vivo (excepción/timeout, NO un retorno controlado
-  // { ok: false }) significa que el bot está roto → error para que el corrector lo arregle.
+  // Fallo en la ejecución en vivo → el bot está roto → error para que el corrector lo arregle.
+  // (a) Excepción/timeout (testLive.error). (b) {ok:false} SIN error_code controlado:
+  // un bot bien hecho devuelve datos_invalidos/ya_facturado/vencido con datos de prueba;
+  // si devuelve {ok:false} con un msg estructural ("no se encontró el formulario/botón"),
+  // está roto, NO es un ticket inválido.
   if (testLive && testLive.error) {
     errores.push(`Falló en ejecución en vivo: ${String(testLive.error).slice(0, 200)}`);
+  } else if (testLive && testLive.resultado && testLive.resultado.ok === false) {
+    const ec = testLive.resultado.error_code;
+    const controlado = ['datos_invalidos', 'ya_facturado', 'ticket_vencido', 'folio_no_disponible'].includes(ec);
+    if (!controlado) {
+      errores.push(`La prueba en vivo falló estructuralmente (sin error_code controlado): ${(testLive.resultado.msg || ec || 'desconocido').slice(0, 200)}`);
+    }
   }
 
   return {

@@ -64,7 +64,7 @@ async function clickAvanzar(page) {
       .filter(el => el.offsetParent);
     const malo = el => /anterior|regresar|cancelar|atr[aá]s|descargar\s+manual|inicio|ayuda|salir|cerrar/i.test(txt(el));
     const final = el => /generar|emitir|timbrar/i.test(txt(el)); // evitamos la emisión final
-    const bueno = el => /siguiente|facturar|consultar|buscar|validar|continuar|aceptar|enviar|solicitar/i.test(txt(el));
+    const bueno = el => /siguiente|facturar|factura\s*express|express|consultar|buscar|validar|continuar|aceptar|enviar|solicitar|iniciar|generar\s+factura/i.test(txt(el));
     const b = cand.find(el => bueno(el) && !malo(el) && !final(el));
     if (b) { b.click(); return txt(b).slice(0, 35); }
     return null;
