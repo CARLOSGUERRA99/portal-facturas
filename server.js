@@ -1845,27 +1845,6 @@ async function enviarSolicitudPorCorreo(ticket) {
   }
 }
 
-// ── Prueba TEMPORAL: envía el correo de solicitud de un ticket a una dirección dada ──
-// No toca la BD (usa un id ficticio) ni notifica. Uso: /api/diag-mail-test?to=correo&ticket=72
-app.get('/api/diag-mail-test', async (req, res) => {
-  const to = (req.query.to || '').trim();
-  const ticketId = parseInt(req.query.ticket) || 72;
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return res.json({ ok: false, msg: 'falta ?to=correo válido' });
-  try {
-    const [[ticket]] = await db.query(
-      `SELECT t.id, t.comercio, t.email_contacto, t.ocr_json, t.nombre_archivo, t.ruta_archivo, t.user_id,
-              u.nombre AS user_nombre, u.email AS user_email, u.rfc, u.razon_social, u.constancia_url
-       FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ?`, [ticketId]);
-    if (!ticket) return res.json({ ok: false, msg: 'ticket no existe' });
-    ticket.email_contacto = to;     // override destinatario (prueba)
-    ticket.formaPago = 'Efectivo';
-    ticket.id = 99999999;           // UPDATE WHERE id=99999999 no afecta filas reales
-    ticket.user_id = null;          // evita la notificación
-    await enviarSolicitudPorCorreo(ticket);
-    res.json({ ok: true, sentTo: to, ticketImagenEnR2: !!(ticket.ruta_archivo && /^https?:/i.test(ticket.ruta_archivo)) });
-  } catch (e) { res.json({ ok: false, err: e.message }); }
-});
-
 // ── LISTAR FACTURAS ──
 app.get("/api/facturas", auth, async (req, res) => {
   try {
