@@ -53,10 +53,14 @@ Responde SOLO con el código JavaScript completo corregido, sin markdown, sin ex
   content.push({ type: 'text', text: prompt });
 
   const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 5000,
+    model: 'claude-sonnet-4-6',
+    max_tokens: 20000,
     messages: [{ role: 'user', content }],
   });
+
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error('Corrección truncada (max_tokens) — el bot quedaría incompleto');
+  }
 
   let codigo = response.content[0].text;
   codigo = codigo

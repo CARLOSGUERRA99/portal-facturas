@@ -58,6 +58,12 @@ async function validarBot({ codigo, nombrePortal, datosTest }) {
     testLive = { skipped: true, razon: "No se proporcionaron datos de prueba" };
   }
 
+  // Un fallo en la ejecución en vivo (excepción/timeout, NO un retorno controlado
+  // { ok: false }) significa que el bot está roto → error para que el corrector lo arregle.
+  if (testLive && testLive.error) {
+    errores.push(`Falló en ejecución en vivo: ${String(testLive.error).slice(0, 200)}`);
+  }
+
   return {
     ok: errores.length === 0,
     errores,

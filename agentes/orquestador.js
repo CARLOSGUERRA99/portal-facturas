@@ -5,7 +5,7 @@ const { generarBot, nombreArchivoDesde } = require('./generador');
 const { validarBot } = require('./validador');
 const { corregirBot } = require('./corrector');
 
-const MAX_CORRECCIONES = 0; // Sin correcciones automáticas — el admin edita manualmente
+const MAX_CORRECCIONES = 2; // El corrector auto-arregla hasta 2 veces con feedback de la prueba en vivo
 
 // Datos de prueba genéricos — el portal devolverá "ticket no encontrado"
 // pero eso demuestra que el bot cargó el portal e interactuó con el formulario
