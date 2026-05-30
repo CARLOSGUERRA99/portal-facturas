@@ -108,6 +108,42 @@ async function facturarCarlsJr({
     await page.waitForTimeout(2000);
     await screenshot("p3_post_siguiente");
 
+    // ── Caso: la factura YA estaba generada ───────────────────────────────
+    // El portal ICR muestra un modal "Ya ha sido generada su factura!" con
+    // "Enviar a:" + botón Enviar y "Descargar XML + PDF". Recuperamos la factura
+    // existente (igual de útil cuando el usuario ya facturó a mano) en vez de
+    // fallar o quedarnos esperando el formulario fiscal → timeout.
+    const yaGenerada = await page.evaluate(() =>
+      /ya ha sido generada|ya fue generada|generada su factura|factura.*ya.*generad/i.test(document.body.innerText || "")
+    );
+    if (yaGenerada) {
+      console.log("ℹ️ Carl's Jr: factura ya generada — enviándola por correo para captura IMAP...");
+      await screenshot("ya_generada");
+      // El modal de factura existente tiene "Enviar a:" → input #txt_dcorreopet y
+      // botón Enviar #btn_denviarpet (onclick DescargarArchivoPet). El portal envía
+      // PDF+XML por correo y el IMAP los captura. La descarga directa (#btn_dxmlpet)
+      // es un blob JS que Puppeteer no puede interceptar, por eso usamos el correo.
+      const llenado = await page.evaluate((correo) => {
+        const inp = document.querySelector("#txt_dcorreopet");
+        if (!inp) return false;
+        inp.value = correo;
+        ["input", "change", "keyup"].forEach(ev => inp.dispatchEvent(new Event(ev, { bubbles: true })));
+        return true;
+      }, "buzonfacturas@serviciosga.site");
+      console.log(`📧 Campo correo (#txt_dcorreopet) llenado: ${llenado}`);
+      await page.waitForTimeout(600);
+      const enviado = await page.evaluate(() => {
+        const b = document.querySelector("#btn_denviarpet");
+        if (b) { b.click(); return true; }
+        return false;
+      });
+      console.log(`📨 Click Enviar (#btn_denviarpet): ${enviado}`);
+      await page.waitForTimeout(4000);
+      await screenshot("ya_generada_enviado");
+      await browser.close();
+      return { ok: true, procesandoCorreo: true };
+    }
+
     // Detectar errores del portal (patrones ampliados)
     const errTexto = await page.evaluate(() => {
       const body = document.body.innerText;
