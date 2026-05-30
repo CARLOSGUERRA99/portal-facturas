@@ -108,12 +108,17 @@ async function facturarSushito({ referencia, folio, total, rfc, razonSocial, reg
     // ── Click en "Facturar" ──────────────────────────────────────────────────
     console.log("🖱️ Click en Facturar...");
     const clicOk = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button']"))
-        .find(b => /^facturar$/i.test((b.textContent || b.value || "").trim()));
+      // El botón "Facturar" del portal SoftRestaurant es un <a id="btn_facturar">
+      // (clase "btn btn-primary btn-icon-split"), NO un <button>. Por eso la
+      // búsqueda anterior (solo button/input) nunca lo encontraba → fallaba con
+      // "no se encontró el botón Facturar" en TODOS los tickets (válidos y vencidos).
+      const directo = document.querySelector("#btn_facturar");
+      if (directo) { directo.click(); return true; }
+      const cand = Array.from(document.querySelectorAll("a, button, input[type='submit'], input[type='button'], .btn"));
+      const btn = cand.find(b => /^facturar$/i.test((b.textContent || b.value || "").trim()));
       if (btn) { btn.click(); return true; }
-      // Fallback: cualquier botón con "facturar" en el texto
-      const btn2 = Array.from(document.querySelectorAll("button, input[type='submit'], input[type='button']"))
-        .find(b => /facturar/i.test((b.textContent || b.value || "")));
+      // Fallback: cualquier elemento con "facturar" (evitando "Recuperar comprobante")
+      const btn2 = cand.find(b => /facturar/i.test((b.textContent || b.value || "")) && !/recuperar/i.test((b.textContent || b.value || "")));
       if (btn2) { btn2.click(); return true; }
       return false;
     });
@@ -225,11 +230,14 @@ async function facturarSushito({ referencia, folio, total, rfc, razonSocial, reg
 
     await screenshot("p3_datos_fiscales");
 
-    // Click en "Facturar" (segundo paso) o "Generar"
+    // Click en "Facturar" (segundo paso) o "Generar" — también puede ser un <a.btn>
     console.log("🧾 Generando factura...");
     await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button, input[type='submit']"))
-        .find(b => /facturar|generar|emitir/i.test((b.textContent || b.value || "")));
+      const cand = Array.from(document.querySelectorAll("a, button, input[type='submit'], input[type='button'], .btn"));
+      const btn = cand.find(b =>
+        /facturar|generar|emitir|timbrar|continuar/i.test((b.textContent || b.value || "")) &&
+        !/recuperar/i.test((b.textContent || b.value || ""))
+      );
       if (btn) btn.click();
     });
 
