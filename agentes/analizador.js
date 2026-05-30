@@ -64,11 +64,41 @@ async function clickAvanzar(page) {
       .filter(el => el.offsetParent);
     const malo = el => /anterior|regresar|cancelar|atr[aá]s|descargar\s+manual|inicio|ayuda|salir|cerrar/i.test(txt(el));
     const final = el => /generar|emitir|timbrar/i.test(txt(el)); // evitamos la emisión final
-    const bueno = el => /siguiente|facturar|consultar|buscar|validar|continuar|aceptar|enviar/i.test(txt(el));
+    const bueno = el => /siguiente|facturar|consultar|buscar|validar|continuar|aceptar|enviar|solicitar/i.test(txt(el));
     const b = cand.find(el => bueno(el) && !malo(el) && !final(el));
     if (b) { b.click(); return txt(b).slice(0, 35); }
     return null;
   });
+}
+
+// Selecciona la primera opción real de los <select> con placeholder (p.ej. "Tipo de
+// factura" en TUFESA), que en muchos portales ASP.NET revela campos vía postback.
+async function seleccionarOpciones(page) {
+  return await page.evaluate(() => {
+    let n = 0;
+    for (const sel of Array.from(document.querySelectorAll('select')).filter(s => s.offsetParent)) {
+      const actual = sel.options[sel.selectedIndex]?.text || '';
+      if ((sel.selectedIndex <= 0 || /seleccione|elige|capture|--/i.test(actual)) && sel.options.length > 1) {
+        sel.selectedIndex = 1;
+        sel.value = sel.options[1].value;
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        n++;
+      }
+    }
+    return n;
+  }).catch(() => 0);
+}
+
+// Si el formulario real vive en un <iframe> a otra URL (TUFESA, KFC), devuelve esa
+// URL para navegar directo a ella. Ignora iframes de tracking/widgets.
+async function detectarIframeForm(page) {
+  return await page.evaluate(() => {
+    const srcs = Array.from(document.querySelectorAll('iframe, frame')).map(f => f.src).filter(Boolean);
+    const malo = /google|doubleclick|youtube|recaptcha|gstatic|messenger|purecloud|facebook|hotjar|gtm|analytics|cloudfront\/live/i;
+    const bueno = /factura|solicitar|cfdi|invoice|\.aspx|\.jsp|prb\.com|origon|softrestaurant|ventas\./i;
+    const f = srcs.find(s => bueno.test(s) && !malo.test(s)) || srcs.find(s => !malo.test(s) && !s.startsWith('about:'));
+    return f || null;
+  }).catch(() => null);
 }
 
 // Acepta screenshotBase64 (análisis desde imagen) o portalUrl (Puppeteer interactivo).
@@ -107,6 +137,16 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
       await page.goto(urlFinal, { waitUntil: 'networkidle2', timeout: 30000 });
       await page.waitForTimeout(2000);
 
+      // ── Seguir el iframe del formulario real si el form está embebido ──
+      try {
+        const iframeSrc = await detectarIframeForm(page);
+        if (iframeSrc) {
+          console.log(`🔗 [Analizador] Formulario en iframe — navegando a: ${iframeSrc}`);
+          await page.goto(iframeSrc, { waitUntil: 'networkidle2', timeout: 30000 });
+          await page.waitForTimeout(2500);
+        }
+      } catch (e) { console.log('⚠️ [Analizador] iframe-follow:', e.message); }
+
       tecnologiaDetectada = await page.evaluate(() => {
         const ng = document.querySelector('[ng-version]');
         if (ng) return `Angular ${ng.getAttribute('ng-version') || ''}`.trim();
@@ -122,6 +162,10 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
       const MAX_PASOS = 4;
       let bodyAnterior = '';
       for (let paso = 0; paso < MAX_PASOS; paso++) {
+        // Manejar <select> que revelan campos (p.ej. TUFESA: tipo → folio/origen/RFC)
+        const nSel = await seleccionarOpciones(page);
+        if (nSel > 0) { console.log(`🔽 [Analizador] ${nSel} select(s) — esperando postback...`); await page.waitForTimeout(3800); }
+
         const elementos = await page.evaluate(extraerElementosScript).catch(() => []);
         const bodyText = await page.evaluate(() => (document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 800)).catch(() => '');
         const buf = await page.screenshot({ fullPage: false }).catch(() => null);
