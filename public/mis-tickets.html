@@ -89,6 +89,31 @@
     </div>
   </div>
 
+  <!-- Modal solicitar factura por correo -->
+  <div class="modal-overlay" id="modal-solicitar">
+    <div class="modal-box">
+      <div class="modal-title">Solicitar factura por correo</div>
+      <div class="modal-field">
+        <label>Correo de facturación del comercio</label>
+        <input id="sol-email" type="email" placeholder="correo@comercio.com">
+      </div>
+      <div class="modal-field">
+        <label>Forma de pago</label>
+        <select id="sol-formapago" style="width:100%;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:0.9rem;box-sizing:border-box;background:white;">
+          <option value="Efectivo">Efectivo</option>
+          <option value="Tarjeta">Tarjeta</option>
+        </select>
+      </div>
+      <div style="font-size:0.8rem;color:#557;background:#f8faf6;border:1px solid #e0edd5;border-radius:8px;padding:9px 12px;line-height:1.5;">
+        Uso de CFDI: <strong>Gastos en general (G03)</strong><br>Se adjunta tu constancia de situación fiscal.
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-sm" onclick="cerrarSolicitar()" style="background:#f3f4f6;color:#374151;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="sol-enviar-btn" onclick="enviarSolicitud()">Enviar solicitud</button>
+      </div>
+    </div>
+  </div>
+
   <div class="container">
     <div class="page-header">
       <div style="display:flex;align-items:center;justify-content:space-between;">
@@ -421,55 +446,54 @@
       }
     }
 
-    async function solicitarPorCorreo(ticketId, emailContacto) {
-      const btn = document.getElementById('sol-' + ticketId);
-      if (!btn) return;
+    // Abre la ventana de solicitud por correo (correo del comercio + forma de pago).
+    function solicitarPorCorreo(ticketId, emailContacto) {
+      window._solicitarTicketId = ticketId;
+      const inp = document.getElementById('sol-email');
+      inp.value = (emailContacto || '').trim();
+      document.getElementById('sol-formapago').value = 'Efectivo';
+      const btn = document.getElementById('sol-enviar-btn');
+      btn.disabled = false;
+      btn.textContent = 'Enviar solicitud';
+      document.getElementById('modal-solicitar').classList.add('open');
+      setTimeout(() => inp.focus(), 50);
+    }
 
-      // Si el ticket no trae correo del comercio, pedirlo al usuario.
-      let correo = (emailContacto || '').trim();
-      correo = prompt(
-        'Correo de facturación del comercio al que enviaremos la solicitud (se adjunta tu constancia fiscal):',
-        correo
-      );
-      if (correo === null) return; // canceló
-      correo = correo.trim();
+    function cerrarSolicitar() {
+      document.getElementById('modal-solicitar').classList.remove('open');
+      window._solicitarTicketId = null;
+    }
+
+    async function enviarSolicitud() {
+      const ticketId = window._solicitarTicketId;
+      if (!ticketId) return;
+      const correo = (document.getElementById('sol-email').value || '').trim();
+      const formaPago = document.getElementById('sol-formapago').value || 'Efectivo';
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) {
         alert('Escribe un correo válido del comercio.');
         return;
       }
-
+      const btn = document.getElementById('sol-enviar-btn');
       btn.disabled = true;
       btn.textContent = '📨 Enviando...';
-
       try {
         const res = await fetch(`/api/tickets/${ticketId}/solicitar-correo`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: correo }),
+          body: JSON.stringify({ email: correo, formaPago }),
         });
         const data = await res.json();
         if (data.ok) {
-          btn.style.background = '#eaf3de';
-          btn.style.color = '#27500A';
-          btn.style.border = '1.5px solid #b8d98a';
-          btn.textContent = '✅ Solicitud enviada';
-          // Refrescar en 3s para reflejar el estado actualizado
-          setTimeout(() => cargarTickets(), 3000);
+          cerrarSolicitar();
+          setTimeout(() => cargarTickets(), 1200);
         } else {
           btn.disabled = false;
-          btn.textContent = '📧 Solicitar por correo';
-          const alertEl = document.getElementById('alert-factura');
-          if (alertEl) {
-            alertEl.className = 'alert alert-error';
-            alertEl.textContent = data.msg || 'No se pudo enviar la solicitud';
-            alertEl.style.display = 'block';
-          } else {
-            alert('Error: ' + (data.msg || 'No se pudo enviar la solicitud'));
-          }
+          btn.textContent = 'Enviar solicitud';
+          alert(data.msg || 'No se pudo enviar la solicitud.');
         }
       } catch {
         btn.disabled = false;
-        btn.textContent = '📧 Solicitar por correo';
+        btn.textContent = 'Enviar solicitud';
         alert('Error de conexión. Intenta de nuevo.');
       }
     }
@@ -558,6 +582,9 @@
 
     document.getElementById('modal-editar').addEventListener('click', e => {
       if (e.target === document.getElementById('modal-editar')) cerrarModal();
+    });
+    document.getElementById('modal-solicitar').addEventListener('click', e => {
+      if (e.target === document.getElementById('modal-solicitar')) cerrarSolicitar();
     });
 
     initNav();

@@ -126,10 +126,16 @@ const transporter = nodemailer.createTransport({
   socketTimeout: 15000,
 });
 
-transporter.verify((error) => {
-  if (error) console.log(`⚠️ SMTP no disponible (${SMTP_PORT}/secure=${SMTP_SECURE}):`, error.message);
-  else console.log(`✅ SMTP conectado correctamente (${SMTP_PORT}/secure=${SMTP_SECURE})`);
-});
+// Si Brevo está activo (producción/Railway), el SMTP queda en standby y no
+// verificamos (Railway bloquea SMTP saliente; el envío real es por Brevo API).
+if (!process.env.BREVO_API_KEY) {
+  transporter.verify((error) => {
+    if (error) console.log(`⚠️ SMTP no disponible (${SMTP_PORT}/secure=${SMTP_SECURE}):`, error.message);
+    else console.log(`✅ SMTP conectado correctamente (${SMTP_PORT}/secure=${SMTP_SECURE})`);
+  });
+} else {
+  console.log('✉️ Correo saliente vía Brevo API (HTTP) — SMTP en standby');
+}
 
 // ── Envío de correo: API HTTP de Brevo (funciona en Railway, puerto 443) con
 // fallback a SMTP para entorno local. Railway BLOQUEA el SMTP saliente (probado:
@@ -182,6 +188,24 @@ app.get('/api/diag-mail', async (req, res) => {
       if (!r.ok) out.brevoBody = (await r.text().catch(() => '')).slice(0, 200);
     } catch (e) { out.brevoError = e.message; }
   }
+  // Prueba de conectividad IMAP (recepción de facturas por correo) desde Railway
+  try {
+    const Imap = require('imap');
+    out.imap = await new Promise((resolve) => {
+      const imap = new Imap({
+        user: process.env.IMAP_USER, password: process.env.IMAP_PASS,
+        host: process.env.IMAP_HOST, port: parseInt(process.env.IMAP_PORT) || 993,
+        tls: true, tlsOptions: { rejectUnauthorized: false }, connTimeout: 8000, authTimeout: 8000,
+      });
+      const ini = Date.now();
+      let done = false;
+      const fin = (r) => { if (!done) { done = true; try { imap.end(); } catch {} resolve({ ...r, ms: Date.now() - ini }); } };
+      imap.once('ready', () => fin({ ok: true }));
+      imap.once('error', (e) => fin({ ok: false, err: e.message, code: e.code || null }));
+      setTimeout(() => fin({ ok: false, err: 'timeout' }), 9000);
+      try { imap.connect(); } catch (e) { fin({ ok: false, err: e.message }); }
+    });
+  } catch (e) { out.imap = { ok: false, err: e.message }; }
   res.json(out);
 });
 
@@ -1644,6 +1668,7 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
     // Correo del comercio escrito manualmente por el usuario (portales sin
     // email_contacto pre-configurado, p.ej. SushiO/mefacturo). Opcional.
     const emailManual = (req.body && req.body.email) ? String(req.body.email).trim() : null;
+    const formaPago = (req.body && req.body.formaPago) ? String(req.body.formaPago).trim() : 'Efectivo';
 
     const [[ticket]] = await db.query(
       `SELECT t.id, t.comercio, t.email_contacto, t.solicitud_correo_enviada,
@@ -1669,6 +1694,7 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
         .catch(e => console.log(`⚠️ email_contacto manual no guardado (${e.message})`));
     }
     ticket.email_contacto = correoDestino;
+    ticket.formaPago = formaPago;
 
     // Marcar como en proceso de envío
     await db.query(
@@ -1690,7 +1716,7 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
 
 async function enviarSolicitudPorCorreo(ticket) {
   const { id: ticketId, comercio, email_contacto, user_nombre, user_email,
-          rfc, razon_social, constancia_url, ocr_json } = ticket;
+          rfc, razon_social, constancia_url, ocr_json, formaPago } = ticket;
 
   console.log(`📨 Enviando solicitud de factura por correo — ticket #${ticketId} → ${email_contacto}`);
 
@@ -1741,6 +1767,8 @@ async function enviarSolicitudPorCorreo(ticket) {
             <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:bold;width:40%;">RFC</td><td style="padding:8px 12px;">${rfc || 'N/A'}</td></tr>
             <tr><td style="padding:8px 12px;font-weight:bold;">Razón Social</td><td style="padding:8px 12px;">${razon_social || 'N/A'}</td></tr>
             <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:bold;">Ticket</td><td style="padding:8px 12px;">${comercio || ''}${folioInfo}${fechaInfo}${totalInfo}</td></tr>
+            <tr><td style="padding:8px 12px;font-weight:bold;">Forma de pago</td><td style="padding:8px 12px;">${formaPago || 'Efectivo'}</td></tr>
+            <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:bold;">Uso de CFDI</td><td style="padding:8px 12px;">Gastos en general (G03)</td></tr>
             <tr><td style="padding:8px 12px;font-weight:bold;">Correo de respuesta</td><td style="padding:8px 12px;">${user_email || 'Ver en adjunto'}</td></tr>
           </table>
           <p>Adjunto mi constancia de situación fiscal del SAT.</p>
