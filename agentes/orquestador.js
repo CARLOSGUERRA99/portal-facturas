@@ -72,13 +72,40 @@ async function _orquestarImpl({ db, ticketId, portalUrl, comercioNombre, instruc
     portalId = ins.insertId;
   }
 
+  // Datos reales del ticket: permiten que el analizador RECORRA el flujo de verdad
+  // (pase la validación de referencia/RFC y llegue a datos fiscales / modales / pasos 2-3).
+  let datosReales = null;
+  if (ticketId) {
+    try {
+      const [[tk]] = await db.query(
+        'SELECT t.ocr_json, u.rfc, u.razon_social FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ?',
+        [ticketId]
+      );
+      if (tk) {
+        let ocr = {};
+        try { ocr = JSON.parse(tk.ocr_json || '{}'); } catch {}
+        datosReales = {
+          rfc: tk.rfc || 'XAXX010101000',
+          razonSocial: tk.razon_social || 'PUBLICO EN GENERAL',
+          referencia: ocr.referencia || ocr.folio || ocr.codigoTicket || ocr.idFacturacion || '0000000001',
+          folio: ocr.folio || ocr.referencia || '0000000001',
+          total: ocr.total != null ? String(ocr.total) : '100.00',
+          fechaDMY: ocr.fecha || new Date().toLocaleDateString('es-MX'),
+          email: 'buzonfacturas@serviciosga.site',
+        };
+      }
+    } catch (e) {
+      console.log('⚠️ [Orquestador] No se pudieron leer datos reales del ticket:', e.message);
+    }
+  }
+
   // ── PASO 1: Analizar portal (hasta 3 intentos) ──────────────────────────────
   console.log('📡 [Orquestador] Paso 1: Analizando portal...');
   let analisis;
   let analisisErr;
   for (let intAnalisis = 1; intAnalisis <= 3; intAnalisis++) {
     try {
-      analisis = await analizarPortal({ portalUrl, comercioNombre, notas: instrucciones });
+      analisis = await analizarPortal({ portalUrl, comercioNombre, notas: instrucciones, datosReales });
       analisisErr = null;
       break;
     } catch (err) {
