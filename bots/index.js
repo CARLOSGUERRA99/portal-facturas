@@ -10,6 +10,7 @@ const { facturarCarlsJr } = require('./carljr');
 const { facturarSushito } = require('./sushito');
 const { facturarAutoZone } = require('./autozone');
 const { facturarDana } = require('./dana');
+const { facturarTufesa } = require('./tufesa');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -146,6 +147,15 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Dana Comida Mexicana (SoftRestaurant)');
     return await facturarDana(datos);
+  }
+
+  if (
+    portal === 'tufesa' ||
+    comercio.includes('tufesa') ||
+    portalUrl.includes('tufesa.com')
+  ) {
+    console.log('🎯 Portal detectado: TUFESA');
+    return await facturarTufesa(datos);
   }
 
   if (

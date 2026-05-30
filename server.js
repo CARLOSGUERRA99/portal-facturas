@@ -1380,6 +1380,7 @@ Responde SOLO JSON sin texto adicional:
   "fecha": "DD/MM/YYYY",
   "folio": "número de folio o ticket, o null. IMPORTANTE: si es AutoZone, aquí va el NÚMERO LARGO DEBAJO DEL CÓDIGO DE BARRAS (la tira de ~20+ dígitos para facturar), NO el folio corto — léelo dígito por dígito.",
   "referencia": "para portales SoftRestaurant/restaurante (SushiO, Dana Comida Mexicana, El Caporal, Allegro): el CÓDIGO DE FACTURACIÓN o código único (alfanumérico, distinto del folio). Si no aplica, null",
+  "origen": "para TUFESA (boletos de autobús): la CIUDAD DE ORIGEN del viaje impresa en el boleto. Si no aplica, null",
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
   "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|autozone|desconocido",
