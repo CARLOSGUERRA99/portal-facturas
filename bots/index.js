@@ -9,6 +9,7 @@ const { facturarPanama } = require('./panama');
 const { facturarCarlsJr } = require('./carljr');
 const { facturarSushito } = require('./sushito');
 const { facturarAutoZone } = require('./autozone');
+const { facturarDana } = require('./dana');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -135,6 +136,16 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: AutoZone (CDC Origon Cloud)');
     return await facturarAutoZone(datos);
+  }
+
+  if (
+    portal === 'dana' ||
+    comercio.includes('dana comida') ||
+    comercio.includes('dana mexicana') ||
+    portalUrl.includes('danacomidamexicana')
+  ) {
+    console.log('🎯 Portal detectado: Dana Comida Mexicana (SoftRestaurant)');
+    return await facturarDana(datos);
   }
 
   if (

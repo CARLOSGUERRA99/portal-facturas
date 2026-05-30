@@ -641,7 +641,8 @@ async function procesarCola() {
              t.portal_url LIKE '%allegre%'          OR
              t.portal_url LIKE '%sushio%'           OR
              t.portal_url LIKE '%analytix360%'      OR
-             t.portal_url LIKE '%tufesa%'
+             t.portal_url LIKE '%tufesa%'           OR
+             t.portal_url LIKE '%softrestaurant.com%'
            )
          )
          OR (
@@ -1378,6 +1379,7 @@ Responde SOLO JSON sin texto adicional:
   "comercio": "nombre del comercio",
   "fecha": "DD/MM/YYYY",
   "folio": "número de folio o ticket, o null. IMPORTANTE: si es AutoZone, aquí va el NÚMERO LARGO DEBAJO DEL CÓDIGO DE BARRAS (la tira de ~20+ dígitos para facturar), NO el folio corto — léelo dígito por dígito.",
+  "referencia": "para portales SoftRestaurant/restaurante (SushiO, Dana Comida Mexicana, El Caporal, Allegro): el CÓDIGO DE FACTURACIÓN o código único (alfanumérico, distinto del folio). Si no aplica, null",
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
   "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|autozone|desconocido",
