@@ -108,10 +108,15 @@ ${lineasDeteccion.join("\n")}
 const app = express();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const SMTP_PORT = parseInt(process.env.SMTP_PORT) || 465;
+// `secure` DEBE coincidir con el puerto: 465 = SSL implícito (true); 587/25/2525 = STARTTLS (false).
+// Lo derivamos del puerto en vez de confiar en SMTP_SECURE, porque si esa variable
+// quedó mal puesta en Railway (p.ej. ausente) el socket a 465 se cuelga → "Connection timeout".
+const SMTP_SECURE = SMTP_PORT === 465 ? true : (process.env.SMTP_SECURE === 'true');
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT) || 465,
-  secure: process.env.SMTP_SECURE === 'true',
+  port: SMTP_PORT,
+  secure: SMTP_SECURE,
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -122,8 +127,31 @@ const transporter = nodemailer.createTransport({
 });
 
 transporter.verify((error) => {
-  if (error) console.log('⚠️ SMTP no disponible:', error.message);
-  else console.log('✅ SMTP conectado correctamente');
+  if (error) console.log(`⚠️ SMTP no disponible (${SMTP_PORT}/secure=${SMTP_SECURE}):`, error.message);
+  else console.log(`✅ SMTP conectado correctamente (${SMTP_PORT}/secure=${SMTP_SECURE})`);
+});
+
+// ── Diagnóstico TEMPORAL de conectividad SMTP desde Railway (no expone la contraseña) ──
+app.get('/api/diag-smtp', async (req, res) => {
+  const host = process.env.SMTP_HOST;
+  const out = {
+    host, user: process.env.SMTP_USER, passSet: !!process.env.SMTP_PASS,
+    envPort: process.env.SMTP_PORT || '(unset)', envSecure: process.env.SMTP_SECURE || '(unset)',
+    efectivo: { port: SMTP_PORT, secure: SMTP_SECURE }, tests: {},
+  };
+  const auth = { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS };
+  const variantes = [
+    ['p465ssl', { port: 465, secure: true }],
+    ['p587tls', { port: 587, secure: false, requireTLS: true }],
+    ['p2525',   { port: 2525, secure: false }],
+  ];
+  for (const [name, cfg] of variantes) {
+    const t = nodemailer.createTransport({ host, auth, connectionTimeout: 8000, greetingTimeout: 8000, socketTimeout: 10000, ...cfg });
+    const ini = Date.now();
+    try { await t.verify(); out.tests[name] = { ok: true, ms: Date.now() - ini }; }
+    catch (e) { out.tests[name] = { ok: false, err: e.message, code: e.code || null, ms: Date.now() - ini }; }
+  }
+  res.json(out);
 });
 
 app.use(express.json());
