@@ -19,7 +19,8 @@ async function resolverCaptcha(imgBase64) {
     if (res.status === "ready") {
       const sol = (res.solution?.text || "").trim();
       if (!sol) throw new Error("CapSolver sin texto");
-      console.log(`🔓 CAPTCHA: "${sol}"`); return sol;
+      console.log(`🔓 CAPTCHA resuelto: "${sol}"`);
+      return sol;
     }
     if (res.errorId) throw new Error(`CapSolver result: ${res.errorCode}`);
   }
@@ -31,9 +32,9 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
   regimenFiscal, usoCfdi, codigoPostal, ticketId }) {
 
   const folioVal = String(folio || referencia || "").trim();
-  console.log("🤖 Iniciando bot 7-Eleven México...");
-  console.log(`   Folio: ${folioVal} (${folioVal.length} díg.) | RFC: ${rfc}`);
-  if (folioVal.length !== 35) console.log(`⚠️  Folio tiene ${folioVal.length} dígitos — se esperan 35`);
+  console.log("🤖 7-Eleven | Folio:", folioVal, `(${folioVal.length} díg.) | RFC:`, rfc);
+  if (folioVal.length !== 35)
+    console.log(`⚠️  Folio tiene ${folioVal.length} dígitos — se esperan 35`);
 
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
@@ -43,7 +44,9 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     browser = await puppeteer.connect({
       browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true`,
     });
-  } catch (e) { return { ok: false, msg: `7-Eleven: no se pudo conectar — ${e.message}` }; }
+  } catch (e) {
+    return { ok: false, msg: `7-Eleven: no se pudo conectar — ${e.message}` };
+  }
 
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
@@ -59,198 +62,294 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     } catch {}
   };
 
-  // Helper: llenar campo con setter Angular-safe
-  const setField = async (sel, val) => page.evaluate((s, v) => {
+  // Setter Angular-safe para campos que NO son el ticket
+  const setField = (sel, val) => page.evaluate((s, v) => {
     const el = document.querySelector(s);
     if (!el) return false;
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
     setter ? setter.call(el, v) : (el.value = v);
-    ['input', 'change', 'blur'].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
+    ["input", "change", "blur"].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
     return true;
   }, sel, String(val)).catch(() => false);
 
-  // Helper: buscar CAPTCHA por varios selectores y capturarlo como base64
-  const capturarCaptcha = async () => {
-    const sel = await page.evaluate(() => {
-      for (const s of ["img#Kaptcha", "img.kaptcha", "img[src*='Kaptcha']", "img[src*='kaptcha']", "img[src*='captcha']"]) {
-        const el = document.querySelector(s);
-        if (el && el.offsetParent) return s;
-      }
-      // Por tamaño: el CAPTCHA es ~200x50
-      const img = Array.from(document.querySelectorAll("img")).find(i =>
-        i.offsetParent && i.naturalWidth >= 100 && i.naturalWidth <= 300 &&
-        i.naturalHeight >= 25 && i.naturalHeight <= 100 &&
-        !/(logo|icon|reload|banner)/i.test(i.src)
-      );
-      return img ? `img[src="${img.src}"]` : null;
+  // Capturar CAPTCHA desde dentro del browser (misma sesión → sin CORS)
+  const capturarCaptchaBase64 = async () => {
+    const base64 = await page.evaluate(async () => {
+      const img = document.querySelector("img#Kaptcha")
+        || document.querySelector("img[src*='Kaptcha']")
+        || document.querySelector("img[src*='kaptcha']")
+        || Array.from(document.querySelectorAll("img")).find(i =>
+            i.offsetParent && i.naturalWidth >= 80 && i.naturalWidth <= 350
+            && i.naturalHeight >= 20 && i.naturalHeight <= 120
+            && !/(logo|icon|reload|banner)/i.test(i.src));
+      if (!img || !img.src) return null;
+      try {
+        const resp = await fetch(img.src, { credentials: "include" });
+        if (!resp.ok) return null;
+        const blob = await resp.blob();
+        return await new Promise(res => {
+          const r = new FileReader();
+          r.onload = () => res(r.result.split(",")[1] || null);
+          r.readAsDataURL(blob);
+        });
+      } catch { return null; }
     }).catch(() => null);
-
-    if (!sel) { console.log("   ⚠️  CAPTCHA no encontrado"); return null; }
-
-    const rect = await page.evaluate((s) => {
-      const el = document.querySelector(s);
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.round(r.width), height: Math.round(r.height) };
-    }, sel).catch(() => null);
-
-    if (!rect || rect.width < 10) { console.log("   ⚠️  CAPTCHA rect inválido"); return null; }
-
-    // Scroll al elemento
-    await page.evaluate((s) => document.querySelector(s)?.scrollIntoView({ block: "center" }), sel).catch(() => {});
-    await page.waitForTimeout(400);
-
-    const buf = await page.screenshot({ type: "jpeg", clip: rect }).catch(() => null);
-    if (!buf) return null;
-    console.log(`   CAPTCHA ${rect.width}×${rect.height}px (${buf.length}b)`);
-    await subirArchivoR2(buf, `debug/7e_${ts}_captcha_${Date.now()}.jpg`, "image/jpeg").catch(() => {});
-    return buf.toString("base64");
+    return base64;
   };
 
   try {
     // ── 1. Cargar portal ────────────────────────────────────────────────────
     await page.goto("https://www.e7-eleven.com.mx/facturacion/KPortalExterno/",
-      { waitUntil: "networkidle2", timeout: 40000 });
+      { waitUntil: "load", timeout: 40000 });
     await page.waitForTimeout(3000);
-    await snap("p0");
 
     // ── 2. Click FACTURA EXPRESS ────────────────────────────────────────────
     const okExpress = await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll("button,a,.btn"))
         .find(e => e.offsetParent && (e.textContent || "").trim().toUpperCase() === "FACTURA EXPRESS");
-      if (btn) { btn.click(); return true; } return false;
+      if (btn) { btn.click(); return true; }
+      return false;
     });
-    if (!okExpress) { await snap("err_noexpress"); await browser.close(); return { ok: false, msg: "7-Eleven: no se encontró FACTURA EXPRESS" }; }
-    await page.waitForTimeout(4500);
-    await page.waitForSelector('input[name="noTicket"]', { timeout: 10000 }).catch(() => {});
+    if (!okExpress) {
+      await snap("err_noexpress");
+      await browser.close();
+      return { ok: false, msg: "7-Eleven: no se encontró FACTURA EXPRESS" };
+    }
+    await page.waitForTimeout(4000);
+
+    // Esperar el campo del ticket
+    await page.waitForSelector('input[name="noTicket"]', { visible: true, timeout: 12000 }).catch(() => {});
     await snap("p1_form");
     console.log("✅ Formulario visible");
 
-    // ── 3. Llenar TODO el formulario en un solo evaluate ────────────────────
+    // ── 3. Escribir el No. de Ticket con keyboard.type() ───────────────────
+    // CRÍTICO: Angular necesita eventos de teclado reales para actualizar su
+    // modelo reactivo. Con solo el setter + events la validación interna falla.
+    await page.focus('input[name="noTicket"]');
+    await page.waitForTimeout(300);
+    // Limpiar campo primero
+    await page.evaluate(() => {
+      const el = document.querySelector('input[name="noTicket"]');
+      if (!el) return;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      setter ? setter.call(el, "") : (el.value = "");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.keyboard.type(folioVal, { delay: 30 });
+    await page.waitForTimeout(1200);
+
+    // Log estado del botón Agregar Ticket
+    const btnAgregar = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll("button,input[type=button]"))
+        .find(e => /agregar\s*ticket/i.test(e.textContent || e.value || ""));
+      if (!btn) return { found: false };
+      return { found: true, disabled: btn.disabled, class: btn.className.slice(0, 60) };
+    }).catch(() => null);
+    console.log("🔘 Botón Agregar Ticket:", JSON.stringify(btnAgregar));
+    await snap("p2_ticket_escrito");
+
+    // ── 4. Click "Agregar Ticket" via evaluate (más confiable en Angular SPAs)
+    // evaluate.click() es síncrono con el hilo de Angular; no puede quedar
+    // bloqueado por un overlay invisible como sí puede ocurrir con mouse.click()
+    console.log("🖱️  Agregar Ticket...");
+    const clickOk = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll("button,a,.btn,input[type=button]"))
+        .find(e => e.offsetParent && /agregar\s*ticket/i.test(e.textContent || e.value || ""));
+      if (!btn) return false;
+      btn.click();
+      return true;
+    }).catch(() => false);
+    console.log("   evaluate.click:", clickOk);
+
+    // ── 5. Esperar que el ticket aparezca en la tabla (waitForSelector es
+    // resiliente a re-renders de Angular — Puppeteer lo maneja internamente)
+    let resultadoAgregar = "timeout";
+    try {
+      await page.waitForSelector("table tbody tr", { visible: true, timeout: 15000 });
+      const filas = await page.evaluate(() =>
+        document.querySelectorAll("table tbody tr").length).catch(() => 0);
+      if (filas > 0) resultadoAgregar = "agregado";
+    } catch {
+      // Sin fila → revisar si hay mensaje de error
+      resultadoAgregar = await page.evaluate(() => {
+        const txt = (document.body.innerText || "").toLowerCase();
+        if (/ya\s+(fue|ha\s+sido)\s+facturad/.test(txt)) return "ya_facturado";
+        if (/fuera de tiempo|venci/.test(txt)) return "vencido";
+        if (/no.*(encontr|existe|v[aá]lid)|inv[aá]lid|incorrect/.test(txt)) return "invalido";
+        return "timeout";
+      }).catch(() => "timeout");
+    }
+
+    await snap("p3_tras_agregar");
+    const domInfo = await page.evaluate(() => ({
+      filas: document.querySelectorAll("table tbody tr").length,
+      captchaInput: !!document.querySelector("#captcha"),
+      captchaImg: !!(document.querySelector("img#Kaptcha") || document.querySelector("img[src*='Kaptcha']")),
+      snippet: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 300),
+    })).catch(() => null);
+    console.log("📊 Post-agregar:", JSON.stringify(domInfo));
+    console.log("   Resultado:", resultadoAgregar);
+
+    if (resultadoAgregar === "ya_facturado") {
+      await browser.close();
+      return { ok: false, error_code: "ya_facturado", msg: "7-Eleven: ticket ya facturado" };
+    }
+    if (resultadoAgregar === "invalido") {
+      await browser.close();
+      return { ok: false, error_code: "datos_invalidos", msg: "7-Eleven: ticket no encontrado — verifica el folio (35 dígitos)" };
+    }
+    if (resultadoAgregar === "vencido") {
+      await browser.close();
+      return { ok: false, error_code: "ticket_vencido", msg: "7-Eleven: el plazo para facturar venció" };
+    }
+    if (resultadoAgregar !== "agregado") {
+      await snap("err_no_se_agrego");
+      await browser.close();
+      return { ok: false, msg: "7-Eleven: el ticket no apareció en la tabla tras Agregar Ticket. Revisa el screenshot." };
+    }
+    console.log("✅ Ticket en tabla");
+
+    // ── 6. Llenar el resto del formulario (RFC, razón, CP, email, fpago, etc.)
     const llenado = await page.evaluate((d) => {
       const set = (el, val) => {
         if (!el) return false;
-        const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
         s ? s.call(el, val) : (el.value = val);
-        ['input', 'change', 'blur'].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
+        ["input", "change", "blur"].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
         return true;
       };
       const res = {};
-      res.ticket   = set(document.querySelector('input[name="noTicket"]'), d.folio);
-      res.rfc      = set(document.querySelector('#rfcCliente'), d.rfc);
-      res.razon    = set(document.querySelector('#razon'), d.razonSocial || '');
-      res.cp       = set(document.querySelector('#cp'), d.codigoPostal || '');
-      res.email    = set(document.querySelector('#emailInput'), 'buzonfacturas@serviciosga.site');
-      res.fpago    = set(document.querySelector('#formaPagoAux'), 'Efectivo');
-      const selReg = document.querySelector('#regimenFiscalReceptor');
-      if (selReg) { for (const o of selReg.options) { if (o.value === d.regimenFiscal || o.text.includes(d.regimenFiscal) || o.text.includes('General de Ley')) { selReg.value = o.value; selReg.dispatchEvent(new Event('change', { bubbles: true })); res.regimen = true; break; } } }
-      const selCfdi = document.querySelector('#usoCfdi');
-      if (selCfdi) { for (const o of selCfdi.options) { if (o.value.includes(d.usoCfdi) || o.text.includes('Gastos en general')) { selCfdi.value = o.value; selCfdi.dispatchEvent(new Event('change', { bubbles: true })); res.cfdi = true; break; } } }
+      res.rfc   = set(document.querySelector("#rfcCliente"), d.rfc);
+      res.razon = set(document.querySelector("#razon"), d.razonSocial || "");
+      res.cp    = set(document.querySelector("#cp"), d.codigoPostal || "");
+      res.email = set(document.querySelector("#emailInput"), "buzonfacturas@serviciosga.site");
+      res.fpago = set(document.querySelector("#formaPagoAux"), "Efectivo");
+      const selReg = document.querySelector("#regimenFiscalReceptor");
+      if (selReg) {
+        for (const o of selReg.options) {
+          if (o.value === d.regimenFiscal || o.text.includes(d.regimenFiscal) || o.text.includes("General de Ley")) {
+            selReg.value = o.value;
+            selReg.dispatchEvent(new Event("change", { bubbles: true }));
+            res.regimen = true; break;
+          }
+        }
+      }
+      const selCfdi = document.querySelector("#usoCfdi");
+      if (selCfdi) {
+        for (const o of selCfdi.options) {
+          if (o.value.includes(d.usoCfdi) || o.text.includes("Gastos en general")) {
+            selCfdi.value = o.value;
+            selCfdi.dispatchEvent(new Event("change", { bubbles: true }));
+            res.cfdi = true; break;
+          }
+        }
+      }
       return res;
-    }, { folio: folioVal, rfc, razonSocial, codigoPostal: codigoPostal || '', regimenFiscal: String(regimenFiscal || '601'), usoCfdi: usoCfdi || 'G03' });
-
-    console.log("📋 Campos:", JSON.stringify(llenado));
+    }, { rfc, razonSocial, codigoPostal: codigoPostal || "", regimenFiscal: String(regimenFiscal || "601"), usoCfdi: usoCfdi || "G03" });
+    console.log("📋 Campos extra:", JSON.stringify(llenado));
     await page.waitForTimeout(800);
-    await snap("p2_llenado");
+    await snap("p4_form_completo");
 
-    // ── 4. Click Agregar Ticket + esperar la navegación (es POST, no AJAX) ──
-    console.log("🖱️  Agregar Ticket...");
-    const navWait = page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => null);
-    const r = await page.evaluate(() => {
-      const btn = Array.from(document.querySelectorAll("button,a,.btn"))
-        .find(e => e.offsetParent && /agregar\s*ticket/i.test(e.textContent || e.value || ''));
-      if (!btn) return null;
-      const rc = btn.getBoundingClientRect();
-      return { x: rc.left + rc.width / 2, y: rc.top + rc.height / 2 };
-    }).catch(() => null);
-    if (r) await page.mouse.click(r.x, r.y);
-    await navWait;  // esperar que la página nueva cargue
-    await page.waitForTimeout(2500);
-    console.log("   URL:", page.url());
-    await snap("p3_tras_agregar");
-
-    // ── 5. Diagnosticar DOM de la nueva página ──────────────────────────────
-    const dom = await page.evaluate(() => ({
-      filas: document.querySelectorAll("table tbody tr").length,
-      captchaInput: !!document.querySelector("#captcha"),
-      bodySnip: (document.body.innerText || "").slice(0, 300),
-      imgs: Array.from(document.querySelectorAll("img")).filter(i => i.offsetParent).map(i => ({ id: i.id, src: i.src.split('/').pop().slice(0, 40), w: i.naturalWidth, h: i.naturalHeight }))
-    })).catch(() => ({}));
-    console.log("🔍 DOM:", JSON.stringify(dom));
-
-    // Si no hay campo CAPTCHA, puede que la navegación devolvió a inicio o error
-    if (!dom.captchaInput) {
-      console.log("⚠️  No hay #captcha en el DOM — ticket posiblemente inválido o ya usado");
-      // Revisar si hay mensaje de error
-      if (/no.*encontr|inv[aá]lido|error/i.test(dom.bodySnip || "")) {
-        await browser.close();
-        return { ok: false, error_code: "datos_invalidos", msg: "7-Eleven: ticket no encontrado — folio incorrecto o ya usado" };
-      }
-      // Devolver error genérico para que el usuario reintente con ticket nuevo
-      await browser.close();
-      return { ok: false, msg: "7-Eleven: formulario no disponible tras Agregar Ticket. Verifica que el folio sea válido y no haya sido facturado." };
-    }
-
-    // ── 6. Loop CAPTCHA + FACTURAR (hasta 3 intentos) ──────────────────────
+    // ── 7. Loop CAPTCHA + FACTURAR (hasta 3 intentos) ──────────────────────
     for (let intento = 1; intento <= 3; intento++) {
-      console.log(`🔐 Intento CAPTCHA ${intento}/3...`);
-      const base64 = await capturarCaptcha();
+      console.log(`🔐 CAPTCHA intento ${intento}/3...`);
+
+      // Esperar a que la imagen del CAPTCHA esté en el DOM
+      await page.waitForSelector("img#Kaptcha, img[src*='Kaptcha']", { visible: true, timeout: 8000 })
+        .catch(() => {});
+
+      // Capturar desde el browser (misma sesión, sin CORS)
+      const base64 = await capturarCaptchaBase64();
       if (!base64) {
-        if (intento < 3) { await page.waitForTimeout(2000); continue; }
-        break;
+        console.log("   ⚠️  No se pudo capturar imagen del CAPTCHA");
+        // Intentar reload del CAPTCHA
+        await page.evaluate(() => {
+          const reload = document.querySelector("img#reload, img[id*='reload']");
+          if (reload) reload.click();
+        }).catch(() => {});
+        await page.waitForTimeout(2000);
+        continue;
       }
+
+      // Subir copia a R2 para diagnóstico
+      try {
+        const buf = Buffer.from(base64, "base64");
+        const u = await subirArchivoR2(buf, `debug/7e_${ts}_captcha_${intento}_${Date.now()}.jpg`, "image/jpeg");
+        console.log(`   CAPTCHA imagen: ${u}`);
+      } catch {}
 
       let sol;
-      try { sol = await resolverCaptcha(base64); }
-      catch (e) {
+      try {
+        sol = await resolverCaptcha(base64);
+      } catch (e) {
         console.log(`   CapSolver falló: ${e.message}`);
-        await setField("#captcha", "").catch(() => {});
-        await page.evaluate(() => { document.querySelector("img#reload,img[id*='reload']")?.click(); }).catch(() => {});
+        await page.evaluate(() => {
+          document.querySelector("img#reload, img[id*='reload']")?.click();
+        }).catch(() => {});
         await page.waitForTimeout(2500);
         continue;
       }
 
-      // Escribir solución
-      await setField("#captcha", sol);
-      await page.waitForTimeout(300);
+      // Escribir solución con keyboard.type() también (Angular-safe)
+      await page.focus("#captcha").catch(() => {});
+      await setField("#captcha", "");
+      await page.keyboard.type(sol, { delay: 50 });
+      await page.waitForTimeout(400);
+      await snap(`p5_captcha_${intento}`);
 
       // Click FACTURAR
       console.log("🧾 FACTURAR...");
-      const navFact = page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }).catch(() => null);
-      const rFact = await page.evaluate(() => {
-        const btn = Array.from(document.querySelectorAll("button,a,.btn"))
+      const clickFact = await page.evaluate(() => {
+        const btn = Array.from(document.querySelectorAll("button,a,.btn,input[type=submit],input[type=button]"))
           .find(e => e.offsetParent && /^facturar$/i.test((e.textContent || e.value || "").trim()));
-        if (!btn) return null;
-        const rc = btn.getBoundingClientRect();
-        return { x: rc.left + rc.width / 2, y: rc.top + rc.height / 2 };
-      }).catch(() => null);
-      if (rFact) await page.mouse.click(rFact.x, rFact.y);
-      await navFact;
-      await page.waitForTimeout(5000);
-      await snap(`p4_resultado_${intento}`);
+        if (!btn) return false;
+        btn.click();
+        return true;
+      }).catch(() => false);
+      console.log("   click FACTURAR:", clickFact);
+
+      // Esperar resultado (navegación o AJAX)
+      await Promise.race([
+        page.waitForNavigation({ waitUntil: "load", timeout: 20000 }),
+        page.waitForTimeout(10000),
+      ]).catch(() => {});
+      await snap(`p6_resultado_${intento}`);
 
       const body = await page.evaluate(() => document.body.innerText || "").catch(() => "");
+      console.log("   Body snippet:", body.replace(/\s+/g, " ").slice(0, 250));
 
-      // CAPTCHA incorrecto → recargar y reintentar
-      if (/captcha.*(incorrecto|inv[aá]lido)|código.*(incorrecto|inv[aá]lido)/i.test(body)) {
+      if (/captcha.*(incorrecto|inv[aá]lido)|c[oó]digo.*(incorrecto|inv[aá]lido)/i.test(body)) {
         console.log("   CAPTCHA incorrecto — recargando...");
-        await page.evaluate(() => { document.querySelector("img#reload,img[id*='reload']")?.click(); }).catch(() => {});
+        await page.evaluate(() => {
+          document.querySelector("img#reload, img[id*='reload']")?.click();
+        }).catch(() => {});
         await page.waitForTimeout(2500);
         continue;
       }
-      // Ya facturado
       if (/ya\s+(fue|ha\s+sido)\s+facturad/i.test(body)) {
-        await browser.close(); return { ok: false, error_code: "ya_facturado", msg: "7-Eleven: ya facturado" };
+        await browser.close();
+        return { ok: false, error_code: "ya_facturado", msg: "7-Eleven: ya facturado" };
       }
-      // Datos inválidos
       if (/no\s+(encontr[oó]|existe)|inv[aá]lido/i.test(body) && !/factura|xml|pdf/i.test(body)) {
-        await browser.close(); return { ok: false, error_code: "datos_invalidos", msg: "7-Eleven: ticket no encontrado" };
+        await browser.close();
+        return { ok: false, error_code: "datos_invalidos", msg: "7-Eleven: ticket no encontrado" };
       }
-      // Éxito — buscar descarga
-      const xmlUrl = await page.evaluate(() => Array.from(document.querySelectorAll("a[href]")).find(a => /\.xml/i.test(a.href))?.href || null).catch(() => null);
-      const pdfUrl = await page.evaluate(() => Array.from(document.querySelectorAll("a[href]")).find(a => /\.pdf/i.test(a.href))?.href || null).catch(() => null);
+
+      // Buscar descarga de XML/PDF
+      const xmlUrl = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("a[href]")).find(a => /\.xml/i.test(a.href))?.href || null
+      ).catch(() => null);
+      const pdfUrl = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("a[href]")).find(a => /\.pdf/i.test(a.href))?.href || null
+      ).catch(() => null);
+
       await browser.close();
-      if (xmlUrl || pdfUrl) { console.log(`✅ OK — XML: ${xmlUrl} PDF: ${pdfUrl}`); return { ok: true, xmlUrl, pdfUrl }; }
+      if (xmlUrl || pdfUrl) {
+        console.log(`✅ OK — XML: ${xmlUrl} | PDF: ${pdfUrl}`);
+        return { ok: true, xmlUrl, pdfUrl };
+      }
+      // Sin enlaces directos → esperar por correo
+      console.log("✅ Factura procesada — esperando por correo");
       return { ok: true, procesandoCorreo: true };
     }
 
