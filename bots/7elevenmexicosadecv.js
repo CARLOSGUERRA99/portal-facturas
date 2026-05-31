@@ -1,6 +1,12 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
+// sleep en Node.js puro — NO usa el main frame del browser.
+// sleep() ejecuta setTimeout DENTRO del browser (necesita el frame),
+// y falla con "Requesting main frame too early!" si el frame se destruye durante
+// una navegación Angular. Esta función es inmune a eso.
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 // ── CapSolver ────────────────────────────────────────────────────────────────
 async function resolverCaptcha(imgBase64) {
   const apiKey = process.env.CAPSOLVER_API_KEY;
@@ -107,7 +113,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     // ── 1. Cargar portal ────────────────────────────────────────────────────
     await page.goto("https://www.e7-eleven.com.mx/facturacion/KPortalExterno/",
       { waitUntil: "load", timeout: 40000 });
-    await page.waitForTimeout(3000);
+    await sleep(3000);
 
     // ── 2. Click FACTURA EXPRESS ────────────────────────────────────────────
     const okExpress = await page.evaluate(() => {
@@ -121,7 +127,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       await browser.close();
       return { ok: false, msg: "7-Eleven: no se encontró FACTURA EXPRESS" };
     }
-    await page.waitForTimeout(4000);
+    await sleep(4000);
 
     // Esperar el campo del ticket
     await page.waitForSelector('input[name="noTicket"]', { visible: true, timeout: 12000 }).catch(() => {});
@@ -132,7 +138,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     // CRÍTICO: Angular necesita eventos de teclado reales para actualizar su
     // modelo reactivo. Con solo el setter + events la validación interna falla.
     await page.focus('input[name="noTicket"]');
-    await page.waitForTimeout(300);
+    await sleep(300);
     // Limpiar campo primero
     await page.evaluate(() => {
       const el = document.querySelector('input[name="noTicket"]');
@@ -142,7 +148,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       el.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await page.keyboard.type(folioVal, { delay: 30 });
-    await page.waitForTimeout(1200);
+    await sleep(1200);
 
     // Log estado del botón Agregar Ticket
     const btnAgregar = await page.evaluate(() => {
@@ -177,7 +183,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
 
     // Si hubo navegación real ya estamos en la nueva página; si no, esperamos
     // que el AJAX complete y Angular termine de re-montar el componente.
-    await page.waitForTimeout(navResult === "navigated" ? 2000 : 4000);
+    await sleep(navResult === "navigated" ? 2000 : 4000);
 
     // ── 5. Esperar ROW con contenido real ─────────────────────────────────────
     // CRÍTICO: la tabla tiene un <tr> vacío SIEMPRE (placeholder). waitForSelector
@@ -186,7 +192,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     // brevemente lo reintentamos en el siguiente tick.
     let resultadoAgregar = "timeout";
     for (let poll = 0; poll < 28; poll++) {
-      await page.waitForTimeout(500);
+      await sleep(500);
       try {
         const estado = await page.evaluate(() => {
           // Fila con contenido real (no el <tr> placeholder vacío)
@@ -237,7 +243,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     // Esperar a que Angular termine de re-montar el form después del AJAX.
     // Sin este wait, el evaluate del paso siguiente llega justo durante el
     // re-render y el contexto JS sigue destruido → Session closed.
-    await page.waitForTimeout(3000);
+    await sleep(3000);
     await page.waitForSelector("#rfcCliente", { visible: true, timeout: 10000 })
       .catch(() => {});
     console.log("✅ Form estabilizado");
@@ -280,7 +286,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       return res;
     }, { rfc, razonSocial, codigoPostal: codigoPostal || "", regimenFiscal: String(regimenFiscal || "601"), usoCfdi: usoCfdi || "G03" });
     console.log("📋 Campos extra:", JSON.stringify(llenado));
-    await page.waitForTimeout(800);
+    await sleep(800);
     await snap("p4_form_completo");
 
     // ── 7. Loop CAPTCHA + FACTURAR (hasta 3 intentos) ──────────────────────
@@ -300,7 +306,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
           const reload = document.querySelector("img#reload, img[id*='reload']");
           if (reload) reload.click();
         }).catch(() => {});
-        await page.waitForTimeout(2000);
+        await sleep(2000);
         continue;
       }
 
@@ -319,7 +325,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
         await page.evaluate(() => {
           document.querySelector("img#reload, img[id*='reload']")?.click();
         }).catch(() => {});
-        await page.waitForTimeout(2500);
+        await sleep(2500);
         continue;
       }
 
@@ -327,7 +333,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       await page.focus("#captcha").catch(() => {});
       await setField("#captcha", "");
       await page.keyboard.type(sol, { delay: 50 });
-      await page.waitForTimeout(400);
+      await sleep(400);
       await snap(`p5_captcha_${intento}`);
 
       // Click FACTURAR
@@ -344,7 +350,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       // Esperar resultado (navegación o AJAX)
       await Promise.race([
         page.waitForNavigation({ waitUntil: "load", timeout: 20000 }),
-        page.waitForTimeout(10000),
+        sleep(10000),
       ]).catch(() => {});
       await snap(`p6_resultado_${intento}`);
 
@@ -356,7 +362,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
         await page.evaluate(() => {
           document.querySelector("img#reload, img[id*='reload']")?.click();
         }).catch(() => {});
-        await page.waitForTimeout(2500);
+        await sleep(2500);
         continue;
       }
       if (/ya\s+(fue|ha\s+sido)\s+facturad/i.test(body)) {
