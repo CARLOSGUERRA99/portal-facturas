@@ -42,7 +42,7 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
   let browser;
   try {
     browser = await puppeteer.connect({
-      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true`,
+      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true&timeout=120000`,
     });
   } catch (e) {
     return { ok: false, msg: `7-Eleven: no se pudo conectar — ${e.message}` };
@@ -148,10 +148,15 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     console.log("🔘 Botón Agregar Ticket:", JSON.stringify(btnAgregar));
     await snap("p2_ticket_escrito");
 
-    // ── 4. Click "Agregar Ticket" via evaluate (más confiable en Angular SPAs)
-    // evaluate.click() es síncrono con el hilo de Angular; no puede quedar
-    // bloqueado por un overlay invisible como sí puede ocurrir con mouse.click()
+    // ── 4. Click "Agregar Ticket" + capturar posible SPA navigation ───────────
+    // Angular puede hacer una SPA navigation al validar el ticket; si no
+    // esperamos la navegación, el page context queda "huérfano" y da Session closed.
     console.log("🖱️  Agregar Ticket...");
+
+    // Registrar navegación ANTES del click (si llega después del click la perdemos)
+    const navPromise = page.waitForNavigation({ waitUntil: "load", timeout: 12000 })
+      .then(() => "navigated").catch(() => "no-nav");
+
     const clickOk = await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll("button,a,.btn,input[type=button]"))
         .find(e => e.offsetParent && /agregar\s*ticket/i.test(e.textContent || e.value || ""));
@@ -161,31 +166,45 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     }).catch(() => false);
     console.log("   evaluate.click:", clickOk);
 
-    // ── 5. Esperar que el ticket aparezca en la tabla (waitForSelector es
-    // resiliente a re-renders de Angular — Puppeteer lo maneja internamente)
+    const navResult = await navPromise;
+    console.log("   navigation:", navResult);
+
+    // Si hubo navegación real ya estamos en la nueva página; si no, esperamos
+    // que el AJAX complete y Angular termine de re-montar el componente.
+    await page.waitForTimeout(navResult === "navigated" ? 2000 : 4000);
+
+    // ── 5. Esperar ROW con contenido real ─────────────────────────────────────
+    // CRÍTICO: la tabla tiene un <tr> vacío SIEMPRE (placeholder). waitForSelector
+    // resuelve en ese <tr> vacío en <500ms antes de que llegue el AJAX.
+    // Usamos sondeo tolerante al re-render: si el contexto se destruye
+    // brevemente lo reintentamos en el siguiente tick.
     let resultadoAgregar = "timeout";
-    try {
-      await page.waitForSelector("table tbody tr", { visible: true, timeout: 15000 });
-      const filas = await page.evaluate(() =>
-        document.querySelectorAll("table tbody tr").length).catch(() => 0);
-      if (filas > 0) resultadoAgregar = "agregado";
-    } catch {
-      // Sin fila → revisar si hay mensaje de error
-      resultadoAgregar = await page.evaluate(() => {
-        const txt = (document.body.innerText || "").toLowerCase();
-        if (/ya\s+(fue|ha\s+sido)\s+facturad/.test(txt)) return "ya_facturado";
-        if (/fuera de tiempo|venci/.test(txt)) return "vencido";
-        if (/no.*(encontr|existe|v[aá]lid)|inv[aá]lid|incorrect/.test(txt)) return "invalido";
-        return "timeout";
-      }).catch(() => "timeout");
+    for (let poll = 0; poll < 28; poll++) {
+      await page.waitForTimeout(500);
+      try {
+        const estado = await page.evaluate(() => {
+          // Fila con contenido real (no el <tr> placeholder vacío)
+          const rows = Array.from(document.querySelectorAll("table tbody tr"));
+          const hayContenido = rows.some(r => r.textContent.replace(/\s/g, "").length > 10);
+          if (hayContenido) return "agregado";
+          const txt = (document.body.innerText || "").replace(/\s+/g, " ");
+          if (/ya\s+(fue|ha\s+sido)\s+facturad/i.test(txt)) return "ya_facturado";
+          if (/fuera de tiempo|venci/i.test(txt))            return "vencido";
+          if (/no.*(encontr|existe|v[aá]lid)|inv[aá]lid|incorrect/i.test(txt)) return "invalido";
+          return "esperando";
+        });
+        if (estado !== "esperando") { resultadoAgregar = estado; break; }
+      } catch { /* contexto temporalmente destruido — reintentamos */ }
     }
 
     await snap("p3_tras_agregar");
     const domInfo = await page.evaluate(() => ({
       filas: document.querySelectorAll("table tbody tr").length,
+      filaContenido: Array.from(document.querySelectorAll("table tbody tr"))
+        .filter(r => r.textContent.replace(/\s/g,"").length > 10).length,
       captchaInput: !!document.querySelector("#captcha"),
       captchaImg: !!(document.querySelector("img#Kaptcha") || document.querySelector("img[src*='Kaptcha']")),
-      snippet: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 300),
+      snippet: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 400),
     })).catch(() => null);
     console.log("📊 Post-agregar:", JSON.stringify(domInfo));
     console.log("   Resultado:", resultadoAgregar);
@@ -208,6 +227,14 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       return { ok: false, msg: "7-Eleven: el ticket no apareció en la tabla tras Agregar Ticket. Revisa el screenshot." };
     }
     console.log("✅ Ticket en tabla");
+
+    // Esperar a que Angular termine de re-montar el form después del AJAX.
+    // Sin este wait, el evaluate del paso siguiente llega justo durante el
+    // re-render y el contexto JS sigue destruido → Session closed.
+    await page.waitForTimeout(3000);
+    await page.waitForSelector("#rfcCliente", { visible: true, timeout: 10000 })
+      .catch(() => {});
+    console.log("✅ Form estabilizado");
 
     // ── 6. Llenar el resto del formulario (RFC, razón, CP, email, fpago, etc.)
     const llenado = await page.evaluate((d) => {
