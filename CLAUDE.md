@@ -5,245 +5,158 @@ Residentes suben foto de ticket → OCR extrae datos → engine/bot factura en e
 
 **Directorio local:** `C:\Users\carlo\portal-facturas`
 **Repo:** https://github.com/CARLOSGUERRA99/portal-facturas
-**Deploy:** Railway — autodeploy desde `main`. Cada `git push origin main` despliega en ~2 min.
+**Deploy:** Railway — autodeploy desde `main`. Cada `git push origin main` despliega (hoy tardó 3–10 min; normalmente ~2 min).
+**App en producción:** https://portal-facturas-production.up.railway.app
 
 ---
 
 ## Stack
 
-- **Backend:** Node.js + Express, puerto 8080
-- **Hosting:** Railway (Linux, Node 18)
-- **Browser automation:** Puppeteer → Browserless `wss://production-sfo.browserless.io?token=TOKEN&stealth=true`
-- **IA:** Anthropic SDK — Sonnet para detección y extracción OCR (2 pasadas)
+- **Backend:** Node.js 18 + Express, puerto 8080
+- **Hosting:** Railway (Linux). ⚠️ **Railway BLOQUEA el SMTP saliente** (puertos 25/465/587/2525 → ETIMEDOUT). NO bloquea IMAP (993) ni HTTPS (443).
+- **Browser automation:** Puppeteer → Browserless `wss://production-sfo.browserless.io?token=TOKEN&stealth=true` (OXXO sin stealth)
+- **IA:** Anthropic SDK — modelo `claude-sonnet-4-6` (detección/OCR/agentes)
 - **Storage:** Cloudflare R2 (`storage/r2.js` → `subirArchivoR2(buffer, key, contentType)`)
-- **Email:** IMAP + mailparser + unzipper (`mail/imap.js`)
+- **Correo SALIENTE:** **Brevo HTTP API** (`enviarCorreo()` en server.js) — porque Railway bloquea SMTP. NO usar nodemailer/SMTP en producción.
+- **Correo ENTRANTE (captura facturas):** IMAP (`mail/imap.js`) — funciona en Railway.
+- **CAPTCHA:** CapSolver (`ImageToTextTask`) para portales con captcha de imagen (7-Eleven).
 - **BD:** MySQL Railway (`db.query`)
-- **Templates:** Mustache.js (`{{variable}}`) — usado en flow.json del engine
 
 ## Variables de entorno (solo en Railway, nunca en código)
 
 ```
 BROWSERLESS_TOKEN   ANTHROPIC_API_KEY   SESSION_SECRET
-SMTP_HOST/PORT/SECURE/USER/PASS         IMAP_HOST/PORT/USER/PASS
+BREVO_API_KEY              ← correo saliente por HTTP (Railway bloquea SMTP)
+CAPSOLVER_API_KEY          ← resolver captchas (7-Eleven)
+SMTP_HOST/PORT/SECURE/USER/PASS   ← legacy, en standby (Railway los bloquea)
+IMAP_HOST/PORT/USER/PASS          ← recepción de facturas (sí funciona)
 R2_ACCESS_KEY / R2_SECRET_KEY / R2_ENDPOINT / R2_BUCKET / R2_PUBLIC_URL
 DB_HOST / DB_USER / DB_PASSWORD / DB_PORT / DB_DATABASE
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true   MANTENIMIENTO=false
 ```
 
 Correo de captura de facturas: `buzonfacturas@serviciosga.site`
+Remitente Brevo verificado: `buzonfacturas@serviciosga.site` (DNS DKIM brevo1/brevo2 puestos; falta terminar DMARC+SPF para entregabilidad óptima).
+
+---
+
+## Correo: Brevo HTTP API (CRÍTICO)
+
+Railway bloquea SMTP saliente, así que TODO el correo del sistema sale por la **API HTTP de Brevo** vía `enviarCorreo(mailOptions)` en server.js (POST a `https://api.brevo.com/v3/smtp/email` con header `api-key`). El `transporter` de nodemailer queda en standby (solo se usa si NO hay `BREVO_API_KEY`).
+
+- Endpoint de salud: `GET /api/diag-mail` → `{brevoKeySet, brevoKeyValid, brevoStatus, imap:{ok,ms}}`
+- Para ver correos enviados: **Brevo → Transactional → Logs** (NO aparecen en "Enviados" de Hostinger).
 
 ---
 
 ## Árbol de archivos
 
 ```
-server.js                  — servidor principal, OCR pipeline, endpoints
+server.js                  — servidor principal, OCR pipeline, endpoints, enviarCorreo (Brevo)
 bots/
-  index.js                 — router: engine-first → fallback legacy
-  gasmaz.js                — ✅ bot legacy NexusFuel (fallback del engine)
-  oxxo.js                  — ✅ bot OXXO
-  buzonfacturas.js         — ✅ bot ARCO/BuzonFacturas
-  homedepot.js             — ✅ bot Home Depot
-  rendichicasestacionpirusadecv.js — ✅ bot Rendichicas
-  farmaciaguadalajara.js   — ⚠️ en desarrollo
-
-engine/                    — motor declarativo (NO tocar sin entender el contrato)
-  index.js                 — entry point: facturarConEngine(), tieneEngine()
-  runner.js                — ejecutor de flow.json, buildContext(), validateContext()
-  browser.js               — abre Browserless o LOCAL_BROWSER
-  actions/
-    goto.js / fill.js / click.js / waitFor.js / screenshot.js
-
-commerce/                  — un directorio por portal migrado al engine
-  gasmaz/                  — gasmazfactura.nexusfuel.mx
-    config.json            — url_base, dominio, stealth, defaults, cfdi_keywords
-    selectors.json         — mapa nombre→selector CSS
-    flow.json              — 25 pasos declarativos con {{variables}} Mustache
-    hooks.js               — lógica compleja que no cabe en JSON
-  ramsa/                   — redmaxfactura.nexusfuel.mx (mismo mecanismo que gasmaz)
-    config.json / selectors.json / flow.json / hooks.js
-
-mail/
-  imap.js                  — recibe XML/PDF por correo
-storage/
-  r2.js                    — sube/borra archivos R2
-public/
-  mantenimiento.html       — página de mantenimiento (activar con MANTENIMIENTO=true)
-  *.html                   — frontend (dashboard, mis-tickets, login, perfil, admin)
-scripts/                   — herramientas de validación local (no van a producción lógicamente)
-  test-gasmaz.js           — test end-to-end del engine con ticket real
-  validate-r2.js           — valida que R2 sube, es público, y borra correctamente
-  validate-selectors-gasmaz.js — abre el portal real y verifica que existen los 13 selectores
-mcp-server/
-  index.js                 — servidor MCP (Railway) con tools para Claude Code
+  index.js                 — router: engine-first → legacy → bot dinámico (slug)
+  oxxo.js / buzonfacturas.js / gasmaz.js / homedepot.js
+  rendichicasestacionpirusadecv.js / benavides.js / panama.js / farmaciaguadalajara.js
+  carljr.js                — ✅ Carl's Jr (ICR/RetailEDX). Maneja modal "ya generada" → #txt_dcorreopet/#btn_denviarpet
+  sushito.js               — ✅ SushiO/mefacturo (SoftRestaurant). Botón Facturar es <a id="btn_facturar">. Detecta vencido
+  autozone.js              — ✅ AutoZone (origon.cloud, Angular). Usa el CÓDIGO DE BARRAS, no el folio corto
+  dana.js                  — ✅ Dana Comida Mexicana (SoftRestaurant variante: #unicCode/#folio/#RFC)
+  tufesa.js                — ✅ TUFESA (form ASP.NET en iframe: ventas.tufesa.com.mx). Boletos de viaje + origen
+  7elevenmexicosadecv.js   — ⚠️ 7-Eleven (Angular). CAPTCHA vía CapSolver. EN PRUEBA (session-close al type)
+agentes/
+  orquestador.js           — flujo analizar→generar→validar→[corregir×2]→pendiente_aprobacion. activarBot, restaurarBotsDinamicos
+  analizador.js            — recorrido INTERACTIVO: sigue iframes, maneja <select>, incluye <a>, llena con datos reales, multi-paso
+  generador.js             — escribe el bot (max_tokens 20k + anti-truncado + vm.Script)
+  validador.js             — sintaxis (vm.Script) + prueba EN VIVO; marca error si {ok:false} sin error_code controlado
+  corrector.js             — auto-arregla con feedback de la prueba en vivo (Sonnet, max_tokens 20k)
+engine/                    — motor declarativo (commerce/{portal}/config|selectors|flow.json+hooks.js)
+  actions/ (goto,fill,click,waitFor,screenshot) + runner.js + browser.js
+commerce/oxxo/, gasmaz/, ramsa/  — portales migrados al engine (OXXO usa engine con hooks.js)
+mail/imap.js               — recibe XML/PDF por correo (esCFDI reconoce retailedx, mefacturo, etc.)
+storage/r2.js
+public/*.html              — frontend (mis-tickets, dashboard, admin, perfil)
+scripts/                   — herramientas de prueba/sondeo local (test-*, probe-*, verif-*, leer-docx)
 ```
-
----
-
-## Arquitectura: Engine Declarativo
-
-El engine es la arquitectura nueva. Los bots legacy siguen intactos como fallback.
-
-### Cómo funciona
-
-1. `bots/index.js` determina `enginePortal` (ver Routing abajo)
-2. Si `tieneEngine(enginePortal)` → llama `facturarConEngine(enginePortal, datos)`
-3. `engine/index.js` carga `commerce/{portal}/config.json`, `selectors.json`, `flow.json`, `hooks.js`
-4. `runner.js` ejecuta `buildContext()` → `validateContext()` → steps del flow.json
-5. Cada step usa un action de `engine/actions/`; los hooks llaman funciones de `hooks.js`
-6. Si hay excepción → `[ENGINE FALLBACK]` → cae al bot legacy
-
-### buildContext() — variables disponibles en flow.json
-
-```
-{{url}}            — portalUrl del ticket si matchea dominio, si no url_base del config
-{{portal}}         — id del portal (gasmaz, ramsa, etc.)
-{{ticketId}}       — id del ticket en BD
-{{rfc}}            — RFC del cliente
-{{razonSocial}}    — razón social
-{{regimenFiscal}}  — régimen (ej. "601") — usa default del config si no viene en payload
-{{usoCfdi}}        — uso CFDI (ej. "G03")
-{{folio}}          — folio del ticket
-{{referencia}}     — referencia del ticket (si no hay, usa folio)
-{{total}}          — total como string
-{{totalDecimal}}   — total con exactamente 2 decimales (ej. "908.19")
-{{fecha}}          — fecha YYYY-MM-DD
-{{fechaDMY}}       — fecha DD/MM/YYYY
-{{email}}          — datos_fijos.email del config
-{{selectors.xxx}}  — cualquier selector de selectors.json
-```
-
-### RunnerResult — único contrato de retorno del engine
-
-```js
-{ ok: true,  xmlUrl: "https://...", pdfUrl: "https://..." }  // éxito con archivos
-{ ok: true,  procesandoCorreo: true }                        // factura generada, IMAP recogerá
-{ ok: false, error_code: "...", msg: "..." }                 // error controlado
-```
-
-### error_code enum
-
-| Código | Cuándo ocurre |
-|---|---|
-| `timeout` | waitFor o waitForAny excedió el tiempo límite |
-| `ya_facturado` | el portal detectó que el folio ya tiene factura |
-| `datos_invalidos` | el portal rechazó los datos (RFC, folio, total incorrecto) |
-| `captcha` | el portal bloqueó con CAPTCHA |
-| `portal_caido` | DNS o HTTP falló al navegar |
-| `descarga_fallida` | la factura se generó pero no se pudo descargar |
-| `hook_error` | excepción en una función de hooks.js |
-| `desconocido` | cualquier otro error no clasificado |
-
-### Logs de Railway — cómo identificar qué corrió
-
-```
-[ENGINE][ramsa] Iniciando engine declarativo...        ← engine arrancó
-[ENGINE][ramsa] Resultado: ✅ OK                       ← engine terminó bien
-[ENGINE][ramsa] Resultado: ❌ ya_facturado             ← error controlado del engine
-[ENGINE FALLBACK][ramsa] Excepción no controlada: ... ← bug → cayó a legacy
-[ENGINE FALLBACK][ramsa] Stack: TypeError: ...
-[LEGACY][gasmaz] Ejecutando bot legacy NexusFuel/Gasmaz ← legacy corriendo
-```
-
-Screenshots de debug subidos automáticamente a R2: `debug/{portal}_{ticketId}_ERROR_step{N}_{action}_{ts}.png`
-
----
-
-## Routing: cómo se decide qué engine usar
-
-En `bots/index.js` (inicio de `detectarYFacturar`):
-
-```js
-// NexusFuel tiene dos subportales según el URL del ticket
-let enginePortal = portal;
-if (portal === 'gasmaz' || portalUrl.includes('nexusfuel') || portalUrl.includes('redmaxfactura')) {
-  enginePortal = portalUrl.includes('redmaxfactura') ? 'ramsa' : 'gasmaz';
-}
-// Si tieneEngine(enginePortal) → engine; si excepción → legacy; si ok:false → retorna directo
-```
-
-| portalUrl del ticket | enginePortal | commerce/ usado |
-|---|---|---|
-| `redmaxfactura.nexusfuel.mx` | `ramsa` | `commerce/ramsa/` |
-| `gasmazfactura.nexusfuel.mx` | `gasmaz` | `commerce/gasmaz/` |
-| portal=oxxo | no tiene engine aún | `bots/oxxo.js` (legacy) |
-
----
-
-## Agregar un nuevo portal al engine
-
-1. Crear `commerce/{id}/` con 4 archivos: `config.json`, `selectors.json`, `flow.json`, `hooks.js`
-2. Copiar `commerce/ramsa/` como plantilla si es NexusFuel; si es distinto, diseñar flow desde cero
-3. Si el portal tiene variantes por URL, agregar condición de routing en `bots/index.js`
-4. Validar localmente: `node scripts/validate-selectors-{id}.js` (crea uno nuevo copiando el de gasmaz)
-5. Commit → push → Railway despliega → probar con ticket real
-
-**NO es necesario** tocar `engine/runner.js` ni las actions para un portal nuevo. Solo `commerce/`.
-
----
-
-## Flujo principal (server.js)
-
-1. `POST /api/tickets/subir` — usuario sube imagen
-2. **Pasada 1 (Sonnet)** — detecta portal: `oxxo | arco | gasmaz | farmaciaguadalajara | desconocido`
-3. **Pasada 2 (Sonnet)** — extrae datos con prompt específico por portal
-4. Guarda ticket en BD con status `pendiente_confirmacion`
-5. `POST /api/tickets/:id/confirmar` — usuario confirma/corrige datos (merge genérico)
-6. `POST /api/tickets/:id/facturar` → `bots/index.js` → engine o legacy
-7. Engine/bot retorna RunnerResult
-8. Si `procesandoCorreo`: job IMAP espera correo con XML/PDF
 
 ---
 
 ## Portales y estado actual
 
-| Portal | Mecanismo | Estado | Comercios |
-|---|---|---|---|
-| RAMSA / RedMax | Engine `ramsa` | ✅ En validación | RAMSA del Yaqui y otras gasolineras RedMax |
-| Gasmaz | Engine `gasmaz` | ✅ Listo (pendiente test) | Gasolineras Gasmaz |
-| OXXO | Legacy `oxxo.js` | ✅ Producción | Cualquier OXXO |
-| ARCO / BuzonFacturas | Legacy `buzonfacturas.js` | ✅ Producción | Gasolineras ARCO |
-| Home Depot | Legacy `homedepot.js` | ✅ Producción | Home Depot México |
-| Rendichicas | Legacy `rendichicasestacionpirusadecv.js` | ✅ Producción | Estación Piru |
-| Farmacias Guadalajara | Legacy `farmaciaguadalajara.js` | ⚠️ En desarrollo | Farmacias Guadalajara |
-
-**Próximos portales a migrar al engine:** Rendichicas → OXXO → ARCO (en ese orden de complejidad)
-
----
-
-## Notas críticas por portal
-
-- **RAMSA/Gasmaz (NexusFuel):** Formulario 2 pasos. Selects con carga AJAX — esperar `options.length > 1` antes de seleccionar CFDI. Descarga via `DownloadInvoice.aspx`. Click en "Facturar" se hace por texto con `evaluateHandle` (evita Target closed). Usa stealth. R2 keys: `facturas/ramsa_*.xml` / `facturas/gasmaz_*.xml`
-- **OXXO:** PrimeFaces (JSF). Datepicker complejo, polling para razón social. Fallback de reimpresión. Sin stealth.
-- **BuzonFacturas:** Multi-step con navegaciones reales. Estrategia B (recuperar factura existente). Sin stealth.
-- **IMAP:** Busca correos últimos 60 min con `esCFDI()`. Timeout 120s. Extrae XML/PDF incluyendo ZIPs.
-- **R2:** `facturas/` para documentos finales, `debug/` para screenshots. URL pública via `R2_PUBLIC_URL`.
-- **Mantenimiento:** `MANTENIMIENTO=true` en Railway bloquea toda la app. Bypass: `?bypass=gpnadmin`.
+| Portal | Bot/Mecanismo | Estado |
+|---|---|---|
+| OXXO | engine `commerce/oxxo` + hooks | ✅ Producción (verificado) |
+| ARCO / BuzonFacturas | `buzonfacturas.js` | ✅ Producción |
+| Gasmaz / RAMSA | engine | ✅ Validación |
+| Home Depot | `homedepot.js` | ✅ Producción |
+| Rendichicas | `rendichicas...js` | ✅ Producción |
+| Carl's Jr (ICR) | `carljr.js` | ✅ Verificado (incl. "ya generada"→correo) |
+| SushiO/El Caporal/Allegro | `sushito.js` | ✅ Verificado (vencido→ventana correo) |
+| **AutoZone** | `autozone.js` | ✅ Alta hoy (OCR código de barras) |
+| **Dana Comida Mexicana** | `dana.js` | ✅ Alta hoy (verificado en vivo) |
+| **TUFESA** | `tufesa.js` | ✅ Alta hoy (verificado en vivo) |
+| **7-Eleven** | `7elevenmexicosadecv.js` | ⚠️ EN PRUEBA — CapSolver. Se cierra la sesión al escribir el folio |
+| KFC (PRB) | — | ⏸️ Portal `facturacion.prb.com.mx:444` en MANTENIMIENTO |
+| Farmacias Guadalajara | `farmaciaguadalajara.js` | ⚠️ Datos (folio factura) |
 
 ---
 
-## Patrones del engine — fill strategies
+## Flujo principal (server.js)
 
-El action `fill` soporta 4 estrategias para portales con frameworks distintos:
+1. `POST /upload-ticket` — sube imagen. **La imagen se guarda en R2** (`tickets/`) y la URL queda en `ruta_archivo` (disco de Railway es efímero).
+2. **Pasada 1 (Sonnet)** detecta portal; **Pasada 2 (Sonnet)** extrae datos con prompt por portal (`promptsPorPortal`, fallback `desconocido`).
+3. Ticket en BD; `procesarCola` (30s) lo factura si pasa el gate (incluye autozone/origon/mefacturo/sushio/softrestaurant/tufesa/analytix360).
+4. `bots/index.js` enruta → engine o bot legacy o bot dinámico (slug del comercio).
+5. RunnerResult: `{ok:true,xmlUrl,pdfUrl}` | `{ok:true,procesandoCorreo:true}` (IMAP) | `{ok:false,error_code,msg}`.
 
-| strategy | Cuándo usar |
-|---|---|
-| `keyboard` (default) | Formularios HTML estándar |
-| `angular` | Angular 2+ (usa native setter via Object.getOwnPropertyDescriptor) |
-| `angularjs` | AngularJS 1.x (click + delete + type + events) |
-| `js` | Último recurso (asigna `.value` directo + dispara `change`) |
+### error_code → manejo en ejecutarFacturacion
+- `ticket_vencido` → status error, para reintentos, guarda email_contacto, habilita ventana "Solicitar por correo".
+- `captcha` → status error, para reintentos, notifica "facturar manualmente". (Usado si el captcha NO se puede resolver.)
+- `ya_facturado` / `datos_invalidos` → error controlado.
+- otros → error genérico con reintento a medianoche.
+
+---
+
+## OCR — notas por portal (promptsPorPortal en server.js)
+
+- **OXXO:** folio + idVenta (formato 2díg+3LETRAS+2díg+3alfanum+1díg) + corrección de año.
+- **AutoZone:** el folio es el **NÚMERO LARGO BAJO EL CÓDIGO DE BARRAS**, no el folio corto.
+- **7-Eleven:** el folio es el código de barras de **EXACTAMENTE 35 dígitos** (el portal rechaza si son menos).
+- **SoftRestaurant (SushiO/Dana):** `referencia` = código de facturación (distinto del folio).
+- **TUFESA:** captura `origen` (ciudad de origen del boleto).
+- Año mal leído se corrige con `corregirAnioReciente` en Pasada 2.
+
+---
+
+## Solicitud de factura por correo (tickets vencidos / manuales)
+
+Ventana en Mis Tickets (modal): correo del comercio (pre-cargado de `email_contacto`) + **Forma de pago (Efectivo/Tarjeta)** + Uso CFDI fijo "Gastos en general (G03)". `POST /api/tickets/:id/solicitar-correo` con `{email, formaPago}` → `enviarSolicitudPorCorreo` arma el correo (adjunta **constancia + imagen del ticket** desde R2) y lo manda por Brevo.
+
+---
+
+## Motor de agentes (alta automática de portales nuevos)
+
+Cuando llega un ticket de portal desconocido → `orquestador.orquestar()`:
+1. **analizador** carga el portal, **sigue el iframe del form real** si existe (TUFESA/KFC), **selecciona opciones de `<select>`** que revelan campos, llena con datos reales del ticket, avanza por pasos (incluye `<a>`/FACTURA EXPRESS/Iniciar), captura DOM+screenshots de cada pantalla.
+2. **generador** escribe el bot con selectores reales.
+3. **validador** lo corre EN VIVO; si crashea o devuelve `{ok:false}` SIN error_code controlado → lo marca roto.
+4. **corrector** (hasta 2 veces) lo arregla con el error + screenshots.
+5. Queda en `pendiente_aprobacion` → Admin lo aprueba → `activarBot` (escribe a disco + DB `portales_agente`).
+
+⚠️ **Límite real:** portales con CAPTCHA o que requieren ticket válido para revelar pasos finales necesitan ajuste manual. El alta 100% autónoma no aplica a todos.
+⚠️ `portales.json` puede corromperse por escrituras concurrentes en disco efímero (no rompe routing — usa DB/disco; se restaura en deploy).
+
+---
+
+## Pendientes / dónde nos quedamos (última sesión)
+
+1. **7-Eleven:** el bot con CapSolver se cierra la sesión (`Session closed`) justo al escribir el folio en la SPA Angular. Falta diagnosticar por qué el portal desmonta el DOM al `type()`. El usuario lo corre manual desde Railway con `CAPSOLVER_API_KEY` puesta. Bot en `bots/7elevenmexicosadecv.js`, prueba en `scripts/test-7eleven.js`. CAPTCHA: `img#Kaptcha` (200×50) + campo `#captcha` + reload `img#reload`. Form: `input[name=noTicket]`, `#rfcCliente`, `#razon`, `#regimenFiscalReceptor`, `#usoCfdi`, `#formaPagoAux`, `#cp`, `#emailInput`, botones "Agregar Ticket"/"FACTURAR".
+2. **KFC (PRB):** portal `facturacion.prb.com.mx:444` estaba en MANTENIMIENTO. Reintentar cuando vuelva.
+3. **Little Caesars #89** (analytix360): bot truncado viejo, falta re-alta limpia.
+4. **DNS Brevo:** terminar DMARC (`v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com`) + SPF (`include:spf.brevo.com`) para entregabilidad.
+5. **Limpieza:** quitar endpoints temporales `/api/diag-mail` y `/api/diag-smtp`; `portales.json` escritura atómica.
 
 ---
 
 ## MCP tools disponibles en Claude Code
 
-Configurado en Claude Code con HTTP transport → `portal-facturas-mcp-production.up.railway.app`
-
-| Tool | Qué hace |
-|---|---|
-| `estado_sistema` | Tickets por status, atascados, errores recientes, portales pendientes |
-| `consultar_tickets` | Filtra tickets por status/comercio |
-| `reprocesar_ticket` | Reactiva ticket atascado en procesando_correo |
-| `logs_railway` | Últimas N líneas de logs con filtro opcional |
-| `estado_r2` | Verifica conectividad R2 |
-| `consultar_portales_pendientes` | Lista portales sin bot configurado |
+`estado_sistema`, `consultar_tickets`, `reprocesar_ticket`, `logs_railway`, `estado_r2`, `consultar_portales_pendientes`, `resetear_ticket` → `portal-facturas-mcp-production.up.railway.app`
