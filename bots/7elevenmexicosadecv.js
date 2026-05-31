@@ -37,14 +37,20 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     console.log(`⚠️  Folio tiene ${folioVal.length} dígitos — se esperan 35`);
 
   const token = process.env.BROWSERLESS_TOKEN;
-  if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
+  if (!token) {
+    console.error("❌ BROWSERLESS_TOKEN no definido");
+    return { ok: false, msg: "7-Eleven: BROWSERLESS_TOKEN no definido" };
+  }
 
   let browser;
+  console.log("🔌 Conectando a Browserless...");
   try {
     browser = await puppeteer.connect({
-      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true&timeout=120000`,
+      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true`,
     });
+    console.log("✅ Conectado a Browserless");
   } catch (e) {
+    console.error("❌ Error conectando a Browserless:", e.message);
     return { ok: false, msg: `7-Eleven: no se pudo conectar — ${e.message}` };
   }
 
