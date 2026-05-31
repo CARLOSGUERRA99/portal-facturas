@@ -160,100 +160,80 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     console.log("🔘 Botón Agregar Ticket:", JSON.stringify(btnAgregar));
     await snap("p2_ticket_escrito");
 
-    // ── 4. Click "Agregar Ticket" ─────────────────────────────────────────────
-    // NO usamos waitForNavigation: bloqueaba 12s en inactividad → Browserless
-    // mata la sesión (~15s idle). En cambio, empezamos a sondear inmediatamente
-    // y tomamos screenshots cada 5 polls para mantener la sesión activa.
+    // ── 4. Click "Agregar Ticket" + waitForNavigation (es un POST real, no AJAX)
+    // El botón hace submit de un form → recarga completa de la página.
+    // Railway → México puede tardar 20-40s. Registramos waitForNavigation ANTES
+    // del click para no perder el evento, con timeout de 60s.
     console.log("🖱️  Agregar Ticket...");
-    const clickOk = await page.evaluate(() => {
+    const navAgregar = page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll("button,a,.btn,input[type=button]"))
         .find(e => e.offsetParent && /agregar\s*ticket/i.test(e.textContent || e.value || ""));
-      if (!btn) return false;
-      btn.click();
-      return true;
-    }).catch(() => false);
-    console.log("   evaluate.click:", clickOk);
-
-    // Espera inicial breve — permite que el AJAX/navegación comience
-    await sleep(1500);
-    await snap("p3a_1s_click");   // keep-alive + diagnóstico visual
-
-    // ── 5. Sondeo activo: ROW con contenido real ───────────────────────────────
-    // Cada 5 polls tomamos un screenshot para mantener la sesión de Browserless
-    // activa (screenshots son operaciones válidas aunque el contexto JS esté
-    // temporalmente destruido durante la navegación Angular).
-    // 60 × 500ms = 30 segundos máximo de espera.
-    let resultadoAgregar = "timeout";
-    for (let poll = 0; poll < 60; poll++) {
-      await sleep(500);
-      // Screenshot cada 5 polls (~2.5s): keepalive + log visual del estado
-      if (poll % 10 === 9) await snap(`p3b_poll_${poll}`);
-      try {
-        const estado = await page.evaluate(() => {
-          // Fila con contenido real (no el <tr> placeholder vacío)
-          const rows = Array.from(document.querySelectorAll("table tbody tr"));
-          const hayContenido = rows.some(r => r.textContent.replace(/\s/g, "").length > 10);
-          if (hayContenido) return "agregado";
-          const txt = (document.body.innerText || "").replace(/\s+/g, " ");
-          if (/ya\s+(fue|ha\s+sido)\s+facturad/i.test(txt)) return "ya_facturado";
-          if (/fuera de tiempo|venci/i.test(txt))            return "vencido";
-          if (/no.*(encontr|existe|v[aá]lid)|inv[aá]lid|incorrect/i.test(txt)) return "invalido";
-          // Capturar snippet para diagnóstico aunque sea "esperando"
-          return "esperando";
-        });
-        if (poll === 0 || poll % 10 === 0) console.log(`   poll ${poll}: ${estado}`);
-        if (estado !== "esperando") { resultadoAgregar = estado; break; }
-      } catch (e) {
-        if (poll % 10 === 0) console.log(`   poll ${poll}: ctx destruido (${e.message?.slice(0,40)})`);
-      }
+      if (btn) btn.click();
+    }).catch(() => {});
+    console.log("   esperando recarga de página (hasta 60s)...");
+    try {
+      await navAgregar;
+      console.log("✅ Página recargada tras Agregar Ticket");
+    } catch (e) {
+      console.log("   ⚠️ waitForNavigation timeout:", e.message?.slice(0, 80));
+      await snap("err_nav_timeout");
+      await browser.close();
+      return { ok: false, msg: "7-Eleven: la página no recargó tras Agregar Ticket (timeout 60s)" };
     }
 
+    // Dar tiempo a Angular para montar el DOM después de la recarga
+    await sleep(4000);
     await snap("p3_tras_agregar");
+
+    // ── 5. Verificar estado post-recarga ───────────────────────────────────────
+    const estadoPost = await page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll("table tbody tr"));
+      const hayContenido = rows.some(r => r.textContent.replace(/\s/g, "").length > 10);
+      const txt = (document.body.innerText || "").replace(/\s+/g, " ");
+      if (/ya\s+(fue|ha\s+sido)\s+facturad/i.test(txt)) return "ya_facturado";
+      if (/fuera de tiempo|venci/i.test(txt))            return "vencido";
+      if (/no.*(encontr|existe|v[aá]lid)|inv[aá]lid|incorrect/i.test(txt)) return "invalido";
+      if (hayContenido) return "agregado";
+      return "desconocido";
+    }).catch(() => "ctx_err");
+    console.log("   Estado post-recarga:", estadoPost);
+
     const domInfo = await page.evaluate(() => ({
-      filas: document.querySelectorAll("table tbody tr").length,
       filaContenido: Array.from(document.querySelectorAll("table tbody tr"))
         .filter(r => r.textContent.replace(/\s/g,"").length > 10).length,
-      captchaInput: !!document.querySelector("#captcha"),
       captchaImg: !!(document.querySelector("img#Kaptcha") || document.querySelector("img[src*='Kaptcha']")),
       url: window.location.href,
-      snippet: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 500),
+      snippet: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 400),
     })).catch(() => null);
-    console.log("📊 Post-agregar:", JSON.stringify(domInfo));
-    console.log("   Resultado:", resultadoAgregar);
-    // Si timeout, mostrar el snippet para diagnóstico manual
-    if (resultadoAgregar === "timeout" && domInfo?.snippet) {
-      console.log("   📄 Texto visible:", domInfo.snippet.slice(0, 300));
-    }
+    console.log("📊 DOM:", JSON.stringify(domInfo));
 
-    if (resultadoAgregar === "ya_facturado") {
+    if (estadoPost === "ya_facturado") {
       await browser.close();
       return { ok: false, error_code: "ya_facturado", msg: "7-Eleven: ticket ya facturado" };
     }
-    if (resultadoAgregar === "invalido") {
+    if (estadoPost === "invalido") {
       await browser.close();
       return { ok: false, error_code: "datos_invalidos", msg: "7-Eleven: ticket no encontrado — verifica el folio (35 dígitos)" };
     }
-    if (resultadoAgregar === "vencido") {
+    if (estadoPost === "vencido") {
       await browser.close();
       return { ok: false, error_code: "ticket_vencido", msg: "7-Eleven: el plazo para facturar venció" };
     }
-    if (resultadoAgregar !== "agregado") {
-      await snap("err_no_se_agrego");
+    if (estadoPost !== "agregado") {
+      await snap("err_estado_desconocido");
       await browser.close();
-      return { ok: false, msg: "7-Eleven: el ticket no apareció en la tabla tras Agregar Ticket. Revisa el screenshot." };
+      return { ok: false, msg: `7-Eleven: estado desconocido tras Agregar Ticket (${estadoPost}). Snippet: ${domInfo?.snippet?.slice(0,200)}` };
     }
     console.log("✅ Ticket en tabla");
 
-    // Esperar a que Angular termine de re-montar el form después del AJAX.
-    // Sin este wait, el evaluate del paso siguiente llega justo durante el
-    // re-render y el contexto JS sigue destruido → Session closed.
-    await sleep(3000);
-    await page.waitForSelector("#rfcCliente", { visible: true, timeout: 10000 })
-      .catch(() => {});
-    console.log("✅ Form estabilizado");
+    // ── 6. Llenar formulario en el orden CORRECTO (confirmado por el usuario)
+    // Orden: RFC → Razón Social → Régimen Fiscal → esperar 5s (CFDI carga AJAX)
+    //        → CFDI → CP → email → forma de pago
+    await page.waitForSelector("#rfcCliente", { visible: true, timeout: 8000 }).catch(() => {});
 
-    // ── 6. Llenar el resto del formulario (RFC, razón, CP, email, fpago, etc.)
-    const llenado = await page.evaluate((d) => {
+    // RFC + Razón Social + Régimen Fiscal (inmediatos)
+    const paso1 = await page.evaluate((d) => {
       const set = (el, val) => {
         if (!el) return false;
         const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
@@ -264,19 +244,35 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       const res = {};
       res.rfc   = set(document.querySelector("#rfcCliente"), d.rfc);
       res.razon = set(document.querySelector("#razon"), d.razonSocial || "");
-      res.cp    = set(document.querySelector("#cp"), d.codigoPostal || "");
-      res.email = set(document.querySelector("#emailInput"), "buzonfacturas@serviciosga.site");
-      res.fpago = set(document.querySelector("#formaPagoAux"), "Efectivo");
       const selReg = document.querySelector("#regimenFiscalReceptor");
       if (selReg) {
         for (const o of selReg.options) {
-          if (o.value === d.regimenFiscal || o.text.includes(d.regimenFiscal) || o.text.includes("General de Ley")) {
+          if (o.value === d.regimenFiscal || o.text.includes("General de Ley")) {
             selReg.value = o.value;
             selReg.dispatchEvent(new Event("change", { bubbles: true }));
             res.regimen = true; break;
           }
         }
       }
+      return res;
+    }, { rfc, razonSocial, regimenFiscal: String(regimenFiscal || "601") });
+    console.log("📋 Paso 1 (RFC+Razón+Régimen):", JSON.stringify(paso1));
+
+    // El usuario confirma: esperar ~5s después del Régimen para que el dropdown
+    // de CFDI cargue sus opciones vía AJAX antes de seleccionarlo
+    console.log("   ⏳ Esperando 5s para que cargue CFDI...");
+    await sleep(5000);
+
+    // CFDI + CP + email + forma de pago
+    const paso2 = await page.evaluate((d) => {
+      const set = (el, val) => {
+        if (!el) return false;
+        const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+        s ? s.call(el, val) : (el.value = val);
+        ["input", "change", "blur"].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
+        return true;
+      };
+      const res = {};
       const selCfdi = document.querySelector("#usoCfdi");
       if (selCfdi) {
         for (const o of selCfdi.options) {
@@ -286,10 +282,14 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
             res.cfdi = true; break;
           }
         }
+        if (!res.cfdi) res.cfdiOpts = selCfdi.options.length;
       }
+      res.cp    = set(document.querySelector("#cp"), d.codigoPostal || "");
+      res.email = set(document.querySelector("#emailInput"), "buzonfacturas@serviciosga.site");
+      res.fpago = set(document.querySelector("#formaPagoAux"), "Efectivo");
       return res;
-    }, { rfc, razonSocial, codigoPostal: codigoPostal || "", regimenFiscal: String(regimenFiscal || "601"), usoCfdi: usoCfdi || "G03" });
-    console.log("📋 Campos extra:", JSON.stringify(llenado));
+    }, { usoCfdi: usoCfdi || "G03", codigoPostal: codigoPostal || "" });
+    console.log("📋 Paso 2 (CFDI+CP+email+fpago):", JSON.stringify(paso2));
     await sleep(800);
     await snap("p4_form_completo");
 
