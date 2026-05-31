@@ -160,15 +160,11 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     console.log("🔘 Botón Agregar Ticket:", JSON.stringify(btnAgregar));
     await snap("p2_ticket_escrito");
 
-    // ── 4. Click "Agregar Ticket" + capturar posible SPA navigation ───────────
-    // Angular puede hacer una SPA navigation al validar el ticket; si no
-    // esperamos la navegación, el page context queda "huérfano" y da Session closed.
+    // ── 4. Click "Agregar Ticket" ─────────────────────────────────────────────
+    // NO usamos waitForNavigation: bloqueaba 12s en inactividad → Browserless
+    // mata la sesión (~15s idle). En cambio, empezamos a sondear inmediatamente
+    // y tomamos screenshots cada 5 polls para mantener la sesión activa.
     console.log("🖱️  Agregar Ticket...");
-
-    // Registrar navegación ANTES del click (si llega después del click la perdemos)
-    const navPromise = page.waitForNavigation({ waitUntil: "load", timeout: 12000 })
-      .then(() => "navigated").catch(() => "no-nav");
-
     const clickOk = await page.evaluate(() => {
       const btn = Array.from(document.querySelectorAll("button,a,.btn,input[type=button]"))
         .find(e => e.offsetParent && /agregar\s*ticket/i.test(e.textContent || e.value || ""));
@@ -178,21 +174,20 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     }).catch(() => false);
     console.log("   evaluate.click:", clickOk);
 
-    const navResult = await navPromise;
-    console.log("   navigation:", navResult);
+    // Espera inicial breve — permite que el AJAX/navegación comience
+    await sleep(1500);
+    await snap("p3a_1s_click");   // keep-alive + diagnóstico visual
 
-    // Si hubo navegación real ya estamos en la nueva página; si no, esperamos
-    // que el AJAX complete y Angular termine de re-montar el componente.
-    await sleep(navResult === "navigated" ? 2000 : 4000);
-
-    // ── 5. Esperar ROW con contenido real ─────────────────────────────────────
-    // CRÍTICO: la tabla tiene un <tr> vacío SIEMPRE (placeholder). waitForSelector
-    // resuelve en ese <tr> vacío en <500ms antes de que llegue el AJAX.
-    // Usamos sondeo tolerante al re-render: si el contexto se destruye
-    // brevemente lo reintentamos en el siguiente tick.
+    // ── 5. Sondeo activo: ROW con contenido real ───────────────────────────────
+    // Cada 5 polls tomamos un screenshot para mantener la sesión de Browserless
+    // activa (screenshots son operaciones válidas aunque el contexto JS esté
+    // temporalmente destruido durante la navegación Angular).
+    // 60 × 500ms = 30 segundos máximo de espera.
     let resultadoAgregar = "timeout";
-    for (let poll = 0; poll < 28; poll++) {
+    for (let poll = 0; poll < 60; poll++) {
       await sleep(500);
+      // Screenshot cada 5 polls (~2.5s): keepalive + log visual del estado
+      if (poll % 10 === 9) await snap(`p3b_poll_${poll}`);
       try {
         const estado = await page.evaluate(() => {
           // Fila con contenido real (no el <tr> placeholder vacío)
@@ -203,10 +198,14 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
           if (/ya\s+(fue|ha\s+sido)\s+facturad/i.test(txt)) return "ya_facturado";
           if (/fuera de tiempo|venci/i.test(txt))            return "vencido";
           if (/no.*(encontr|existe|v[aá]lid)|inv[aá]lid|incorrect/i.test(txt)) return "invalido";
+          // Capturar snippet para diagnóstico aunque sea "esperando"
           return "esperando";
         });
+        if (poll === 0 || poll % 10 === 0) console.log(`   poll ${poll}: ${estado}`);
         if (estado !== "esperando") { resultadoAgregar = estado; break; }
-      } catch { /* contexto temporalmente destruido — reintentamos */ }
+      } catch (e) {
+        if (poll % 10 === 0) console.log(`   poll ${poll}: ctx destruido (${e.message?.slice(0,40)})`);
+      }
     }
 
     await snap("p3_tras_agregar");
@@ -216,10 +215,15 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
         .filter(r => r.textContent.replace(/\s/g,"").length > 10).length,
       captchaInput: !!document.querySelector("#captcha"),
       captchaImg: !!(document.querySelector("img#Kaptcha") || document.querySelector("img[src*='Kaptcha']")),
-      snippet: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 400),
+      url: window.location.href,
+      snippet: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 500),
     })).catch(() => null);
     console.log("📊 Post-agregar:", JSON.stringify(domInfo));
     console.log("   Resultado:", resultadoAgregar);
+    // Si timeout, mostrar el snippet para diagnóstico manual
+    if (resultadoAgregar === "timeout" && domInfo?.snippet) {
+      console.log("   📄 Texto visible:", domInfo.snippet.slice(0, 300));
+    }
 
     if (resultadoAgregar === "ya_facturado") {
       await browser.close();
