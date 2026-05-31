@@ -2670,13 +2670,37 @@ async function procesarReintentos() {
           `✅ Tu factura de ${t.comercio} fue generada en el reintento automático. Puedes descargarla en Mis Facturas.`);
         console.log(`✅ Reintento exitoso ticket #${t.id}`);
       } else {
-        // Falló de nuevo — programar otro reintento para mañana a medianoche
-        const sigMedianoche = proximaMedianoche();
-        await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [sigMedianoche, t.id]);
-        await registrarIntento(t.id, datos.portal || t.comercio, 'error', `Reintento automático falló: ${resultado.msg}`, durMs);
-        await crearNotificacion(t.user_id, "factura_error",
-          `Tu factura de ${t.comercio} sigue en proceso — el sistema la reintentará mañana a las 12:00 am. Si es urgente, entra a Mis Tickets y da click en Reintentar.`);
-        console.log(`⚠️ Reintento fallido ticket #${t.id}: ${resultado.msg}`);
+        // Contar cuántos reintentos fallidos lleva este ticket
+        const [[{ nFallos }]] = await db.query(
+          "SELECT COUNT(*) AS nFallos FROM ticket_intentos WHERE ticket_id = ? AND resultado = 'error'",
+          [t.id]
+        ).catch(() => [[{ nFallos: 0 }]]);
+
+        // Si el error es de datos inválidos o vencido → NO reintenta más (son datos del ticket, no bugs)
+        // Si lleva 3+ fallos → detener reintentos y pedir corrección manual
+        const esErrorDeDatos = resultado.error_code === 'datos_invalidos' ||
+                               resultado.error_code === 'ticket_vencido' ||
+                               resultado.error_code === 'captcha';
+        const demasiadosFallos = nFallos >= 3;
+
+        if (esErrorDeDatos || demasiadosFallos) {
+          await db.query("UPDATE tickets SET status = 'error', reintento_programado = NULL WHERE id = ?", [t.id]);
+          await registrarIntento(t.id, datos.portal || t.comercio, 'error', `Reintento automático falló: ${resultado.msg}`, durMs);
+          const razon = esErrorDeDatos
+            ? "Los datos del ticket son incorrectos o el plazo venció"
+            : `Después de ${nFallos} intentos, el sistema no pudo facturar`;
+          await crearNotificacion(t.user_id, "factura_error",
+            `⚠️ ${razon}. Entra a Mis Tickets → Editar datos para corregirlos manualmente.`);
+          console.log(`🛑 Ticket #${t.id} — reintentos detenidos (${razon})`);
+        } else {
+          // Error genuino (timeout, portal caído) — reintenta mañana
+          const sigMedianoche = proximaMedianoche();
+          await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [sigMedianoche, t.id]);
+          await registrarIntento(t.id, datos.portal || t.comercio, 'error', `Reintento automático falló: ${resultado.msg}`, durMs);
+          await crearNotificacion(t.user_id, "factura_error",
+            `Tu factura de ${t.comercio} sigue en proceso — el sistema lo reintentará mañana. Si los datos son incorrectos, usa "Editar datos".`);
+          console.log(`⚠️ Reintento fallido ticket #${t.id}: ${resultado.msg}`);
+        }
       }
     } catch (e) {
       await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [proximaMedianoche(), t.id]);

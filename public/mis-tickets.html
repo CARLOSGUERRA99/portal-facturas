@@ -355,7 +355,24 @@
           }
         }
 
-        const errorMsg = isError && t.error_msg && t.error_msg !== 'ticket_vencido' ? t.error_msg : '';
+        // Mensaje de error legible para el usuario (no el técnico)
+        let errorMsg = '';
+        if (isError && t.error_msg && t.error_msg !== 'ticket_vencido') {
+          const em = t.error_msg;
+          if (/datos.inv[aá]lid|caja|folio|fecha compra|No\. ticket/i.test(em)) {
+            errorMsg = '⚠️ Datos del ticket incorrectos — edita y corrige el folio, caja o fecha';
+          } else if (/código de barras|barcode|verifica código/i.test(em)) {
+            errorMsg = '⚠️ Necesitas el código de barras completo del ticket físico (número largo bajo el código)';
+          } else if (/captcha/i.test(em)) {
+            errorMsg = '⚠️ Este portal requiere facturación manual (tiene CAPTCHA)';
+          } else if (/no se encontró|no encontrado/i.test(em)) {
+            errorMsg = '⚠️ El ticket no fue encontrado en el portal — revisa el folio y la fecha';
+          } else if (/agente|bot generado|pendiente aprobaci/i.test(em)) {
+            errorMsg = '⏳ El sistema está analizando este portal nuevo — espera un momento';
+          } else {
+            errorMsg = em.length > 120 ? em.slice(0, 117) + '…' : em;
+          }
+        }
 
         return `
           <div class="ticket-row" id="ticket-${t.id}">
