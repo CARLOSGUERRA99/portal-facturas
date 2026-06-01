@@ -1516,6 +1516,42 @@ ${INSTRUCCION_CONFIANZA}`,
     const camposDudosos = Array.isArray(datosOCR.campos_dudosos) ? datosOCR.campos_dudosos : [];
     const requiereConfirmacion = (portalDetectado !== 'desconocido') && (confianza !== 'alta' || camposDudosos.length > 0) ? 1 : 0;
 
+    // ── ANTI-DUPLICADOS ───────────────────────────────────────────────────────
+    // Si el mismo usuario ya tiene un ticket del MISMO comercio con el MISMO
+    // identificador (folio/código/referencia/etc.) y NO está en error, es un
+    // duplicado: el portal lo rechazaría como "ya facturado". Avisamos y no lo
+    // insertamos (evita atascos en procesando_correo esperando un correo viejo).
+    const folioUnico = datosOCR.folio || datosOCR.codigoTicket || datosOCR.referencia
+      || datosOCR.idFacturacion || datosOCR.folioFactura || datosOCR.idVenta || null;
+    if (folioUnico && datosOCR.comercio) {
+      try {
+        const [dups] = await db.query(
+          `SELECT id, status, creado FROM tickets
+           WHERE user_id = ? AND LOWER(comercio) = LOWER(?)
+             AND status NOT IN ('error')
+             AND COALESCE(
+               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.folio')),
+               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.codigoTicket')),
+               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.referencia')),
+               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.idFacturacion')),
+               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.folioFactura')),
+               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.idVenta'))
+             ) = ?
+           ORDER BY creado DESC LIMIT 1`,
+          [req.session.userId, datosOCR.comercio, String(folioUnico)]
+        );
+        if (dups.length) {
+          const d = dups[0];
+          const fechaPrev = d.creado ? new Date(d.creado).toLocaleDateString('es-MX') : '';
+          console.log(`🚫 Duplicado: folio ${folioUnico} ya existe en ticket #${d.id} (${d.status})`);
+          return res.json({
+            ok: false, duplicado: true, ticketExistente: d.id,
+            msg: `Este ticket ya fue registrado (folio ${folioUnico})${fechaPrev ? ' el ' + fechaPrev : ''} — ticket #${d.id}. Búscalo en "Mis Facturas".`,
+          });
+        }
+      } catch (e) { console.log("⚠️ Chequeo anti-duplicados falló (continúa):", e.message); }
+    }
+
     // Persistir la imagen del ticket en R2 (el disco de Railway es efímero) para
     // poder adjuntarla luego, p.ej. en la solicitud de factura por correo.
     let imagenTicketUrl = req.file.path;
@@ -1679,8 +1715,8 @@ app.delete("/api/tickets/:id", auth, async (req, res) => {
     );
     if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
     const ticket = rows[0];
-    if (!["error", "pendiente", "pendiente_confirmacion"].includes(ticket.status))
-      return res.json({ ok: false, msg: "Solo se pueden borrar tickets en estado error o pendiente" });
+    if (!["error", "pendiente", "pendiente_confirmacion", "procesando_correo"].includes(ticket.status))
+      return res.json({ ok: false, msg: "Solo se pueden borrar tickets en error, pendiente o esperando correo" });
 
     if (ticket.ruta_archivo && fs.existsSync(ticket.ruta_archivo)) {
       fs.unlinkSync(ticket.ruta_archivo);

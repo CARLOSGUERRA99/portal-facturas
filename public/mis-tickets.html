@@ -330,7 +330,7 @@
         const isError = t.status === 'error';
         const isProcessed = t.status === 'procesado';
         const isProcessing = ['procesando', 'procesando_correo'].includes(t.status);
-        const canDelete = isError || t.status === 'pendiente' || isPendingConfirm;
+        const canDelete = isError || t.status === 'pendiente' || isPendingConfirm || t.status === 'procesando_correo';
         const isVencido = isError && t.error_msg === 'ticket_vencido';
 
         // Select de reasignación (visible solo si hay residentes configurados)
