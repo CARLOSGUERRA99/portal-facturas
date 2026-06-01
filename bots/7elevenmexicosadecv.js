@@ -30,6 +30,116 @@ async function resolverCaptcha(imgBase64) {
   throw new Error("CapSolver timeout 30s");
 }
 
+// ── Recuperar factura existente vía endpoints REST ───────────────────────────
+// Los endpoints son públicos (solo requieren folio/uuid). Abre su PROPIA conexión
+// Browserless limpia — el alert "ya facturado" del flujo principal compromete todo
+// el target, así que un browser nuevo garantiza un contexto sano.
+//   1. findLastCfdi?noTicket={folio}  → {cfdiDisponible, uuid}
+//   2. descargaCfdiXml?uuid={uuid}    → {xml: "<?xml...", ...}
+//   3. descargaCfdiPdf?uuid={uuid}    → {b64Pdf: "JVBER...", folio, ...}
+async function recuperarFacturaExistente(folioVal, ts) {
+  const token = process.env.BROWSERLESS_TOKEN;
+  let browser;
+  try {
+    browser = await puppeteer.connect({
+      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true`,
+    });
+  } catch (e) { console.log("   ⚠️ recuperar: no conectó —", e.message); return null; }
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1280, height: 900 });
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0.0.0 Safari/537.36");
+    page.on("dialog", async d => { try { await d.accept(); } catch {} });
+
+    // Capturar los bodies de las respuestas de los endpoints de descarga.
+    // Importante: usar fetch() directo dentro de evaluate cuelga el target en este
+    // portal; en cambio, dejar que el propio Angular dispare las requests (vía
+    // clicks) y leer las responses con page.on('response') SÍ funciona.
+    const bodies = {};
+    page.on("response", async resp => {
+      const u = resp.url();
+      if (/findLastCfdi|descargaCfdiXml|descargaCfdiPdf/i.test(u)) {
+        const key = /findLastCfdi/i.test(u) ? "findLast" : /Xml/i.test(u) ? "xml" : "pdf";
+        try { bodies[key] = await resp.text(); } catch {}
+      }
+    });
+
+    await page.goto("https://www.e7-eleven.com.mx/facturacion/KPortalExterno/", { waitUntil: "load", timeout: 35000 });
+    await sleep(2500);
+
+    // 1. CONSULTA FACTURA
+    await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button,a,.btn")).find(e => e.offsetParent && /consulta\s*factura/i.test(e.textContent || ""));
+      if (b) b.click();
+    });
+    await sleep(3500);
+
+    // 2. Escribir folio en #noTicket
+    await page.waitForSelector("#noTicket", { visible: true, timeout: 8000 }).catch(() => {});
+    await page.focus("#noTicket").catch(() => {});
+    await sleep(200);
+    await page.keyboard.type(folioVal, { delay: 25 });
+    await sleep(500);
+
+    // 3. CONSULTAR (neutralizar submit nativo) → dispara findLastCfdi
+    await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button,a,.btn,input[type=submit]")).find(e => e.offsetParent && /consultar/i.test(e.textContent || e.value || ""));
+      if (b) { if (b.type === "submit") b.setAttribute("type", "button"); b.click(); }
+    });
+    // Esperar a que aparezca la pantalla de descarga
+    await page.waitForFunction(() => /descargar xml|descargue sus/i.test(document.body.innerText || ""), { timeout: 20000 }).catch(() => {});
+    await sleep(1500);
+    console.log("   findLast:", (bodies.findLast || "").slice(0, 120));
+
+    // 4. Click Descargar XML → dispara descargaCfdiXml
+    await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("a,button")).find(e => /descargar\s*xml/i.test(e.textContent || ""));
+      if (b) b.click();
+    });
+    await sleep(3500);
+
+    // 5. Click Descargar PDF → dispara descargaCfdiPdf
+    await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("a,button")).find(e => /descargar\s*pdf/i.test(e.textContent || ""));
+      if (b) b.click();
+    });
+    await sleep(3500);
+
+    // Parsear bodies y subir a R2
+    let xmlJson = null, pdfJson = null;
+    try { xmlJson = JSON.parse(bodies.xml || "null"); } catch {}
+    try { pdfJson = JSON.parse(bodies.pdf || "null"); } catch {}
+
+    let xmlUrl = null, pdfUrl = null, uuid = null;
+    try { const fl = JSON.parse(bodies.findLast || "null"); uuid = fl?.uuid || null; } catch {}
+
+    const stamp = `${ts}_${Date.now()}`;
+    const xmlStr = (xmlJson && typeof xmlJson.xml === "string" && xmlJson.xml.trim().startsWith("<")) ? xmlJson.xml
+                 : (xmlJson && typeof xmlJson.interpretado === "string" ? xmlJson.interpretado : null);
+    if (xmlStr) {
+      try {
+        xmlUrl = await subirArchivoR2(Buffer.from(xmlStr, "utf8"), `tickets/7e_${stamp}.xml`, "application/xml");
+        console.log(`   ☁️ XML subido: ${xmlUrl}`);
+      } catch (e) { console.log("   ⚠️ subir XML:", e.message); }
+    }
+    const b64 = pdfJson && typeof pdfJson.b64Pdf === "string" ? pdfJson.b64Pdf : null;
+    if (b64) {
+      try {
+        pdfUrl = await subirArchivoR2(Buffer.from(b64, "base64"), `tickets/7e_${stamp}.pdf`, "application/pdf");
+        console.log(`   ☁️ PDF subido: ${pdfUrl}`);
+      } catch (e) { console.log("   ⚠️ subir PDF:", e.message); }
+    }
+    if (!xmlUrl && !pdfUrl) { console.log("   ⚠️ No se obtuvo XML ni PDF"); return null; }
+    return { uuid, xmlUrl, pdfUrl, folio: pdfJson?.folio || xmlJson?.folio || null };
+  } catch (e) {
+    console.log("   ⚠️ recuperar error:", e.message);
+    return null;
+  } finally {
+    try { await browser.close(); } catch {}
+  }
+}
+
 // ── Bot principal ─────────────────────────────────────────────────────────────
 async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
   regimenFiscal, usoCfdi, codigoPostal, ticketId }) {
@@ -220,8 +330,16 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
     console.log("   Resultado Agregar:", resultadoAgregar, ultimoDialog ? `(alert: "${ultimoDialog}")` : "");
 
     if (resultadoAgregar === "ya_facturado") {
-      await browser.close();
-      return { ok: false, error_code: "ya_facturado", msg: `7-Eleven: ${ultimoDialog || "ticket ya facturado"}` };
+      // El ticket ya fue facturado → NO es error: recuperamos la factura existente
+      // vía los endpoints REST (findLastCfdi → descargaCfdiXml/Pdf).
+      console.log("♻️  Ticket ya facturado — recuperando factura existente...");
+      await browser.close();   // liberar la sesión rota antes de abrir una limpia
+      const rec = await recuperarFacturaExistente(folioVal, ts);
+      if (rec && (rec.xmlUrl || rec.pdfUrl)) {
+        console.log(`✅ Factura recuperada — UUID: ${rec.uuid} | folio: ${rec.folio}`);
+        return { ok: true, xmlUrl: rec.xmlUrl, pdfUrl: rec.pdfUrl, yaExistia: true };
+      }
+      return { ok: false, error_code: "ya_facturado", msg: `7-Eleven: ${ultimoDialog || "ticket ya facturado"} (no se pudo recuperar el CFDI)` };
     }
     if (resultadoAgregar === "vencido") {
       await browser.close();
@@ -366,17 +484,18 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
         await browser.close();
         return { ok: false, error_code: "ya_facturado", msg: `7-Eleven: ${ultimoDialog}` };
       }
-      if (facResult === "descarga") {
-        const links = await page.evaluate(() => ({
-          xml: Array.from(document.querySelectorAll("a[href]")).find(a => /\.xml/i.test(a.href))?.href || null,
-          pdf: Array.from(document.querySelectorAll("a[href]")).find(a => /\.pdf/i.test(a.href))?.href || null,
-        })).catch(() => ({ xml: null, pdf: null }));
-        await browser.close();
-        console.log(`✅ OK — XML: ${links.xml} | PDF: ${links.pdf}`);
-        return { ok: true, xmlUrl: links.xml, pdfUrl: links.pdf };
-      }
-      if (facResult === "exito") {
-        await browser.close();
+      if (facResult === "descarga" || facResult === "exito") {
+        // Factura generada. Obtenemos el XML/PDF reales vía los endpoints REST
+        // (findLastCfdi → descargaCfdiXml/Pdf), igual que en el flujo de recuperación.
+        console.log("✅ Factura generada — descargando CFDI vía REST...");
+        await sleep(1500);
+        await browser.close();   // cerrar la sesión principal antes de recuperar
+        const rec = await recuperarFacturaExistente(folioVal, ts);
+        if (rec && (rec.xmlUrl || rec.pdfUrl)) {
+          console.log(`✅ OK — UUID: ${rec.uuid} | XML: ${rec.xmlUrl} | PDF: ${rec.pdfUrl}`);
+          return { ok: true, xmlUrl: rec.xmlUrl, pdfUrl: rec.pdfUrl };
+        }
+        // No disponible aún por REST → llegará por correo (IMAP la captura)
         console.log("✅ Factura generada — llegará por correo");
         return { ok: true, procesandoCorreo: true };
       }
