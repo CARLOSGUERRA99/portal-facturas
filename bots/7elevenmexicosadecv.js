@@ -10,9 +10,21 @@ async function resolverCaptcha(imgBase64) {
   if (!apiKey) throw new Error("CAPSOLVER_API_KEY no definida");
   const c = await fetch("https://api.capsolver.com/createTask", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clientKey: apiKey, task: { type: "ImageToTextTask", body: imgBase64 } }),
+    body: JSON.stringify({ clientKey: apiKey, task: { type: "ImageToTextTask", module: "common", body: imgBase64 } }),
   }).then(r => r.json());
-  if (c.errorId) throw new Error(`CapSolver create: ${c.errorCode}`);
+  if (c.errorId) throw new Error(`CapSolver create: ${c.errorCode || c.errorDescription}`);
+
+  // ImageToTextTask es SÍNCRONO: createTask ya devuelve status:"ready" + solution.
+  // (Hacer polling con getTaskResult sobre un task síncrono da ERROR_TASK_NOT_FOUND.)
+  if (c.status === "ready" && c.solution) {
+    const sol = (c.solution.text || c.solution.answers?.[0] || "").trim();
+    if (!sol) throw new Error("CapSolver sin texto");
+    console.log(`🔓 CAPTCHA resuelto: "${sol}" (conf ${c.solution.confidence ?? "?"})`);
+    return sol;
+  }
+
+  // Fallback: si por alguna razón quedó en processing, hacer polling.
+  if (!c.taskId) throw new Error("CapSolver: sin solución ni taskId");
   for (let i = 0; i < 15; i++) {
     await sleep(2000);
     const res = await fetch("https://api.capsolver.com/getTaskResult", {
@@ -20,12 +32,12 @@ async function resolverCaptcha(imgBase64) {
       body: JSON.stringify({ clientKey: apiKey, taskId: c.taskId }),
     }).then(r => r.json());
     if (res.status === "ready") {
-      const sol = (res.solution?.text || "").trim();
+      const sol = (res.solution?.text || res.solution?.answers?.[0] || "").trim();
       if (!sol) throw new Error("CapSolver sin texto");
       console.log(`🔓 CAPTCHA resuelto: "${sol}"`);
       return sol;
     }
-    if (res.errorId) throw new Error(`CapSolver result: ${res.errorCode}`);
+    if (res.errorId) throw new Error(`CapSolver result: ${res.errorCode || res.errorDescription}`);
   }
   throw new Error("CapSolver timeout 30s");
 }
@@ -211,15 +223,19 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
   // ng-click="..."> dentro de <form method="get"> sin action. El submit nativo
   // recarga la página (GET con query). Cambiamos type→button para ejecutar SOLO
   // el handler AngularJS (AJAX), sin recarga.
-  const clickAngular = (regex) => page.evaluate((rx) => {
+  // preservarSubmit=false: cambia type→button para ejecutar SOLO el ng-click (AJAX),
+  //   evitando el submit nativo que recarga (caso "Agregar Ticket" con ng-click=addRow).
+  // preservarSubmit=true: NO toca el type — para botones type=submit SIN ng-click
+  //   cuya acción ES el submit del form (ng-submit), p.ej. el botón "FACTURAR".
+  const clickAngular = (regex, preservarSubmit = false) => page.evaluate((rx, preservar) => {
     const re = new RegExp(rx, "i");
     const btn = Array.from(document.querySelectorAll("button,a,.btn,input[type=submit],input[type=button]"))
       .find(e => e.offsetParent && re.test((e.textContent || e.value || "").trim()));
     if (!btn) return false;
-    if (btn.tagName === "BUTTON" || btn.type === "submit") btn.setAttribute("type", "button");
+    if (!preservar && (btn.tagName === "BUTTON" || btn.type === "submit")) btn.setAttribute("type", "button");
     btn.click();
     return true;
-  }, regex).catch(() => false);
+  }, regex, preservarSubmit).catch(() => false);
 
   // Capturar CAPTCHA desde dentro del browser (misma sesión → sin CORS)
   const capturarCaptchaBase64 = async () => page.evaluate(async () => {
@@ -408,7 +424,32 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       }
       res.cp    = set(document.querySelector("#cp"), d.codigoPostal || "");
       res.email = set(document.querySelector("#emailInput"), "buzonfacturas@serviciosga.site");
-      res.fpago = set(document.querySelector("#formaPagoAux"), "Efectivo");
+      // Forma de Pago: el portal muestra UNO de dos controles según el ticket:
+      //  - modo EFECTIVO: <input #formaPagoAux readonly> (se autollena "EFECTIVO")
+      //  - modo TARJETA:  <select #formaPago> con 04=crédito, 28=débito (queda VACÍO)
+      // El select #formaPago es el OBLIGATORIO cuando el pago fue con tarjeta.
+      const selFP = document.querySelector("#formaPago");
+      if (selFP && selFP.offsetParent) {
+        // modo tarjeta visible → seleccionar Tarjeta de débito (28) por defecto
+        let elegido = null;
+        for (const o of selFP.options) {
+          if (o.value === "28" || /d[eé]bito/i.test(o.text)) { elegido = o.value; break; }
+        }
+        if (!elegido) for (const o of selFP.options) { if (o.value && o.value !== "?") { elegido = o.value; break; } }
+        if (elegido) {
+          selFP.value = elegido;
+          selFP.dispatchEvent(new Event("change", { bubbles: true }));
+          res.fpago = "tarjeta:" + elegido;
+        } else { res.fpago = "tarjeta:sin-opcion"; }
+      } else {
+        // modo efectivo: el input readonly normalmente ya trae EFECTIVO; forzar por si acaso
+        const inpFP = document.querySelector("#formaPagoAux");
+        if (inpFP) {
+          inpFP.removeAttribute("readonly");
+          set(inpFP, inpFP.value && inpFP.value.trim() ? inpFP.value : "EFECTIVO");
+          res.fpago = "efectivo";
+        } else { res.fpago = "no-encontrado"; }
+      }
       return res;
     }, { usoCfdi: usoCfdi || "G03", codigoPostal: codigoPostal || "" });
     console.log("📋 Paso 2 (CFDI+CP+email+fpago):", JSON.stringify(paso2));
@@ -448,28 +489,38 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
       await sleep(400);
       await snap(`p5_captcha_${intento}`);
 
-      // Click FACTURAR (mismo tratamiento: neutralizar submit nativo)
+      // Click FACTURAR — es <button type="submit"> SIN ng-click: su acción es el
+      // submit del form (ng-submit). NO cambiar el type (preservarSubmit=true).
       console.log("🧾 FACTURAR...");
       ultimoDialog = null;
-      const clickFact = await clickAngular("^facturar$");
+      const clickFact = await clickAngular("^facturar$", true);
       console.log("   click FACTURAR:", clickFact);
 
-      // Esperar resultado: alert (éxito/error) o aparición de enlaces de descarga
+      // Tras FACTURAR aparece un modal "CONFIRMAR DATOS — ¿Están correctos?"
+      // con botones CONTINUAR / CANCELAR. Hay que pulsar CONTINUAR para timbrar.
+      await sleep(2000);
+      const continuar = await clickAngular("^\\s*continuar", true);
+      console.log("   modal CONFIRMAR DATOS → CONTINUAR:", continuar);
+      await sleep(1000);
+
+      // Esperar resultado: alert (error/captcha) o la pantalla "Descargue sus documentos".
+      // La pantalla de éxito tiene botones Descargar XML/PDF con ng-click (NO enlaces
+      // .xml directos), por eso detectamos por TEXTO. El timbrado puede tardar ~20s.
       let facResult = "timeout";
-      for (let i = 0; i < 30; i++) {   // hasta 15s
+      for (let i = 0; i < 100; i++) {   // hasta 50s (el timbrado del CFDI tarda ~30s)
         await sleep(500);
         if (ultimoDialog) {
           const m = ultimoDialog.toLowerCase();
-          if (/captcha|c[oó]digo.*(incorrect|inv[aá]lid)|texto.*imagen/.test(m)) { facResult = "captcha_malo"; break; }
-          if (/correo|enviad|gener|exitos|factura.*list|descarg/.test(m))       { facResult = "exito"; break; }
-          if (clasificarAlert(ultimoDialog) === "ya_facturado")                  { facResult = "ya_facturado"; break; }
-          facResult = "alert_otro"; break;
+          if (/captcha|c[oó]digo.*(incorrect|inv[aá]lid)|texto.*imagen|caracteres/.test(m)) { facResult = "captcha_malo"; break; }
+          if (clasificarAlert(ultimoDialog) === "ya_facturado")            { facResult = "ya_facturado"; break; }
+          if (/correo|enviad|gener|exitos|factura.*list|descarg/.test(m))  { facResult = "exito"; break; }
+          facResult = "alert_otro"; ultimoDialog = null; continue;
         }
-        const links = await page.evaluate(() => ({
-          xml: Array.from(document.querySelectorAll("a[href]")).find(a => /\.xml/i.test(a.href))?.href || null,
-          pdf: Array.from(document.querySelectorAll("a[href]")).find(a => /\.pdf/i.test(a.href))?.href || null,
-        })).catch(() => ({ xml: null, pdf: null }));
-        if (links.xml || links.pdf) { facResult = "descarga"; break; }
+        const pantallaDescarga = await page.evaluate(() => {
+          const txt = (document.body.innerText || "").toLowerCase();
+          return /cfdi generado|generad[oa]\s+exitos|descargue sus documentos|descargar xml|descargar pdf/.test(txt);
+        }).catch(() => false);
+        if (pantallaDescarga) { facResult = "exito"; break; }
       }
       await snap(`p6_resultado_${intento}`);
       console.log("   Resultado FACTURAR:", facResult, ultimoDialog ? `(alert: "${ultimoDialog}")` : "");
