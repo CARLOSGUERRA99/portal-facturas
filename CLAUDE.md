@@ -104,7 +104,7 @@ scripts/                   — herramientas de prueba/sondeo local (test-*, prob
 
 1. `POST /upload-ticket` — sube imagen. **La imagen se guarda en R2** (`tickets/`) y la URL queda en `ruta_archivo` (disco de Railway es efímero).
 2. **Pasada 1 (Sonnet)** detecta portal; **Pasada 2 (Sonnet)** extrae datos con prompt por portal (`promptsPorPortal`, fallback `desconocido`).
-3. Ticket en BD; `procesarCola` (30s) lo factura si pasa el gate (incluye autozone/origon/mefacturo/sushio/softrestaurant/tufesa/analytix360).
+3. Ticket en BD; `procesarCola` (30s, máx 2 concurrentes) lo factura si `requiere_confirmacion=0` y pasa el gate de portales (oxxo/arco/gasmaz/homedepot/rendichicas/.../autozone/7eleven + por portal_url para desconocidos). Anti-duplicados rechaza antes de insertar.
 4. `bots/index.js` enruta → engine o bot legacy o bot dinámico (slug del comercio).
 5. RunnerResult: `{ok:true,xmlUrl,pdfUrl}` | `{ok:true,procesandoCorreo:true}` (IMAP) | `{ok:false,error_code,msg}`.
 
@@ -147,13 +147,29 @@ Cuando llega un ticket de portal desconocido → `orquestador.orquestar()`:
 
 ---
 
-## Pendientes / dónde nos quedamos (última sesión)
+## ✅ Hecho en la sesión del 31-may/1-jun (7-Eleven + anti-duplicados + fixes UI)
 
-1. **7-Eleven:** ✅ RESUELTO. Causa raíz era `$window.alert()` de AngularJS sin `page.on('dialog')` → el alert colgaba el hilo y Browserless mataba la pestaña (daba "Session closed"/"main frame too early"/"Target closed", todos el mismo bug). Fix: dialog handler captura el mensaje y lo acepta; `clasificarAlert()` lo mapea a error_code. `addRow()` es AJAX (no navega); botón `type=submit ng-click` → cambiar a `type=button` antes de click. Si "ya facturado" → `recuperarFacturaExistente()` (conexión nueva, CONSULTA FACTURA → CONSULTAR → Descargar XML/PDF, captura bodies con `page.on('response')`, endpoints `findLastCfdi`/`descargaCfdiXml`/`descargaCfdiPdf`). Validado en vivo (#105, CFDI 4.0 Folio 12584). Falta: prueba con ticket NUEVO no facturado para ver el flujo CAPTCHA→FACTURAR completo. CAPTCHA: `img#Kaptcha` + `#captcha` + reload `img#reload`. ⚠️ `fetch()` directo en evaluate cuelga el target — usar clicks + response capture.
-2. **KFC (PRB):** portal `facturacion.prb.com.mx:444` estaba en MANTENIMIENTO. Reintentar cuando vuelva.
-3. **Little Caesars #89** (analytix360): bot truncado viejo, falta re-alta limpia.
-4. **DNS Brevo:** terminar DMARC (`v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com`) + SPF (`include:spf.brevo.com`) para entregabilidad.
-5. **Limpieza:** quitar endpoints temporales `/api/diag-mail` y `/api/diag-smtp`; `portales.json` escritura atómica.
+- **7-Eleven COMPLETO y verificado en vivo** (facturación nueva CFDI folio 12585 + recuperación). Detalles del flujo y selectores en `memory/project_puppeteer_lessons.md`. Resumen de los bugs resueltos:
+  - `page.on('dialog')` obligatorio: el `$window.alert()` de AngularJS sin handler colgaba el hilo y Browserless mataba la pestaña (causa de "Session closed"/"main frame too early"/"Target closed"/"frame detached" — todos el mismo bug).
+  - OCR: clave de portal `7eleven` con prompt dedicado (folio de 35 dígitos), detección por comercio/URL + normalización de variantes; gate de procesarCola incluye `7eleven`; routing explícito en `bots/index.js`.
+  - CapSolver `ImageToTextTask` es **síncrono** (solución en `createTask`, NO hacer polling). `module:"common"`.
+  - Forma de Pago: modo TARJETA (`<select #formaPago>` 28=débito) vs EFECTIVO (`#formaPagoAux`).
+  - Botón FACTURAR es `type=submit` sin ng-click → NO cambiar type. Tras FACTURAR → modal "CONFIRMAR DATOS" → pulsar CONTINUAR. Timbrado ~30s, detectar éxito por texto "CFDI generado". Timeout ≥50s.
+  - Estrategia IMAP 7-Eleven en server.js: si cae en `procesando_correo`, recupera el CFDI del portal (`recuperarFacturaExistente`).
+- **Anti-duplicados** (server.js, POST /upload-ticket): rechaza ticket del mismo comercio+folio (folio/codigoTicket/referencia/idFacturacion/folioFactura/idVenta) ya registrado (status != error) → `{ok:false, duplicado:true, msg}`.
+- **Fixes UI (`public/mis-tickets.html`):** "Error de conexión al guardar" al editar datos era `facturar(editarTicketId)` llamado tras `cerrarModal()` (que pone editarTicketId=null) → ahora se captura `tid` antes; `facturar()` con guardas null; `res.json()` con `.catch`. DELETE + canDelete permiten `procesando_correo`.
+- **Endpoint admin `/api/admin/tickets/:id/resetear`** ahora pone `requiere_confirmacion=0` (para que la cola lo retome).
+
+## Pendientes / dónde seguir
+
+1. **Rendimiento de facturación (el usuario reporta que tarda mucho):** medir y optimizar. 7-Eleven es el más lento (Browserless connect + form + sleep 5s CFDI + CapSolver + timbrado ~30s + recuperación con 2ª conexión). Ideas: reducir sleeps fijos por waits condicionales; reusar la sesión en vez de abrir 2ª conexión para recuperar; subir XML/PDF a R2 en paralelo. Revisar también límite de 2 concurrentes en `procesarCola`.
+2. **Limpiar `portales_pendientes`:** tiene muchos duplicados de portales que YA tienen bot activo (Home Depot ×3, AutoZone ×2, Rendichicas ×4, TUFESA, SushiO, El Caporal, Allegro, Little Caesars). No rompe nada pero ensucia el panel admin. Hacer dedup / borrar los que ya tienen bot.
+3. **Home Depot — descarga por correo:** el usuario reportó "error al descargar archivos" (Home Depot solo entrega por correo/IMAP). Revisar el flujo IMAP de Home Depot (matching del correo → XML/PDF). Portal con Cloudflare Turnstile (CapSolver lo resuelve).
+4. **KFC (PRB):** portal `facturacion.prb.com.mx:444` estaba en MANTENIMIENTO. Reintentar cuando vuelva.
+5. **Little Caesars #89** (analytix360): bot truncado viejo, falta re-alta limpia.
+6. **DNS Brevo:** terminar DMARC (`v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com`) + SPF (`include:spf.brevo.com`).
+7. **Limpieza:** quitar endpoints temporales `/api/diag-mail` y `/api/diag-smtp`; `portales.json` escritura atómica.
+8. **Debug local > Railway:** hay `.env` local con TODAS las credenciales → correr `node scripts/probe-*.js` da feedback en segundos contra el Browserless de producción. NO iterar a ciegas con `git push`.
 
 ---
 
