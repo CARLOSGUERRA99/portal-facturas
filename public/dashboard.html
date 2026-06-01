@@ -899,15 +899,26 @@
         fetch(`/api/tickets/${confirmarId}`)
           .then(r => r.json())
           .then(data => {
-            if (data.ok && data.ticket && data.ticket.status === 'pendiente_confirmacion' && data.ticket.requiere_confirmacion) {
+            if (!data.ok || !data.ticket) {
+              alert('No se pudo cargar el ticket #' + confirmarId + '. Intenta de nuevo.');
+              return;
+            }
+            const tk = data.ticket;
+            if (tk.status === 'pendiente_confirmacion' && tk.requiere_confirmacion) {
               let datos = {};
-              try { datos = JSON.parse(data.ticket.ocr_json || '{}'); } catch {}
+              try { datos = JSON.parse(tk.ocr_json || '{}'); } catch {}
               const campos = CAMPOS_POR_PORTAL[datos.portal] || CAMPOS_POR_PORTAL.desconocido;
               const camposDudosos = Array.isArray(datos.campos_dudosos) ? datos.campos_dudosos : [];
               abrirModalConfirmacion(confirmarId, datos, campos, camposDudosos);
+            } else if (tk.status === 'pendiente_confirmacion') {
+              // requiere_confirmacion = 0 → ya está en cola para facturarse solo
+              alert('El ticket #' + confirmarId + ' ya está en cola y se facturará automáticamente. No requiere confirmación manual.');
+            } else {
+              const human = { procesando: 'procesándose', procesando_correo: 'esperando la factura por correo', completado: 'facturado', error: 'con error' }[tk.status] || tk.status;
+              alert('El ticket #' + confirmarId + ' ya está ' + human + '. No requiere confirmación.');
             }
           })
-          .catch(() => {});
+          .catch(() => alert('Error de red al cargar el ticket. Revisa tu conexión.'));
       }
     })();
   </script>

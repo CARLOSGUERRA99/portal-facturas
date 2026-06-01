@@ -655,13 +655,17 @@ async function procesarCola() {
              t.portal_url LIKE '%sushio%'           OR
              t.portal_url LIKE '%analytix360%'      OR
              t.portal_url LIKE '%tufesa%'           OR
+             t.portal_url LIKE '%e7-eleven%'        OR
              t.portal_url LIKE '%softrestaurant.com%'
            )
          )
          OR (
            -- Fallback por comercio cuando portal=desconocido
            JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) = 'desconocido'
-           AND LOWER(JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.comercio'))) LIKE '%autozone%'
+           AND (
+             LOWER(JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.comercio'))) LIKE '%autozone%'
+             OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.comercio'))) LIKE '%eleven%'
+           )
          )
        )
        ORDER BY t.creado ASC LIMIT ?`,
