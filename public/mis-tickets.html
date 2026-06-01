@@ -405,46 +405,42 @@
     }
 
     async function facturar(ticketId) {
+      // btn puede no existir si se invoca tras editar/recargar — proteger con guardas.
       const btn = document.getElementById('btn-' + ticketId);
       const alertEl = document.getElementById('alert-factura');
-      btn.disabled = true;
-      btn.innerHTML = '<span class="spinner"></span>';
-      alertEl.style.display = 'none';
+      const showAlert = (cls, txt, bg, color) => {
+        if (!alertEl) return;
+        alertEl.className = cls;
+        alertEl.textContent = txt;
+        if (bg) alertEl.style.background = bg;
+        if (color) alertEl.style.color = color;
+        alertEl.style.display = 'block';
+      };
+      const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = 'Reintentar'; } };
+      if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+      if (alertEl) alertEl.style.display = 'none';
 
       try {
         const res = await fetch(`/facturar/${ticketId}`, { method: 'POST' });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ ok: false, msg: 'Respuesta inválida del servidor' }));
 
         if (data.ok) {
-          alertEl.className = 'alert alert-success';
-          alertEl.textContent = data.procesando
+          showAlert('alert alert-success', data.procesando
             ? 'Facturación iniciada en segundo plano. Te avisaremos cuando esté lista.'
-            : 'Factura generada. Revisa "Mis Facturas" para descargarla.';
-          alertEl.style.display = 'block';
+            : 'Factura generada. Revisa "Mis Facturas" para descargarla.');
           cargarTickets();
         } else if (data.enCola) {
-          alertEl.className = 'alert';
-          alertEl.style.background = '#fff8e6';
-          alertEl.style.color = '#c97b00';
-          alertEl.style.display = 'block';
-          alertEl.textContent = data.msg || 'En cola — se procesará automáticamente.';
-          btn.disabled = false;
-          btn.textContent = 'Reintentar';
+          showAlert('alert', data.msg || 'En cola — se procesará automáticamente.', '#fff8e6', '#c97b00');
+          resetBtn();
           cargarTickets();
         } else {
-          alertEl.className = 'alert alert-error';
-          alertEl.textContent = 'Error: ' + (data.msg || 'No se pudo generar la factura');
-          alertEl.style.display = 'block';
-          btn.disabled = false;
-          btn.textContent = 'Reintentar';
+          showAlert('alert alert-error', 'Error: ' + (data.msg || 'No se pudo generar la factura'));
+          resetBtn();
           cargarTickets();
         }
       } catch {
-        alertEl.className = 'alert alert-error';
-        alertEl.textContent = 'Error de conexión. Intenta de nuevo.';
-        alertEl.style.display = 'block';
-        btn.disabled = false;
-        btn.textContent = 'Reintentar';
+        showAlert('alert alert-error', 'Error de conexión. Intenta de nuevo.');
+        resetBtn();
       }
     }
 
@@ -583,10 +579,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => ({ ok: false, msg: `El servidor respondió ${res.status}. Intenta de nuevo en un momento.` }));
+        const tid = editarTicketId;
         cerrarModal();
         if (data.ok) {
-          await facturar(editarTicketId);
+          await facturar(tid);
         } else {
           const alertEl = document.getElementById('alert-factura');
           if (alertEl) {
