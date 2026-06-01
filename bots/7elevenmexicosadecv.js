@@ -517,4 +517,4 @@ async function facturar7Eleven({ folio, referencia, total, rfc, razonSocial,
   }
 }
 
-module.exports = { facturar7Eleven };
+module.exports = { facturar7Eleven, recuperarFacturaExistente };

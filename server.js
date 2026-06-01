@@ -2577,6 +2577,53 @@ async function procesarTicketsPorCorreo() {
       const esArco = portalDelTicket === "arco" || portalDelTicket === "buzonfacturas" ||
         (ticket.comercio || "").toLowerCase().includes("arco");
 
+      // Estrategia 7-Eleven: la factura NO llega por correo — se recupera del
+      // portal con los endpoints REST (findLastCfdi → descargaCfdiXml/Pdf).
+      const es7Eleven = portalDelTicket.includes("eleven") || (ticket.comercio || "").toLowerCase().includes("eleven");
+      if (es7Eleven) {
+        try {
+          const { recuperarFacturaExistente } = require("./bots/7elevenmexicosadecv");
+          const folio7e = datos.folio || datos.referencia || "";
+          console.log(`♻️ Job IMAP: recuperando CFDI de 7-Eleven del portal para #${ticket.id} (folio ${folio7e})...`);
+          const rec = await recuperarFacturaExistente(folio7e, ticket.id);
+          if (rec && (rec.xmlUrl || rec.pdfUrl)) {
+            await db.query(
+              "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
+              [ticket.user_id, ticket.id, ticket.comercio, rec.pdfUrl || null, rec.xmlUrl || null, "completado"]
+            );
+            await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticket.id]);
+            console.log(`✅ Job IMAP: 7-Eleven recuperado para #${ticket.id} (UUID ${rec.uuid}, folio ${rec.folio})`);
+            await crearNotificacion(ticket.user_id, "factura_lista",
+              `Tu factura de ${ticket.comercio || "7-Eleven"} ya está lista para descargar.`).catch(() => {});
+            try {
+              if (ticket.email) {
+                await enviarCorreo({
+                  from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
+                  to: ticket.email,
+                  subject: "✅ Tu factura está lista — GPN Pinturas y Recubrimientos",
+                  html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+                    <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;"><h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2></div>
+                    <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
+                      <p>Hola <strong>${ticket.user_nombre || ""}</strong>,</p>
+                      <p>Tu factura de <strong>${ticket.comercio || "7-Eleven"}</strong> está lista.</p>
+                      <div style="margin:20px 0;">
+                        ${rec.xmlUrl ? `<a href="${rec.xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ""}
+                        ${rec.pdfUrl ? `<a href="${rec.pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ""}
+                      </div>
+                    </div></div>`,
+                });
+                console.log(`📧 Job IMAP: correo enviado a ${ticket.email}`);
+              }
+            } catch (mailErr) { console.log("⚠️ Job IMAP: error enviando correo:", mailErr.message); }
+          } else {
+            console.log(`⚠️ Job IMAP: no se pudo recuperar CFDI de 7-Eleven para #${ticket.id} — reintentará en siguiente ciclo`);
+          }
+        } catch (e7) {
+          console.log(`⚠️ Job IMAP: error recuperando 7-Eleven #${ticket.id}: ${e7.message} — reintentará`);
+        }
+        continue;
+      }
+
       if (!esArco) {
         // Dejar en procesando_correo para que el próximo ciclo (2 min) reintente.
         // El expirador de 30 min convertirá a error si el correo nunca llega.
