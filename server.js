@@ -2812,8 +2812,10 @@ app.post("/api/admin/tickets/:id/resetear", auth, requireAdmin, async (req, res)
   try {
     const id = parseInt(req.params.id);
     await db.query("DELETE FROM facturas WHERE ticket_id = ?", [id]);
+    // requiere_confirmacion=0 → procesarCola lo retoma y lo factura solo
+    // (sin esto el ticket queda atascado esperando una confirmación manual).
     await db.query(
-      "UPDATE tickets SET status='pendiente_confirmacion', error_msg=NULL, procesando_correo_desde=NULL, reintento_programado=NULL WHERE id=?",
+      "UPDATE tickets SET status='pendiente_confirmacion', requiere_confirmacion=0, error_msg=NULL, procesando_correo_desde=NULL, reintento_programado=NULL WHERE id=?",
       [id]
     );
     res.json({ ok: true });
