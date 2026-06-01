@@ -94,7 +94,7 @@ scripts/                   — herramientas de prueba/sondeo local (test-*, prob
 | **AutoZone** | `autozone.js` | ✅ Alta hoy (OCR código de barras) |
 | **Dana Comida Mexicana** | `dana.js` | ✅ Alta hoy (verificado en vivo) |
 | **TUFESA** | `tufesa.js` | ✅ Alta hoy (verificado en vivo) |
-| **7-Eleven** | `7elevenmexicosadecv.js` | ⚠️ EN PRUEBA — CapSolver. Se cierra la sesión al escribir el folio |
+| **7-Eleven** | `7elevenmexicosadecv.js` | ✅ Verificado en vivo. CapSolver + dialog handler + recupera CFDI ya facturado |
 | KFC (PRB) | — | ⏸️ Portal `facturacion.prb.com.mx:444` en MANTENIMIENTO |
 | Farmacias Guadalajara | `farmaciaguadalajara.js` | ⚠️ Datos (folio factura) |
 
@@ -149,7 +149,7 @@ Cuando llega un ticket de portal desconocido → `orquestador.orquestar()`:
 
 ## Pendientes / dónde nos quedamos (última sesión)
 
-1. **7-Eleven:** el bot con CapSolver se cierra la sesión (`Session closed`) justo al escribir el folio en la SPA Angular. Falta diagnosticar por qué el portal desmonta el DOM al `type()`. El usuario lo corre manual desde Railway con `CAPSOLVER_API_KEY` puesta. Bot en `bots/7elevenmexicosadecv.js`, prueba en `scripts/test-7eleven.js`. CAPTCHA: `img#Kaptcha` (200×50) + campo `#captcha` + reload `img#reload`. Form: `input[name=noTicket]`, `#rfcCliente`, `#razon`, `#regimenFiscalReceptor`, `#usoCfdi`, `#formaPagoAux`, `#cp`, `#emailInput`, botones "Agregar Ticket"/"FACTURAR".
+1. **7-Eleven:** ✅ RESUELTO. Causa raíz era `$window.alert()` de AngularJS sin `page.on('dialog')` → el alert colgaba el hilo y Browserless mataba la pestaña (daba "Session closed"/"main frame too early"/"Target closed", todos el mismo bug). Fix: dialog handler captura el mensaje y lo acepta; `clasificarAlert()` lo mapea a error_code. `addRow()` es AJAX (no navega); botón `type=submit ng-click` → cambiar a `type=button` antes de click. Si "ya facturado" → `recuperarFacturaExistente()` (conexión nueva, CONSULTA FACTURA → CONSULTAR → Descargar XML/PDF, captura bodies con `page.on('response')`, endpoints `findLastCfdi`/`descargaCfdiXml`/`descargaCfdiPdf`). Validado en vivo (#105, CFDI 4.0 Folio 12584). Falta: prueba con ticket NUEVO no facturado para ver el flujo CAPTCHA→FACTURAR completo. CAPTCHA: `img#Kaptcha` + `#captcha` + reload `img#reload`. ⚠️ `fetch()` directo en evaluate cuelga el target — usar clicks + response capture.
 2. **KFC (PRB):** portal `facturacion.prb.com.mx:444` estaba en MANTENIMIENTO. Reintentar cuando vuelva.
 3. **Little Caesars #89** (analytix360): bot truncado viejo, falta re-alta limpia.
 4. **DNS Brevo:** terminar DMARC (`v=DMARC1; p=none; rua=mailto:rua@dmarc.brevo.com`) + SPF (`include:spf.brevo.com`) para entregabilidad.
