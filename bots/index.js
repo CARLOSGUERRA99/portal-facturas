@@ -159,6 +159,18 @@ async function detectarYFacturar(datos, db = null) {
   }
 
   if (
+    portal === '7eleven' ||
+    portal === 'seveneleven' ||
+    comercio.includes('eleven') ||
+    portalUrl.includes('e7-eleven') ||
+    portalUrl.includes('7-eleven')
+  ) {
+    console.log('🎯 Portal detectado: 7-Eleven México');
+    const { facturar7Eleven } = require('./7elevenmexicosadecv');
+    return await facturar7Eleven(datos);
+  }
+
+  if (
     portal === 'sushito' ||
     portal === 'sushio' ||
     portal === 'elcaporal' ||

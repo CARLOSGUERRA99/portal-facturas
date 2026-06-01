@@ -641,7 +641,7 @@ async function procesarCola() {
        WHERE t.status = 'pendiente_confirmacion' AND t.requiere_confirmacion = 0
        AND u.rfc IS NOT NULL AND u.rfc != ''
        AND (
-         JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr','elcaporal','elcaporalrestaurante','allegro','allegrecaffe','allegrezonadorada','autozone')
+         JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr','elcaporal','elcaporalrestaurante','allegro','allegrecaffe','allegrezonadorada','autozone','7eleven')
          OR (
            -- Portales con portal=desconocido pero portalUrl conocida
            JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) = 'desconocido'
@@ -1281,6 +1281,7 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         else if (urlLow.includes("e-facturate.com/benavides")) portalDetectado = "benavides";
         else if (urlLow.includes("facturacion4.icr.mx") || urlLow.includes("icr.mx")) portalDetectado = "carljr";
         else if (urlLow.includes("grupopanama.mx")) portalDetectado = "panama";
+        else if (urlLow.includes("e7-eleven") || urlLow.includes("7-eleven")) portalDetectado = "7eleven";
         if (portalDetectado !== "desconocido")
           console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
         datosOCR.portalUrl = urlQR;
@@ -1291,9 +1292,20 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
         portalDetectado = "oxxo";
         console.log(`🏪 Portal resuelto por nombre OXXO: ${det.comercio}`);
       }
+
+      // 7-Eleven: el comercio "7 Eleven Mexico SA de CV" es muy distintivo
+      if (portalDetectado === "desconocido" && det.comercio && /eleven/i.test(det.comercio)) {
+        portalDetectado = "7eleven";
+        console.log(`🏪 Portal resuelto por nombre 7-Eleven: ${det.comercio}`);
+      }
     } catch (e) {
       console.log("⚠️ Sonnet detección falló:", e.message);
     }
+
+    // Normalizar cualquier variante de 7-Eleven (p.ej. el slug largo
+    // "7elevenmexicosadecv" que viene de portales.json) a la clave única "7eleven"
+    // para que use el prompt dedicado, campos y gate correctos.
+    if (/eleven/i.test(portalDetectado)) portalDetectado = "7eleven";
 
     // ── PASADA 2: Extracción dirigida (Sonnet) ──
     // Instrucción de confianza que se agrega al final de cada prompt
@@ -1389,8 +1401,17 @@ ${INSTRUCCION_CONFIANZA}`,
   "portalUrl": "URL del portal de facturación si aparece (facturacion4.icr.mx o carlsjrclub.com.mx), o null",
   "portal": "carljr",
 ${INSTRUCCION_CONFIANZA}`,
+      "7eleven": `Extrae estos datos del ticket de 7-Eleven México. Responde SOLO JSON sin texto adicional:
+{
+  "comercio": "7 Eleven Mexico SA de CV",
+  "fecha": "DD/MM/YYYY",
+  "folio": "el CÓDIGO numérico de EXACTAMENTE 35 DÍGITOS para facturar (suele estar impreso bajo el código de barras, o etiquetado como 'Folio'/'No. Ticket'/'Folio de facturación'). REGLA CRÍTICA: CUÉNTALOS, deben ser EXACTAMENTE 35 dígitos. Léelo dígito por dígito SIN omitir ninguno — el portal RECHAZA el ticket si faltan dígitos. Corrige ambigüedades O→0, I→1, S→5, B→8. Si no logras leer los 35 dígitos con certeza, devuelve null (es mejor null que un folio incompleto).",
+  "total": número sin signos,
+  "portalUrl": "https://www.e7-eleven.com.mx/facturacion/KPortalExterno/",
+  "portal": "7eleven",
+${INSTRUCCION_CONFIANZA}`,
       desconocido: `Extrae los datos que puedas de este ticket. Si reconoces el portal, identifícalo.
-Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx), carljr (Carl's Jr / ICR S.A. de C.V., portal facturacion4.icr.mx), autozone (AutoZone de México, portal autozone.cdc.origon.cloud).
+Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx), carljr (Carl's Jr / ICR S.A. de C.V., portal facturacion4.icr.mx), autozone (AutoZone de México, portal autozone.cdc.origon.cloud), 7eleven (tiendas 7-Eleven, "7 Eleven Mexico SA de CV", portal e7-eleven.com.mx — el folio es un código de 35 dígitos).
 Responde SOLO JSON sin texto adicional:
 {
   "comercio": "nombre del comercio",
@@ -1400,7 +1421,7 @@ Responde SOLO JSON sin texto adicional:
   "origen": "para TUFESA (boletos de autobús): la CIUDAD DE ORIGEN del viaje impresa en el boleto. Si no aplica, null",
   "total": número sin signos,
   "portalUrl": "URL de QR de facturación si aparece, o null",
-  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|autozone|desconocido",
+  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|autozone|7eleven|desconocido",
 ${INSTRUCCION_CONFIANZA}`,
     };
 
@@ -1455,6 +1476,17 @@ ${INSTRUCCION_CONFIANZA}`,
       console.log(`🔄 Portal reclasificado por Pasada 2: ${portalDetectado}`);
     }
 
+    // 7-Eleven por comercio (red de seguridad si Pasada 1/2 no lo marcaron)
+    if (portalDetectado === "desconocido" && (datosOCR.comercio || "").toLowerCase().includes("eleven")) {
+      portalDetectado = "7eleven";
+      datosOCR.portal = "7eleven";
+      console.log(`🏪 Portal reclasificado como 7-Eleven por comercio: ${datosOCR.comercio}`);
+    }
+    // portalUrl fija de 7-Eleven (necesaria para el gate de procesarCola)
+    if (portalDetectado === "7eleven" && !datosOCR.portalUrl) {
+      datosOCR.portalUrl = "https://www.e7-eleven.com.mx/facturacion/KPortalExterno/";
+    }
+
     // Correcciones SOLO para OXXO
     if (portalDetectado === "oxxo" || datosOCR.portal === "oxxo") {
       datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
@@ -1475,6 +1507,7 @@ ${INSTRUCCION_CONFIANZA}`,
       panama:              ['idFacturacion', 'total', 'comercio'],
       sushito:             ['referencia', 'folio', 'total'],
       sushio:              ['referencia', 'folio', 'total'],
+      "7eleven":           ['folio', 'fecha', 'total'],
       desconocido:         ['fecha', 'total'],
     };
     const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
