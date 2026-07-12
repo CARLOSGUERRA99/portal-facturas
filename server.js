@@ -2590,7 +2590,7 @@ async function procesarTicketsPorCorreo() {
       // Espera corta por ticket (3 min): si el correo no llegó, se deja en
       // procesando_correo y el siguiente ciclo (cada 2 min) reintenta. Evita que
       // un ticket sin correo bloquee a los demás del lote hasta 10 min cada uno.
-      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 3 * 60 * 1000, expectedComercio);
+      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 3 * 60 * 1000, expectedComercio, datos.total ?? null);
 
       // UUID desde el contenido del XML (fuente canónica del CFDI)
       // Fallback: timestamp si el XML no está disponible

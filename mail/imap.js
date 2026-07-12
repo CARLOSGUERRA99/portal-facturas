@@ -29,6 +29,16 @@ function esCFDI(subject, from) {
   );
 }
 
+// Extrae el Total del CFDI desde el XML (atributo Total del nodo Comprobante).
+// El \s inicial evita capturar "SubTotal". Devuelve número o null si no se encuentra.
+function extraerTotalCFDI(xmlBuffer) {
+  try {
+    const xml = xmlBuffer.toString('utf8');
+    const m = xml.match(/<(?:cfdi:)?Comprobante\b[^>]*\sTotal="([\d.]+)"/i);
+    return m ? parseFloat(m[1]) : null;
+  } catch { return null; }
+}
+
 // Extrae XML y PDF (incluyendo ZIPs) de los adjuntos de un correo ya parseado
 async function extraerAdjuntos(parsed) {
   let xmlBuffer = null, pdfBuffer = null;
@@ -61,7 +71,7 @@ async function extraerAdjuntos(parsed) {
 // imap.search() devuelve UIDs (no sequence numbers). Se usa imap.fetch() (UID-based)
 // en lugar de imap.seq.fetch() para evitar "Invalid messageset" cuando los
 // sequence numbers no coinciden con los UIDs tras expunge/delete en el buzón.
-async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedComercio = null) {
+async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedComercio = null, expectedTotal = null) {
   return new Promise((resolve, reject) => {
     const imap = new Imap({
       user:     process.env.IMAP_USER,
@@ -93,12 +103,12 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedC
                   imap.end();
                   return reject(new Error('No se encontró correo de factura'));
                 }
-                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject, expectedComercio);
+                procesarCorreos(imap, uids2, ticketCode, timer, resolve, reject, expectedComercio, expectedTotal);
               });
             }, 15000);
             return;
           }
-          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedComercio);
+          procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedComercio, expectedTotal);
         });
       });
     });
@@ -108,7 +118,7 @@ async function esperarFacturaPorCorreo(ticketCode, timeoutMs = 120000, expectedC
   });
 }
 
-async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedComercio = null) {
+async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, expectedComercio = null, expectedTotal = null) {
   console.log(`📨 Correos sin leer encontrados: ${uids.length} (UIDs: ${uids.join(', ')})`);
 
   // Usar imap.fetch() (UID-based) — imap.search() devuelve UIDs, no seq numbers.
@@ -190,6 +200,33 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
                 continue;
               }
             }
+            // ── Verificación por MONTO (anti-cruce de facturas) ──────────────
+            // Si conocemos el total del ticket y el XML trae Total, deben coincidir
+            // (tolerancia 1 centavo). Si NO coinciden, este correo es de OTRA compra:
+            // se ignora SIN marcarlo leído (otro ticket podrá reclamarlo) y el ticket
+            // sigue esperando su correo correcto. Si el total no se puede leer
+            // (correo solo-PDF o XML sin atributo Total), no hay evidencia de
+            // conflicto y se mantiene el comportamiento anterior.
+            // Tolerancia $1.00: validado contra las 43 facturas reales del sistema —
+            // OXXO factura SIN el "REDONDEO" del ticket (donativo), así que el CFDI
+            // puede ser hasta ~$0.99 menor que el total del ticket. Los cruces
+            // reales detectados difieren por $56+, muy por encima de $1.
+            const TOLERANCIA_TOTAL = 1.00;
+            const totalEsperado = parseFloat(expectedTotal);
+            if (xmlBuffer && !isNaN(totalEsperado)) {
+              const totalCFDI = extraerTotalCFDI(xmlBuffer);
+              if (totalCFDI !== null && Math.abs(totalCFDI - totalEsperado) > TOLERANCIA_TOTAL) {
+                console.log(`   ↳ ⚠️ Total NO coincide (CFDI: $${totalCFDI} vs ticket: $${totalEsperado}) — correo de otra compra, ignorando`);
+                continue;
+              }
+              if (totalCFDI !== null) {
+                console.log(`   ↳ 💲 Total verificado: $${totalCFDI} = $${totalEsperado}`);
+              } else {
+                console.log(`   ↳ ⚠️ XML sin atributo Total legible — no se pudo verificar monto (se acepta por comercio)`);
+              }
+            } else if (!xmlBuffer && !isNaN(totalEsperado)) {
+              console.log(`   ↳ ⚠️ Correo solo-PDF — no se pudo verificar monto (se acepta por comercio)`);
+            }
             console.log(`   ↳ ✅ Archivos extraídos — XML: ${!!xmlBuffer} | PDF: ${!!pdfBuffer}`);
             encontrado = { xmlBuffer, pdfBuffer, subject, uid: msgUid };
             break;
@@ -226,4 +263,4 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
   });
 }
 
-module.exports = { esperarFacturaPorCorreo };
+module.exports = { esperarFacturaPorCorreo, extraerTotalCFDI };
