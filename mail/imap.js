@@ -201,32 +201,35 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
               }
             }
             // ── Verificación por MONTO (anti-cruce de facturas) ──────────────
-            // Si conocemos el total del ticket y el XML trae Total, deben coincidir
-            // (tolerancia 1 centavo). Si NO coinciden, este correo es de OTRA compra:
-            // se ignora SIN marcarlo leído (otro ticket podrá reclamarlo) y el ticket
-            // sigue esperando su correo correcto. Si el total no se puede leer
-            // (correo solo-PDF o XML sin atributo Total), no hay evidencia de
-            // conflicto y se mantiene el comportamiento anterior.
-            // Tolerancia $1.00: validado contra las 43 facturas reales del sistema —
-            // OXXO factura SIN el "REDONDEO" del ticket (donativo), así que el CFDI
-            // puede ser hasta ~$0.99 menor que el total del ticket. Los cruces
-            // reales detectados difieren por $56+, muy por encima de $1.
+            // REGLA (aprobada por el usuario): un correo solo se concilia con un
+            // ticket si el Total del CFDI se pudo VERIFICAR contra el total del
+            // ticket. "No poder verificar" (correo solo-PDF, XML sin Total, o
+            // ticket sin total) NO es coincidencia: el correo se deja SIN marcar
+            // leído y el ticket seguirá esperando; si nunca llega un correo
+            // verificable, el expirador de 60 min lo pasa a error → revisión manual.
+            // Tolerancia $1.00: validada contra las 43 facturas reales — OXXO
+            // factura SIN el "REDONDEO" del ticket (donativo), así que el CFDI
+            // puede ser hasta ~$0.99 menor. Los cruces reales difieren por $56+.
             const TOLERANCIA_TOTAL = 1.00;
             const totalEsperado = parseFloat(expectedTotal);
-            if (xmlBuffer && !isNaN(totalEsperado)) {
-              const totalCFDI = extraerTotalCFDI(xmlBuffer);
-              if (totalCFDI !== null && Math.abs(totalCFDI - totalEsperado) > TOLERANCIA_TOTAL) {
-                console.log(`   ↳ ⚠️ Total NO coincide (CFDI: $${totalCFDI} vs ticket: $${totalEsperado}) — correo de otra compra, ignorando`);
-                continue;
-              }
-              if (totalCFDI !== null) {
-                console.log(`   ↳ 💲 Total verificado: $${totalCFDI} = $${totalEsperado}`);
-              } else {
-                console.log(`   ↳ ⚠️ XML sin atributo Total legible — no se pudo verificar monto (se acepta por comercio)`);
-              }
-            } else if (!xmlBuffer && !isNaN(totalEsperado)) {
-              console.log(`   ↳ ⚠️ Correo solo-PDF — no se pudo verificar monto (se acepta por comercio)`);
+            const totalCFDI = xmlBuffer ? extraerTotalCFDI(xmlBuffer) : null;
+            if (isNaN(totalEsperado)) {
+              console.log(`   ↳ ⚠️ Ticket sin total OCR — no se puede verificar monto. Correo NO conciliado (revisión manual)`);
+              continue;
             }
+            if (!xmlBuffer) {
+              console.log(`   ↳ ⚠️ Correo solo-PDF (sin XML) — no se puede verificar monto. Correo NO conciliado (revisión manual)`);
+              continue;
+            }
+            if (totalCFDI === null) {
+              console.log(`   ↳ ⚠️ XML sin atributo Total legible — no se puede verificar monto. Correo NO conciliado (revisión manual)`);
+              continue;
+            }
+            if (Math.abs(totalCFDI - totalEsperado) > TOLERANCIA_TOTAL) {
+              console.log(`   ↳ ⚠️ Total NO coincide (CFDI: $${totalCFDI} vs ticket: $${totalEsperado}) — correo de otra compra, ignorando`);
+              continue;
+            }
+            console.log(`   ↳ 💲 Total verificado: $${totalCFDI} ≈ $${totalEsperado}`);
             console.log(`   ↳ ✅ Archivos extraídos — XML: ${!!xmlBuffer} | PDF: ${!!pdfBuffer}`);
             encontrado = { xmlBuffer, pdfBuffer, subject, uid: msgUid };
             break;

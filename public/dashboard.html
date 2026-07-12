@@ -552,21 +552,53 @@
       formData.append('ticket', file);
       if (activeResidenteId) formData.append('residente_id', activeResidenteId);
       try {
+        // FASE 1: la subida responde de inmediato (el OCR corre en el worker).
+        // Hacemos polling a /api/tickets/:id/estado-ocr hasta tener el resultado.
         const res = await fetch('/upload-ticket', { method: 'POST', body: formData });
         const data = await res.json();
-        if (data.ok && (data.agenteActivado || data.sinPortal)) {
-          limpiarUpload(); abrirModalPortalNuevo(data.ticketId, data.comercio, data.urlQR); cargarDatos();
-        } else if (data.ok && data.autoFacturando) {
-          limpiarUpload(); btn.disabled = false; btn.textContent = 'Analizar con IA';
+        if (!data.ok || !data.ticketId) {
+          alertEl.className = 'alert alert-error';
+          alertEl.textContent = data.msg || 'Error al subir el ticket';
+          alertEl.style.display = 'block';
+          btn.disabled = false; btn.textContent = 'Analizar con IA';
+          return;
+        }
+
+        btn.innerHTML = '<span class="spinner"></span> Leyendo ticket con IA...';
+        let estado = null;
+        for (let i = 0; i < 40; i++) {           // hasta ~100s
+          await new Promise(r => setTimeout(r, 2500));
+          try {
+            const er = await fetch(`/api/tickets/${data.ticketId}/estado-ocr`);
+            const ed = await er.json();
+            if (ed.ok && ed.listo) { estado = ed; break; }
+          } catch {}
+        }
+
+        if (!estado) {
+          alertEl.className = 'alert alert-success';
+          alertEl.textContent = '📥 Ticket recibido — la lectura está tardando más de lo normal. Revisa "Mis Tickets" en unos minutos.';
+          alertEl.style.display = 'block';
+          limpiarUpload(); cargarDatos();
+        } else if (estado.duplicado) {
+          alertEl.className = 'alert alert-error';
+          alertEl.textContent = '🚫 ' + (estado.msg || 'Este ticket ya fue registrado.');
+          alertEl.style.display = 'block';
+          limpiarUpload(); cargarDatos();
+        } else if (estado.error) {
+          alertEl.className = 'alert alert-error';
+          alertEl.textContent = estado.msg || 'No se pudo leer el ticket';
+          alertEl.style.display = 'block';
+          limpiarUpload(); cargarDatos();
+        } else if (estado.agenteActivado) {
+          limpiarUpload(); abrirModalPortalNuevo(estado.ticketId, estado.comercio, estado.urlQR); cargarDatos();
+        } else if (estado.necesitaConfirmacion) {
+          limpiarUpload(); abrirModalConfirmacion(estado.ticketId, estado.datos, estado.campos, estado.campos_dudosos); cargarDatos();
+        } else {
+          limpiarUpload();
           alertEl.className = 'alert alert-success';
           alertEl.textContent = '✅ Imagen clara — facturando automáticamente. Revisa "Mis Tickets" en un momento.';
           alertEl.style.display = 'block'; cargarDatos();
-        } else if (data.ok && data.necesitaConfirmacion) {
-          limpiarUpload(); abrirModalConfirmacion(data.ticketId, data.datos, data.campos, data.campos_dudosos); cargarDatos();
-        } else {
-          alertEl.className = 'alert alert-error';
-          alertEl.textContent = data.msg || 'Error al procesar el ticket';
-          alertEl.style.display = 'block';
         }
       } catch {
         alertEl.className = 'alert alert-error';

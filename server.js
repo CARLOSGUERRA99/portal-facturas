@@ -2,178 +2,26 @@ require("dotenv").config();
 const express = require("express");
 const session = require("express-session");
 const bcrypt = require("bcryptjs");
-const mysql = require("mysql2/promise");
 const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
 const { execSync } = require("child_process");
-const Anthropic = require("@anthropic-ai/sdk");
-const nodemailer = require("nodemailer");
-const { detectarYFacturar } = require("./bots/index");
-const { orquestar, activarBot, restaurarBotsDinamicos } = require("./agentes/orquestador");
+const { orquestar, activarBot } = require("./agentes/orquestador");
 const { subirArchivoR2, borrarArchivoR2, listarArchivosR2 } = require("./storage/r2");
-const { esperarFacturaPorCorreo } = require("./mail/imap");
 
-// Extrae el UUID del CFDI desde el contenido XML (atributo UUID de TimbreFiscalDigital)
-function extraerUUIDcfdi(xmlBuffer) {
-  try {
-    const xml = xmlBuffer.toString('utf8');
-    const m = xml.match(/UUID="([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"/i);
-    return m ? m[1].toLowerCase() : null;
-  } catch { return null; }
-}
-
-// Descarga XML desde R2, extrae UUID, re-sube XML y PDF con nombre {comercio}_{uuid},
-// borra los archivos originales y devuelve { xmlUrl, pdfUrl } con los nuevos nombres.
-// Si no puede extraer UUID, devuelve las URLs originales sin cambios.
-async function renombrarConUUID(xmlUrlOrig, pdfUrlOrig, comercio) {
-  try {
-    const r2Base = process.env.R2_PUBLIC_URL;
-    if (!r2Base || !xmlUrlOrig) return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
-
-    // Descargar XML para leer el UUID
-    const xmlResp = await fetch(xmlUrlOrig).catch(() => null);
-    if (!xmlResp?.ok) return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
-    const xmlBuf = Buffer.from(await xmlResp.arrayBuffer());
-
-    const uuid = extraerUUIDcfdi(xmlBuf);
-    if (!uuid) {
-      console.log('⚠️ UUID no encontrado en XML — se mantienen nombres originales');
-      return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
-    }
-
-    const prefijo = `facturas/${uuid}`;
-    console.log(`🔖 UUID CFDI: ${uuid}`);
-
-    // Re-subir XML
-    const xmlUrl = await subirArchivoR2(xmlBuf, `${prefijo}.xml`, 'application/xml');
-
-    // Re-subir PDF si existe
-    let pdfUrl = pdfUrlOrig;
-    if (pdfUrlOrig) {
-      const pdfResp = await fetch(pdfUrlOrig).catch(() => null);
-      if (pdfResp?.ok) {
-        const pdfBuf = Buffer.from(await pdfResp.arrayBuffer());
-        pdfUrl = await subirArchivoR2(pdfBuf, `${prefijo}.pdf`, 'application/pdf');
-      }
-    }
-
-    // Borrar archivos originales si cambiaron de nombre
-    const xmlKeyOrig = xmlUrlOrig.replace(r2Base + '/', '');
-    const pdfKeyOrig = pdfUrlOrig?.replace(r2Base + '/', '');
-    if (xmlUrl && xmlKeyOrig !== `${prefijo}.xml`) await borrarArchivoR2(xmlKeyOrig);
-    if (pdfUrl && pdfKeyOrig && pdfKeyOrig !== `${prefijo}.pdf`) await borrarArchivoR2(pdfKeyOrig);
-
-    return { xmlUrl, pdfUrl };
-  } catch (e) {
-    console.log('⚠️ renombrarConUUID error:', e.message);
-    return { xmlUrl: xmlUrlOrig, pdfUrl: pdfUrlOrig };
-  }
-}
-
-// Construye el prompt de detección dinámicamente desde portales.json
-function buildPromptDeteccion() {
-  let portalesData = { portales: {} };
-  try {
-    const raw = fs.readFileSync(path.join(__dirname, "portales/portales.json"), "utf8");
-    portalesData = JSON.parse(raw);
-  } catch {}
-
-  const portales = portalesData.portales || {};
-  const claves = Object.keys(portales);
-  const opcionesPortal = [...claves, "desconocido"].join('" | "');
-
-  const lineasDeteccion = claves.map(clave => {
-    const p = portales[clave];
-    const det = p.deteccion || {};
-    const pistas = [
-      ...(det.por_texto_ocr || []),
-      ...(det.por_comercio || []),
-      ...(det.por_url_qr || []),
-    ].filter((v, i, a) => a.indexOf(v) === i); // deduplicar
-    return `- "${clave}": si ves ${pistas.map(s => `"${s}"`).join(", ")} o el nombre "${p.nombre}"`;
-  });
-
-  return `Identifica el tipo de ticket de compra. Responde SOLO este JSON:
-{
-  "portal": "${opcionesPortal}",
-  "confianza": número del 0 al 100,
-  "urlQR": "URL completa si hay un QR de facturación, o null",
-  "comercio": "nombre del comercio"
-}
-${lineasDeteccion.join("\n")}
-- "desconocido": cualquier otro caso`;
-}
+// ── FASE 1: módulos compartidos con el worker ────────────────────────────────
+// El servidor web ya NO ejecuta OCR, bots ni agentes: solo encola trabajos en
+// Redis y responde de inmediato. El procesamiento vive en worker.js.
+const db = require("./lib/db");
+const { enviarCorreo } = require("./lib/correo");
+const { crearNotificacion, renombrarConUUID } = require("./lib/util");
+const { camposPorPortal } = require("./lib/vision");
+const {
+  encolarVision, encolarBot, encolarAgente,
+  listarColaMuerta, reintentarJobMuerto, borrarJobMuerto,
+} = require("./queues");
 
 const app = express();
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-const SMTP_PORT = parseInt(process.env.SMTP_PORT) || 465;
-// `secure` DEBE coincidir con el puerto: 465 = SSL implícito (true); 587/25/2525 = STARTTLS (false).
-// Lo derivamos del puerto en vez de confiar en SMTP_SECURE, porque si esa variable
-// quedó mal puesta en Railway (p.ej. ausente) el socket a 465 se cuelga → "Connection timeout".
-const SMTP_SECURE = SMTP_PORT === 465 ? true : (process.env.SMTP_SECURE === 'true');
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_SECURE,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-});
-
-// Si Brevo está activo (producción/Railway), el SMTP queda en standby y no
-// verificamos (Railway bloquea SMTP saliente; el envío real es por Brevo API).
-if (!process.env.BREVO_API_KEY) {
-  transporter.verify((error) => {
-    if (error) console.log(`⚠️ SMTP no disponible (${SMTP_PORT}/secure=${SMTP_SECURE}):`, error.message);
-    else console.log(`✅ SMTP conectado correctamente (${SMTP_PORT}/secure=${SMTP_SECURE})`);
-  });
-} else {
-  console.log('✉️ Correo saliente vía Brevo API (HTTP) — SMTP en standby');
-}
-
-// ── Envío de correo: API HTTP de Brevo (funciona en Railway, puerto 443) con
-// fallback a SMTP para entorno local. Railway BLOQUEA el SMTP saliente (probado:
-// 465/587/2525 dan ETIMEDOUT), por eso en producción se usa la API HTTP.
-// Acepta el mismo shape que nodemailer.sendMail(): { from, to, replyTo, subject, html, attachments }.
-function _parseFrom(from) {
-  const m = String(from || '').match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
-  if (m) return { name: (m[1] || '').trim() || undefined, email: m[2].trim() };
-  return { email: String(from || process.env.SMTP_USER || 'buzonfacturas@serviciosga.site').trim() };
-}
-
-async function enviarCorreo(opts) {
-  if (process.env.BREVO_API_KEY) {
-    const sender = _parseFrom(opts.from);
-    const destinatarios = (Array.isArray(opts.to) ? opts.to : String(opts.to || '').split(','))
-      .map(e => String(e).trim()).filter(Boolean).map(email => ({ email }));
-    const body = { sender, to: destinatarios, subject: opts.subject || '', htmlContent: opts.html || opts.text || ' ' };
-    if (opts.replyTo) body.replyTo = { email: String(opts.replyTo).trim() };
-    if (opts.attachments && opts.attachments.length) {
-      body.attachment = opts.attachments.map(a => ({
-        name: a.filename || 'adjunto',
-        content: Buffer.isBuffer(a.content) ? a.content.toString('base64') : Buffer.from(a.content || '').toString('base64'),
-      }));
-    }
-    const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: { 'api-key': process.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const txt = await resp.text().catch(() => '');
-      throw new Error(`Brevo ${resp.status}: ${txt.slice(0, 300)}`);
-    }
-    return { via: 'brevo' };
-  }
-  // Fallback SMTP (entorno local / dev donde el puerto no está bloqueado)
-  return transporter.sendMail(opts).then(() => ({ via: 'smtp' }));
-}
 
 // ── Diagnóstico TEMPORAL: valida la llave de Brevo desde Railway (sin enviar correo) ──
 app.get('/api/diag-mail', async (req, res) => {
@@ -216,14 +64,6 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
 }));
-
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  port: process.env.DB_PORT,
-  database: process.env.DB_DATABASE,
-});
 
 // ── MODO MANTENIMIENTO ──
 // Activar/desactivar desde Railway: variable MANTENIMIENTO=true
@@ -281,436 +121,8 @@ async function assignAdminResidentes(adminId) {
   }
 }
 
-async function crearNotificacion(userId, tipo, mensaje) {
-  try {
-    await db.query(
-      "INSERT INTO notificaciones (user_id, tipo, mensaje) VALUES (?, ?, ?)",
-      [userId, tipo, mensaje]
-    );
-  } catch (e) {
-    console.error("⚠️ crearNotificacion:", e.message);
-  }
-}
-
-async function registrarIntento(ticketId, bot, resultado, mensaje, duracionMs, screenshotUrls = []) {
-  try {
-    await db.query(
-      "INSERT INTO ticket_intentos (ticket_id, bot, resultado, mensaje, screenshot_urls, duracion_ms) VALUES (?, ?, ?, ?, ?, ?)",
-      [ticketId, bot || null, resultado, mensaje || null,
-       screenshotUrls.length ? JSON.stringify(screenshotUrls) : null, duracionMs || null]
-    );
-  } catch (e) {
-    console.error("⚠️ registrarIntento:", e.message);
-  }
-}
-
-// Calcula la próxima medianoche (hora local del servidor)
-function proximaMedianoche() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-const PORTALES_CONOCIDOS = ['oxxo', 'arco', 'gasmaz', 'homedepot', 'buzonfacturas', 'farmaciaguadalajara', 'rendichicas', 'benavides', 'panama'];
-
-// Cola por portal: garantiza que solo un bot del mismo portal corre a la vez.
-// Portales distintos siguen corriendo en paralelo entre sí.
-const _portalColas = new Map();
-function conColaPortal(portalKey, fn) {
-  const key = portalKey || 'desconocido';
-  const anterior = _portalColas.get(key) || Promise.resolve();
-  const siguiente = anterior.then(fn, fn); // corre aunque el anterior haya fallado
-  _portalColas.set(key, siguiente.catch(() => {}));
-  return siguiente;
-}
-
-// Envuelve un job de setInterval para que NUNCA se solape consigo mismo: si la
-// corrida anterior aún no termina (p.ej. el job IMAP espera hasta 10 min/ticket),
-// el siguiente tick se omite. Sin esto se acumulaban corridas concurrentes que
-// abrían múltiples conexiones IMAP/sesiones Browserless y competían por los mismos
-// correos — causa raíz de "se bugea con 2-3 tickets" y "no descarga XML/PDF".
-function sinSolape(fn, nombre) {
-  let corriendo = false;
-  return async function () {
-    if (corriendo) {
-      console.log(`⏭️ [job:${nombre}] ciclo anterior aún en ejecución — se omite este tick`);
-      return;
-    }
-    corriendo = true;
-    try { await fn(); }
-    catch (e) { console.error(`❌ [job:${nombre}]`, e?.message || e); }
-    finally { corriendo = false; }
-  };
-}
-
-// ── LÓGICA COMPARTIDA DE FACTURACIÓN (usada por auto-facturar y endpoint manual) ──
-async function ejecutarFacturacion(ticketId, userId) {
-  try {
-    const [[ticket]] = await db.query(
-      `SELECT t.*, u.rfc, u.razon_social, u.calle, u.num_ext, u.num_int, u.colonia,
-              u.municipio, u.estado, u.codigo_postal, u.regimen_fiscal, u.uso_cfdi, u.email,
-              u.nombre AS user_nombre
-       FROM tickets t JOIN users u ON t.user_id = u.id WHERE t.id = ?`,
-      [ticketId]
-    );
-    if (!ticket) return;
-    if (!ticket.rfc) {
-      await crearNotificacion(userId, 'factura_error', 'Completa tu perfil fiscal para facturar automáticamente.');
-      return;
-    }
-
-    const datos = JSON.parse(ticket.ocr_json || '{}');
-    if (datos.portal === 'oxxo' || (ticket.comercio || '').toLowerCase().includes('oxxo')) {
-      datos.folio = corregirFolioOxxo(datos.folio);
-      datos.idVenta = corregirIdVentaOxxo(datos.idVenta);
-
-      // Validar datos ANTES de invocar el engine/bot (catch temprano → mejor UX)
-      const erroresOxxo = validarDatosOxxo(datos);
-      if (erroresOxxo.length > 0) {
-        const msg = 'Datos OXXO inválidos: ' + erroresOxxo.join('; ');
-        console.log(`⚠️ [OXXO] Validación fallida ticket #${ticketId}: ${msg}`);
-        await db.query("UPDATE tickets SET status = 'error', error_msg = ? WHERE id = ?", [msg, ticketId]);
-        await registrarIntento(ticketId, 'oxxo', 'error', msg, 0);
-        await crearNotificacion(userId, 'factura_error',
-          `Tu ticket OXXO tiene datos que no pudimos leer correctamente (${erroresOxxo.join(', ')}). Por favor edita los datos y vuelve a intentarlo.`
-        );
-        return { ok: false, msg };
-      }
-    }
-
-    const inicioMs = Date.now();
-    await db.query("UPDATE tickets SET status = 'procesando', reintento_programado = NULL WHERE id = ?", [ticketId]);
-
-    const portalKey = datos.portal || (ticket.comercio || '').toLowerCase().replace(/\s+/g, '') || 'desconocido';
-    console.log(`🔒 Cola portal [${portalKey}] — ticket #${ticketId} en espera si hay otro corriendo`);
-
-    const resultado = await conColaPortal(portalKey, () => detectarYFacturar({
-      ...datos,
-      rfc: ticket.rfc,
-      razonSocial: ticket.razon_social,
-      calle: ticket.calle,
-      ext: ticket.num_ext,
-      int: ticket.num_int,
-      colonia: ticket.colonia,
-      municipio: ticket.municipio,
-      estado: ticket.estado,
-      codigoPostal: ticket.codigo_postal,
-      regimenFiscal: ticket.regimen_fiscal,
-      usoCfdi: ticket.uso_cfdi || 'G03',
-      email: ticket.email,
-      ticketId,
-      ocr_text: ticket.ocr_text,
-      portalUrl: datos.portalUrl || ticket.portal_url || null,
-      comercio: ticket.comercio,
-    }, db));
-
-    const duracionMs = Date.now() - inicioMs;
-    const botNombre = datos.portal || ticket.comercio || 'desconocido';
-
-    if (resultado.sinPortal) {
-      const comercioNombre = ticket.comercio || datos.comercio || 'desconocido';
-      const portalUrl = datos.portalUrl || ticket.portal_url || '';
-      await registrarIntento(ticketId, botNombre, 'agente', 'Portal nuevo — iniciando agente', duracionMs);
-      await db.query(
-        "UPDATE tickets SET status = 'procesando', error_msg = 'Agente analizando portal nuevo...' WHERE id = ?",
-        [ticketId]
-      );
-      await crearNotificacion(userId, 'portal_desconocido',
-        `Recibimos tu ticket de ${comercioNombre}. Te avisaremos cuando tu factura esté lista.`);
-      setImmediate(() => manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl).catch(console.error));
-      return { ok: true, agente: true };
-    }
-
-    if (resultado.ok && resultado.procesandoCorreo) {
-      await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [ticketId]);
-await registrarIntento(ticketId, botNombre, 'procesando_correo', 'Factura generada — esperando correo', duracionMs);
-      return { ok: true, procesandoCorreo: true };
-    }
-
-    if (resultado.ok) {
-      let pdfUrl = resultado.pdfUrl || resultado.pdf || null;
-      let xmlUrl = resultado.xmlUrl || resultado.xml || null;
-      if (xmlUrl) {
-        const renombrado = await renombrarConUUID(xmlUrl, pdfUrl, ticket.comercio);
-        xmlUrl = renombrado.xmlUrl;
-        pdfUrl = renombrado.pdfUrl;
-      }
-      await registrarIntento(ticketId, botNombre, 'ok', `XML: ${xmlUrl || 'n/a'} | PDF: ${pdfUrl || 'n/a'}`, duracionMs);
-      await db.query("INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
-        [userId, ticketId, ticket.comercio, pdfUrl, xmlUrl, 'completado']);
-      await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticketId]);
-      try {
-        if (ticket.email) {
-          await enviarCorreo({
-            from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
-            to: ticket.email,
-            subject: '✅ Tu factura está lista — GPN Pinturas y Recubrimientos',
-            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-              <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;">
-                <h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2>
-                <p style="color:#C0DD97;margin:4px 0 0;">Portal de Facturación Automática</p>
-              </div>
-              <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
-                <p>Hola <strong>${ticket.user_nombre || ''}</strong>,</p>
-                <p>Tu factura fue generada exitosamente.</p>
-                <div style="margin:20px 0;">
-                  ${xmlUrl ? `<a href="${xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ''}
-                  ${pdfUrl ? `<a href="${pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ''}
-                </div>
-                <a href="https://portal-facturas-production.up.railway.app/mis-facturas" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">Ver mis facturas →</a>
-              </div>
-            </div>`,
-          });
-        }
-      } catch {}
-      await crearNotificacion(userId, 'factura_lista', `✅ Tu factura de ${ticket.comercio || 'este comercio'} está lista para descargar.`);
-      return { ok: true, pdfUrl, xmlUrl };
-    }
-
-    // ── Ticket vencido — portal no acepta facturación en plazo ──
-    if (resultado.error_code === 'ticket_vencido') {
-      const emailContacto = resultado.email_contacto || null;
-      // Separar en dos queries: error_msg siempre se guarda aunque email_contacto falle
-      await db.query(
-        "UPDATE tickets SET status = 'error', error_msg = 'ticket_vencido', reintento_programado = NULL WHERE id = ?",
-        [ticketId]
-      );
-      await db.query("UPDATE tickets SET email_contacto = ? WHERE id = ?", [emailContacto, ticketId])
-        .catch(e => console.log(`⚠️ email_contacto no guardado (${e.message})`));
-      await registrarIntento(ticketId, botNombre, 'error', `ticket_vencido|email_contacto:${emailContacto}`, duracionMs);
-      await crearNotificacion(userId, 'factura_error',
-        `El plazo para facturar tu ticket de ${ticket.comercio || 'este comercio'} ha vencido. Puedes solicitar la factura por correo desde "Mis Tickets".`
-      ).catch(() => {});
-      return { ok: false, error_code: 'ticket_vencido', email_contacto: emailContacto };
-    }
-
-    // ── Portal requiere CAPTCHA — solo facturación manual (no se automatiza) ──
-    if (resultado.error_code === 'captcha') {
-      await db.query(
-        "UPDATE tickets SET status = 'error', error_msg = ?, reintento_programado = NULL WHERE id = ?",
-        [(resultado.msg || 'Requiere CAPTCHA — factura manual').slice(0, 500), ticketId]
-      );
-      await registrarIntento(ticketId, botNombre, 'error', `captcha|${resultado.portal_url || ''}`, duracionMs);
-      await crearNotificacion(userId, 'factura_error',
-        `Tu ticket de ${ticket.comercio || 'este comercio'} debe facturarse MANUALMENTE: el portal pide CAPTCHA. Tus datos ya están extraídos y listos.`
-      ).catch(() => {});
-      return { ok: false, error_code: 'captcha', msg: resultado.msg };
-    }
-
-    // ── Error del bot ──
-    // Detectar folio no disponible en OXXO (escalación)
-    if (resultado.tipo === 'folio_no_disponible') {
-      const [[{ nIntentos }]] = await db.query(
-        "SELECT COUNT(*) as nIntentos FROM ticket_intentos WHERE ticket_id = ? AND mensaje LIKE '%folio_no_disponible%'",
-        [ticketId]
-      );
-      await registrarIntento(ticketId, botNombre, 'error', `folio_no_disponible|${resultado.msg}`, duracionMs);
-
-      if (nIntentos >= 1) {
-        // 2do+ intento: escalar a aclaración directa en tienda
-        await db.query("UPDATE tickets SET status = 'error', reintento_programado = NULL WHERE id = ?", [ticketId]);
-        await crearNotificacion(userId, 'factura_error',
-          `❌ Tu ticket de ${ticket.comercio} no puede facturarse. El folio no existe en el sistema después de 2 intentos. Te recomendamos levantar una aclaración directamente en tienda OXXO.`);
-      } else {
-        // 1er intento: reintento a medianoche
-        const medianoche = proximaMedianoche();
-        await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [medianoche, ticketId]);
-        await crearNotificacion(userId, 'factura_error',
-          `⚠️ Tu ticket de ${ticket.comercio} no está disponible aún — los tickets OXXO tardan hasta 24h en activarse. Lo reintentaremos esta noche a las 12:00 am. Si los datos son incorrectos, usa "Editar datos" para corregirlos.`);
-      }
-      return { ok: false, tipo: 'folio_no_disponible', msg: resultado.msg };
-    }
-
-    // Error genérico
-    const medianoche = proximaMedianoche();
-    await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [medianoche, ticketId]);
-    await registrarIntento(ticketId, botNombre, 'error', resultado.msg || 'Error desconocido', duracionMs);
-    const esPortalConocido = PORTALES_CONOCIDOS.includes((datos.portal || '').toLowerCase());
-    await crearNotificacion(userId, 'factura_error', esPortalConocido
-      ? `Tu factura de ${ticket.comercio || 'este comercio'} no pudo generarse. Reintentaremos esta noche a las 12:00 am. Si los datos son incorrectos, usa "Editar datos".`
-      : `Tu ticket de ${ticket.comercio || 'este comercio'} está en revisión. Te avisaremos en 24-48 horas.`);
-    return { ok: false, msg: resultado.msg };
-
-  } catch (err) {
-    console.error(`❌ ejecutarFacturacion #${ticketId}:`, err.message);
-    await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticketId]).catch(() => {});
-    return { ok: false, msg: err.message };
-  }
-}
-
-// ── AGENTE: analizar portal nuevo y notificar resultado ──────────────────────
-function resumenAgente(resultado, comercioNombre) {
-  if (!resultado.ok) {
-    const etapa = resultado.etapa || 'desconocida';
-    return {
-      corto: `Agente falló en "${etapa}": ${resultado.msg || 'error desconocido'}`,
-      usuario: `Tu ticket de ${comercioNombre} está en revisión. Te avisaremos cuando tu factura esté lista.`,
-      admin: `❌ Agente falló en etapa "${etapa}" para ${comercioNombre}. Error: ${resultado.msg}. Requiere configuración manual.`,
-    };
-  }
-  const val = resultado.validacion || {};
-  const errores = val.errores || [];
-  const advertencias = val.advertencias || [];
-  const archivo = resultado.nombreArchivo || 'bot.js';
-
-  if (errores.length === 0) {
-    return {
-      corto: `Bot generado (${archivo}) — pendiente aprobación.`,
-      usuario: `Tu ticket de ${comercioNombre} está en proceso. Te avisaremos cuando tu factura esté lista.`,
-      admin: `✅ Bot listo sin errores: ${archivo}. ${advertencias.length} advertencia(s). Aprueba en Portales Pendientes.`,
-    };
-  }
-  const listaErrores = errores.slice(0, 3).join(' | ');
-  return {
-    corto: `Bot con ${errores.length} error(es): ${listaErrores}`,
-    usuario: `Tu ticket de ${comercioNombre} está en revisión. Te avisaremos cuando tu factura esté lista.`,
-    admin: `⚠️ Bot generado con ${errores.length} error(es): ${listaErrores}. ${advertencias.length} advertencia(s). Revisa en Portales Pendientes.`,
-  };
-}
-
-async function manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl) {
-  console.log(`🤖 [Agente] Iniciando para "${comercioNombre}" — ticket #${ticketId}`);
-  try {
-    // Releer el ticket por si el cuestionario actualizó el portalUrl o agregó instrucciones
-    const [[t]] = await db.query("SELECT portal_url, ocr_json FROM tickets WHERE id = ?", [ticketId]);
-    const ocr = JSON.parse(t?.ocr_json || '{}');
-    const urlFinal = ocr.portalUrl || t?.portal_url || portalUrl || '';
-
-    // Leer instrucciones del residente desde portales_pendientes
-    const [[pendiente]] = await db.query(
-      "SELECT notas FROM portales_pendientes WHERE nombre = ? ORDER BY id DESC LIMIT 1",
-      [comercioNombre]
-    ).catch(() => [[null]]);
-    let instrucciones = '';
-    if (pendiente?.notas) {
-      try {
-        const n = JSON.parse(pendiente.notas);
-        instrucciones = [
-          n.acceso ? `Acceso: ${n.acceso}` : '',
-          n.descripcion ? `Proceso según residente: ${n.descripcion}` : '',
-          n.campos?.length ? `Campos del portal: ${n.campos.join(', ')}` : '',
-        ].filter(Boolean).join('\n');
-      } catch {}
-    }
-
-    const resultado = await orquestar({ db, ticketId, portalUrl: urlFinal, comercioNombre, instrucciones });
-    const resumen = resumenAgente(resultado, comercioNombre);
-    console.log(`🤖 [Agente] Terminó — ticket #${ticketId}: ${resumen.corto}`);
-
-    await db.query(
-      "UPDATE tickets SET status = 'error', error_msg = ? WHERE id = ?",
-      [resumen.corto, ticketId]
-    );
-    await crearNotificacion(userId, 'factura_error', resumen.usuario);
-
-    const [adminRows] = await db.query('SELECT id FROM users WHERE email = ?', [ADMIN_EMAIL]);
-    if (adminRows.length) await crearNotificacion(adminRows[0].id, 'portal_pendiente', resumen.admin);
-  } catch (err) {
-    console.error(`❌ [Agente] manejarNuevoPortal #${ticketId}:`, err.message);
-    await db.query(
-      "UPDATE tickets SET status = 'error', error_msg = ? WHERE id = ?",
-      [`Error del agente: ${err.message}`, ticketId]
-    );
-  }
-}
-
-// Verifica concurrencia y ejecuta (o encola si ya hay 2 procesando)
-async function autoFacturar(ticketId, userId) {
-  const [[{ procesando }]] = await db.query(
-    "SELECT COUNT(*) as procesando FROM tickets WHERE status = 'procesando'"
-  );
-  if (procesando >= 2) {
-    console.log(`⏳ Cola llena (${procesando} procesando) — ticket #${ticketId} en espera`);
-    return; // queda en pendiente_confirmacion, procesarCola lo tomará
-  }
-  await ejecutarFacturacion(ticketId, userId);
-}
-
-// Job cada 30s: procesa tickets en cola cuando hay slots disponibles
-async function procesarCola() {
-  try {
-    const [[{ procesando }]] = await db.query(
-      "SELECT COUNT(*) as procesando FROM tickets WHERE status = 'procesando'"
-    );
-    if (procesando >= 2) return;
-    const slots = 2 - procesando;
-    const [enCola] = await db.query(
-      `SELECT t.id, t.user_id FROM tickets t
-       JOIN users u ON t.user_id = u.id
-       WHERE t.status = 'pendiente_confirmacion' AND t.requiere_confirmacion = 0
-       AND u.rfc IS NOT NULL AND u.rfc != ''
-       AND (
-         JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) IN ('oxxo','arco','gasmaz','farmaciaguadalajara','homedepot','buzonfacturas','rendichicas','benavides','panama','sushito','sushio','carljr','elcaporal','elcaporalrestaurante','allegro','allegrecaffe','allegrezonadorada','autozone','7eleven')
-         OR (
-           -- Portales con portal=desconocido pero portalUrl conocida
-           JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) = 'desconocido'
-           AND t.portal_url IS NOT NULL
-           AND (
-             t.portal_url LIKE '%autozone%'         OR
-             t.portal_url LIKE '%origon.cloud%'     OR
-             t.portal_url LIKE '%mefacturo.mx%'     OR
-             t.portal_url LIKE '%elcaporal%'        OR
-             t.portal_url LIKE '%allegre%'          OR
-             t.portal_url LIKE '%sushio%'           OR
-             t.portal_url LIKE '%analytix360%'      OR
-             t.portal_url LIKE '%tufesa%'           OR
-             t.portal_url LIKE '%e7-eleven%'        OR
-             t.portal_url LIKE '%softrestaurant.com%'
-           )
-         )
-         OR (
-           -- Fallback por comercio cuando portal=desconocido
-           JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.portal')) = 'desconocido'
-           AND (
-             LOWER(JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.comercio'))) LIKE '%autozone%'
-             OR LOWER(JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json, '$.comercio'))) LIKE '%eleven%'
-           )
-         )
-       )
-       ORDER BY t.creado ASC LIMIT ?`,
-      [slots]
-    );
-    for (const t of enCola) {
-      ejecutarFacturacion(t.id, t.user_id).catch(console.error);
-    }
-  } catch {}
-}
-setInterval(sinSolape(procesarCola, 'procesarCola'), 30 * 1000);
-
-function corregirIdVentaOxxo(id) {
-  if (!id) return id;
-  const s = String(id).toUpperCase().replace(/\s/g, '');
-  if (s.length !== 11) return s;
-  const c = s.split('');
-  // Posiciones de DÍGITO (0,1,5,6,10): letra confundible → dígito
-  const L2D = { O:'0', I:'1', L:'1', T:'1', S:'5', B:'8', G:'6', Z:'2' };
-  // Posiciones de LETRA (2,3,4): dígito confundible → letra
-  const D2L = { '0':'O', '1':'I', '5':'S', '8':'B', '6':'G', '2':'Z' };
-  for (const i of [0, 1, 5, 6, 10]) c[i] = L2D[c[i]] ?? c[i];
-  for (const i of [2, 3, 4])        c[i] = D2L[c[i]] ?? c[i];
-  return c.join('');
-}
-
-function corregirFolioOxxo(folio) {
-  if (!folio) return folio;
-  return String(folio).replace(/[OoSsIiTt]/g,
-    c => ({ O:'0', o:'0', S:'5', s:'5', I:'1', i:'1', T:'1', t:'1' }[c] || c)
-  );
-}
-
-function validarDatosOxxo(datos) {
-  const errores = [];
-  if (!datos.folio || !/^\d+$/.test(String(datos.folio).replace(/\s/, '')))
-    errores.push('folio inválido: ' + datos.folio);
-  const idVentaNorm = corregirIdVentaOxxo(String(datos.idVenta || '').toUpperCase().replace(/\s/g, ''));
-  if (!idVentaNorm || idVentaNorm.length !== 11 || !/^\d{2}[A-Z]{3}\d{2}[A-Z0-9]+\d{1,2}$/.test(idVentaNorm))
-    errores.push(`idVenta inválido (${idVentaNorm.length} chars, esperado 11): ${datos.idVenta}`);
-  if (!datos.total || isNaN(parseFloat(datos.total)))
-    errores.push('total inválido: ' + datos.total);
-  return errores;
-}
-
+// ── FASE 1: la lógica de facturación vive ahora en lib/facturacion.js y corre
+// en el worker (cola bots). Aquí solo quedan los endpoints que ENCOLAN. ──────
 // ── MIGRACIÓN DB ──
 async function initDB() {
   try {
@@ -879,7 +291,7 @@ async function initDB() {
   // Migración one-time: renombrar facturas existentes que no tienen UUID en el nombre del archivo
   // Se ejecuta en cada arranque pero solo procesa las que aún no tienen UUID en su URL
   migrarUUIDFacturas().catch(e => console.log("⚠️ Migración UUID:", e.message));
-  restaurarBotsDinamicos(db).catch(e => console.log("⚠️ restaurarBots:", e.message));
+  // FASE 1: restaurarBotsDinamicos ahora corre en el worker (los bots viven allá)
 }
 initDB();
 
@@ -905,16 +317,9 @@ async function migrarUUIDFacturas() {
   console.log("🔖 Migración UUID completada");
 }
 
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname.replace(/\s+/g, "_"));
-  },
-});
-const upload = multer({ storage });
+// FASE 1: multer en memoria — la imagen va directo a R2 (el worker la descarga
+// de ahí). El disco de Railway es efímero y web/worker son contenedores distintos.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 // ── MIDDLEWARE ──
 function auth(req, res, next) {
@@ -1207,385 +612,90 @@ app.get("/api/admin/usuarios", auth, requireAdmin, async (req, res) => {
   }
 });
 
-// Corrige el AÑO mal leído por el OCR. Los tickets siempre son recientes (días),
-// así que si el OCR leyó un año implausible (ej. 2026→2025, o 2020), reasignamos
-// el año más reciente —entre el actual y el anterior— que NO caiga en el futuro,
-// conservando día y mes. Soporta "DD/MM/YYYY" y "YYYY-MM-DD". Si no puede parsear,
-// devuelve el string original sin tocarlo. Es no-op cuando el año ya es correcto.
-function corregirAnioReciente(fechaStr) {
-  if (!fechaStr || typeof fechaStr !== 'string') return fechaStr;
-  const s = fechaStr.trim();
-  let dd, mm, yyyy, formato, m;
-  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)))      { yyyy = +m[1]; mm = +m[2]; dd = +m[3]; formato = 'YMD'; }
-  else if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) { dd = +m[1]; mm = +m[2]; yyyy = +m[3]; formato = 'DMY'; }
-  else return fechaStr;
-  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return fechaStr;
-
-  const hoy = new Date();
-  const cap = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 2); // tolera 2 días (desfase/dígito mal leído)
-  let mejor = null;
-  for (const a of [hoy.getFullYear(), hoy.getFullYear() - 1]) {
-    const d = new Date(a, mm - 1, dd);
-    if (d <= cap && (!mejor || d > mejor.d)) mejor = { a, d };
-  }
-  if (!mejor || mejor.a === yyyy) return fechaStr;
-  const p2 = (n) => String(n).padStart(2, '0');
-  return formato === 'YMD' ? `${mejor.a}-${p2(mm)}-${p2(dd)}` : `${p2(dd)}/${p2(mm)}/${mejor.a}`;
-}
-
-// ── SUBIR TICKET + OCR ──
+// ── SUBIR TICKET (FASE 1: encola en Redis y responde de inmediato) ──
 app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ ok: false, msg: "No se recibió archivo" });
-
-    const imageData = fs.readFileSync(req.file.path);
-    const base64Image = imageData.toString("base64");
-    const mimeType = req.file.mimetype;
     const residente_id = req.body.residente_id ? parseInt(req.body.residente_id) : null;
 
-    let datosOCR = {};
-    let textoOCR = "";
-    let portalDetectado = "desconocido";
-
-    // ── PASADA 1: Detección de portal (Sonnet) ──
-    console.log("🔍 Pasada 1: detección con Sonnet...");
-    const t1start = Date.now();
-    try {
-      const resp1 = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 200,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
-            { type: "text", text: buildPromptDeteccion() }
-          ],
-        }],
-      });
-      const t1ms = Date.now() - t1start;
-      const det = JSON.parse(resp1.content[0].text.replace(/```json|```/g, "").trim());
-      portalDetectado = det.portal || "desconocido";
-      const urlQR = det.urlQR || null;
-      if (det.comercio) datosOCR.comercio = det.comercio;
-      console.log(`⏱️ Sonnet detección: ${t1ms}ms | Portal: ${portalDetectado} (${det.confianza || 0}pts)`);
-
-      // Si desconocido pero hay URL en QR, intentar resolver por URL
-      if (portalDetectado === "desconocido" && urlQR) {
-        const urlLow = urlQR.toLowerCase();
-        if (urlLow.includes("nexusfuel") || urlLow.includes("gasmaz")) portalDetectado = "gasmaz";
-        else if (urlLow.includes("buzonfacturas") || urlLow.includes("arco")) portalDetectado = "arco";
-        else if (urlLow.includes("oxxo")) portalDetectado = "oxxo";
-        else if (urlLow.includes("farmaciasguadalajara")) portalDetectado = "farmaciaguadalajara";
-        else if (urlLow.includes("rendilitros") || urlLow.includes("rendichicas")) portalDetectado = "rendichicas";
-        else if (urlLow.includes("homedepot.com.mx")) portalDetectado = "homedepot";
-        else if (urlLow.includes("e-facturate.com/benavides")) portalDetectado = "benavides";
-        else if (urlLow.includes("facturacion4.icr.mx") || urlLow.includes("icr.mx")) portalDetectado = "carljr";
-        else if (urlLow.includes("grupopanama.mx")) portalDetectado = "panama";
-        else if (urlLow.includes("e7-eleven") || urlLow.includes("7-eleven")) portalDetectado = "7eleven";
-        if (portalDetectado !== "desconocido")
-          console.log(`🔗 Portal resuelto por URL del QR: ${portalDetectado}`);
-        datosOCR.portalUrl = urlQR;
-      }
-
-      // Si sigue desconocido pero el comercio contiene "oxxo", enrutar a oxxo.js
-      if (portalDetectado === "desconocido" && det.comercio && det.comercio.toLowerCase().includes("oxxo")) {
-        portalDetectado = "oxxo";
-        console.log(`🏪 Portal resuelto por nombre OXXO: ${det.comercio}`);
-      }
-
-      // 7-Eleven: el comercio "7 Eleven Mexico SA de CV" es muy distintivo
-      if (portalDetectado === "desconocido" && det.comercio && /eleven/i.test(det.comercio)) {
-        portalDetectado = "7eleven";
-        console.log(`🏪 Portal resuelto por nombre 7-Eleven: ${det.comercio}`);
-      }
-    } catch (e) {
-      console.log("⚠️ Sonnet detección falló:", e.message);
+    // 1) Persistir la imagen en R2 — fuente única para el worker (el disco de
+    //    Railway es efímero y web/worker son contenedores distintos).
+    const extImg = ((req.file.originalname || '').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const imagenTicketUrl = await subirArchivoR2(
+      req.file.buffer,
+      `tickets/${req.session.userId}_${Date.now()}.${extImg}`,
+      req.file.mimetype || 'image/jpeg'
+    );
+    if (!imagenTicketUrl) {
+      return res.status(500).json({ ok: false, msg: "No se pudo guardar la imagen — intenta de nuevo" });
     }
 
-    // Normalizar cualquier variante de 7-Eleven (p.ej. el slug largo
-    // "7elevenmexicosadecv" que viene de portales.json) a la clave única "7eleven"
-    // para que use el prompt dedicado, campos y gate correctos.
-    if (/eleven/i.test(portalDetectado)) portalDetectado = "7eleven";
-
-    // ── PASADA 2: Extracción dirigida (Sonnet) ──
-    // Instrucción de confianza que se agrega al final de cada prompt
-    const INSTRUCCION_CONFIANZA = `
-"confianza": "alta|media|baja",
-"campos_dudosos": [],
-"ok": true
-}
-Reglas de confianza:
-- alta: todos los campos requeridos están claros y legibles sin ambigüedad.
-- media: corregiste caracteres ambiguos (O/0, I/1, S/5) pero estás bastante seguro del resultado.
-- baja: algún campo requerido es ilegible, parcialmente visible o muy incierto.
-campos_dudosos: lista los nombres exactos de los campos con incertidumbre (array vacío si confianza=alta).`;
-
-    const promptsPorPortal = {
-      oxxo: `Extrae estos datos del ticket OXXO. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "OXXO",
-  "fecha": "DD/MM/YYYY",
-  "folio": "SOLO dígitos después de Fol_Vta: — corrige O→0 S→5 I→1 T→1",
-  "idVenta": "código después de ID= — formato exacto: 2dígitos + 3LETRAS + 2dígitos + 3alfanum + 1dígito (11 chars). En posiciones 1-2 y 6-7 y 11 (dígito): O→0 I→1 S→5. En posiciones 3-5 (SOLO LETRAS): 0→O 1→I 5→S. Ejemplo: '100BR50UZD1' → '10OBR50UZD1' porque pos 3 debe ser letra",
-  "total": número sin signos,
-  "portal": "oxxo",
-${INSTRUCCION_CONFIANZA}`,
-      arco: `Extrae estos datos del ticket ARCO/BuzonFacturas. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "nombre exacto de la gasolinera ARCO",
-  "fecha": "DD/MM/YYYY",
-  "codigoTicket": "número de barcode o código grande impreso para facturación (bajo el código de barras o etiquetado como Código/Folio)",
-  "total": número sin signos,
-  "portal": "arco",
-${INSTRUCCION_CONFIANZA}`,
-      gasmaz: `Extrae estos datos del ticket GASMAZ/NexusFuel. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "nombre de la gasolinera",
-  "fecha": "DD/MM/YYYY",
-  "referencia": "número de referencia grande (primer número prominente del ticket)",
-  "folio": "número de ticket o folio",
-  "total": número sin signos,
-  "portalUrl": "URL COMPLETA del QR de facturación (debe incluir nexusfuel.mx), o null",
-  "portal": "gasmaz",
-${INSTRUCCION_CONFIANZA}`,
-      farmaciaguadalajara: `Extrae estos datos del ticket de Farmacias Guadalajara. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "Farmacias Guadalajara",
-  "fecha": "YYYY-MM-DD",
-  "folioFactura": "número de folio formato XXXXXX-XXXXXX-X (con guiones)",
-  "caja": "número de caja",
-  "fechaCompra": "fecha de compra en formato YYYY-MM-DD",
-  "noTicket": "número de ticket",
-  "total": número sin signos,
-  "portal": "farmaciaguadalajara",
-${INSTRUCCION_CONFIANZA}`,
-      homedepot: `Extrae estos datos del ticket de The Home Depot México. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "Home Depot Mexico",
-  "fecha": "DD/MM/YYYY",
-  "folio": "EL NÚMERO BAJO EL CÓDIGO DE BARRAS — es el código numérico más largo del ticket, entre 18 y 23 dígitos. Lee cada dígito con cuidado: NO omitas ni agregues dígitos. Si hay ambigüedad entre 0 y O, usa 0. Si no puedes leerlo con certeza, devuelve null.",
-  "total": número sin signos,
-  "portal": "homedepot",
-${INSTRUCCION_CONFIANZA}`,
-      rendichicas: `Extrae estos datos del ticket de gasolinera con portal Rendichicas/rendilitros. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "nombre de la estación (ej. ESTACION PIRU SA DE CV)",
-  "fecha": "DD/MM/YYYY",
-  "folio": "número de folio o ticket (el número largo impreso)",
-  "total": número sin signos,
-  "portalUrl": "URL completa del QR de facturación si aparece (debe incluir rendilitros o rendichicas), o null",
-  "portal": "rendichicas",
-${INSTRUCCION_CONFIANZA}`,
-      benavides: `Extrae estos datos del ticket de Farmacias Benavides. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "Farmacias Benavides",
-  "fecha": "DD/MM/YYYY",
-  "folio": "número entre asteriscos *XXXXXXXXXXXXXX* o el número de ticket largo impreso",
-  "total": número sin signos,
-  "portal": "benavides",
-${INSTRUCCION_CONFIANZA}`,
-      panama: `Extrae estos datos del ticket de Panamá Restaurante y Pastelería. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "nombre exacto del establecimiento (ej. PASTELERIAS PANAMA DE MAZATLAN SA DE CV)",
-  "fecha": "DD/MM/YYYY",
-  "idFacturacion": "número que aparece después de la leyenda SU ID DE FACTURACION ES (solo dígitos)",
-  "total": número sin signos,
-  "portal": "panama",
-${INSTRUCCION_CONFIANZA}`,
-      carljr: `Extrae estos datos del ticket de Carl's Jr (ICR S.A. de C.V.). Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "ICR S.A. DE C.V.",
-  "fecha": "DD/MM/YYYY",
-  "referencia": "número que aparece junto a la leyenda REFERENCIA: (es un número largo ~14 dígitos, también puede aparecer como código de comedor al inicio del ticket)",
-  "total": número sin signos (campo Total o Totall del ticket),
-  "portalUrl": "URL del portal de facturación si aparece (facturacion4.icr.mx o carlsjrclub.com.mx), o null",
-  "portal": "carljr",
-${INSTRUCCION_CONFIANZA}`,
-      "7eleven": `Extrae estos datos del ticket de 7-Eleven México. Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "7 Eleven Mexico SA de CV",
-  "fecha": "DD/MM/YYYY",
-  "folio": "el CÓDIGO numérico de EXACTAMENTE 35 DÍGITOS para facturar (suele estar impreso bajo el código de barras, o etiquetado como 'Folio'/'No. Ticket'/'Folio de facturación'). REGLA CRÍTICA: CUÉNTALOS, deben ser EXACTAMENTE 35 dígitos. Léelo dígito por dígito SIN omitir ninguno — el portal RECHAZA el ticket si faltan dígitos. Corrige ambigüedades O→0, I→1, S→5, B→8. Si no logras leer los 35 dígitos con certeza, devuelve null (es mejor null que un folio incompleto).",
-  "total": número sin signos,
-  "portalUrl": "https://www.e7-eleven.com.mx/facturacion/KPortalExterno/",
-  "portal": "7eleven",
-${INSTRUCCION_CONFIANZA}`,
-      desconocido: `Extrae los datos que puedas de este ticket. Si reconoces el portal, identifícalo.
-Portales conocidos: oxxo (tiendas OXXO), arco (gasolineras ARCO, portal buzonfacturas.com), gasmaz (gasolineras Gasmaz/RedMax/NexusFuel), farmaciaguadalajara (Farmacias Guadalajara), benavides (Farmacias Benavides), homedepot (Home Depot México), rendichicas (gasolineras con QR a rendilitros.com o rendichicas.com), panama (Panamá Restaurante y Pastelería, portal grupopanama.mx), carljr (Carl's Jr / ICR S.A. de C.V., portal facturacion4.icr.mx), autozone (AutoZone de México, portal autozone.cdc.origon.cloud), 7eleven (tiendas 7-Eleven, "7 Eleven Mexico SA de CV", portal e7-eleven.com.mx — el folio es un código de 35 dígitos).
-Responde SOLO JSON sin texto adicional:
-{
-  "comercio": "nombre del comercio",
-  "fecha": "DD/MM/YYYY",
-  "folio": "número de folio o ticket, o null. IMPORTANTE: si es AutoZone, aquí va el NÚMERO LARGO DEBAJO DEL CÓDIGO DE BARRAS (la tira de ~20+ dígitos), NO el folio corto. Si es 7-Eleven (e7-eleven.com.mx), el folio es el CÓDIGO DE BARRAS de EXACTAMENTE 35 dígitos — CUÉNTALOS, deben ser 35, NO omitas el último dígito (el portal rechaza si son menos). Léelo dígito por dígito.",
-  "referencia": "para portales SoftRestaurant/restaurante (SushiO, Dana Comida Mexicana, El Caporal, Allegro): el CÓDIGO DE FACTURACIÓN o código único (alfanumérico, distinto del folio). Si no aplica, null",
-  "origen": "para TUFESA (boletos de autobús): la CIUDAD DE ORIGEN del viaje impresa en el boleto. Si no aplica, null",
-  "total": número sin signos,
-  "portalUrl": "URL de QR de facturación si aparece, o null",
-  "portal": "oxxo|arco|gasmaz|farmaciaguadalajara|benavides|homedepot|rendichicas|panama|carljr|autozone|7eleven|desconocido",
-${INSTRUCCION_CONFIANZA}`,
-    };
-
-    console.log(`🔍 Pasada 2: extracción Sonnet para portal '${portalDetectado}'...`);
-    const t2start = Date.now();
-    try {
-      const resp2 = await anthropic.messages.create({
-        model: "claude-sonnet-4-6",
-        max_tokens: 600,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mimeType, data: base64Image } },
-            { type: "text", text: promptsPorPortal[portalDetectado] || promptsPorPortal.desconocido }
-          ],
-        }],
-      });
-      const t2ms = Date.now() - t2start;
-      textoOCR = resp2.content[0].text;
-      const extraido = JSON.parse(textoOCR.replace(/```json|```/g, "").trim());
-      datosOCR = { ...datosOCR, ...extraido };
-      // Corrección de año mal leído por el OCR (2026→2025, 2020, etc.)
-      for (const campo of ['fecha', 'fechaCompra']) {
-        if (datosOCR[campo]) {
-          const corr = corregirAnioReciente(datosOCR[campo]);
-          if (corr !== datosOCR[campo]) {
-            console.log(`📅 Año corregido en '${campo}': ${datosOCR[campo]} → ${corr}`);
-            datosOCR[campo] = corr;
-          }
-        }
-      }
-      const nCampos = Object.values(datosOCR).filter(v => v !== null && v !== undefined).length;
-      console.log(`⏱️ Sonnet extracción: ${t2ms}ms | Campos: ${nCampos}`);
-      console.log("✅ Datos extraídos:", datosOCR);
-    } catch (e) {
-      console.log("⚠️ Sonnet extracción falló:", e.message);
-      if (!datosOCR.comercio) {
-        return res.json({ ok: false, error: "No se pudo identificar el portal" });
-      }
-    }
-
-    // Si la detección no identificó el portal pero Sonnet extrajo "OXXO" en el comercio, reclasificar
-    if (portalDetectado === "desconocido" && (datosOCR.comercio || "").toLowerCase().includes("oxxo")) {
-      portalDetectado = "oxxo";
-      datosOCR.portal = "oxxo";
-      console.log(`🏪 Portal reclasificado como OXXO por comercio Sonnet: ${datosOCR.comercio}`);
-    }
-
-    // Si Pasada 2 extrajo un portal específico, tomarlo (cubre portales que Pasada 1 no reconoce visualmente)
-    if (portalDetectado === "desconocido" && datosOCR.portal && datosOCR.portal !== "desconocido") {
-      portalDetectado = datosOCR.portal;
-      console.log(`🔄 Portal reclasificado por Pasada 2: ${portalDetectado}`);
-    }
-
-    // 7-Eleven por comercio (red de seguridad si Pasada 1/2 no lo marcaron)
-    if (portalDetectado === "desconocido" && (datosOCR.comercio || "").toLowerCase().includes("eleven")) {
-      portalDetectado = "7eleven";
-      datosOCR.portal = "7eleven";
-      console.log(`🏪 Portal reclasificado como 7-Eleven por comercio: ${datosOCR.comercio}`);
-    }
-    // portalUrl fija de 7-Eleven (necesaria para el gate de procesarCola)
-    if (portalDetectado === "7eleven" && !datosOCR.portalUrl) {
-      datosOCR.portalUrl = "https://www.e7-eleven.com.mx/facturacion/KPortalExterno/";
-    }
-
-    // Correcciones SOLO para OXXO
-    if (portalDetectado === "oxxo" || datosOCR.portal === "oxxo") {
-      datosOCR.folio = corregirFolioOxxo(datosOCR.folio);
-      datosOCR.idVenta = corregirIdVentaOxxo(datosOCR.idVenta);
-    }
-
-    const portalUrl = datosOCR.portalUrl || (portalDetectado === "arco" ? "buzonfacturas" : null) || null;
-
-    const camposPorPortal = {
-      oxxo:                ['fecha', 'folio', 'idVenta', 'total'],
-      arco:                ['codigoTicket', 'total'],
-      gasmaz:              ['portalUrl', 'referencia', 'folio', 'total'],
-      farmaciaguadalajara: ['folioFactura', 'caja', 'fechaCompra', 'noTicket'],
-      homedepot:           ['folio', 'fecha', 'total'],
-      rendichicas:         ['folio', 'fecha', 'total'],
-      benavides:           ['folio', 'fecha', 'total'],
-      carljr:              ['referencia', 'total'],
-      panama:              ['idFacturacion', 'total', 'comercio'],
-      sushito:             ['referencia', 'folio', 'total'],
-      sushio:              ['referencia', 'folio', 'total'],
-      "7eleven":           ['folio', 'fecha', 'total'],
-      desconocido:         ['fecha', 'total'],
-    };
-    const campos = camposPorPortal[portalDetectado] || camposPorPortal.desconocido;
-
-    const confianza = datosOCR.confianza || 'media';
-    const camposDudosos = Array.isArray(datosOCR.campos_dudosos) ? datosOCR.campos_dudosos : [];
-    const requiereConfirmacion = (portalDetectado !== 'desconocido') && (confianza !== 'alta' || camposDudosos.length > 0) ? 1 : 0;
-
-    // ── ANTI-DUPLICADOS ───────────────────────────────────────────────────────
-    // Si el mismo usuario ya tiene un ticket del MISMO comercio con el MISMO
-    // identificador (folio/código/referencia/etc.) y NO está en error, es un
-    // duplicado: el portal lo rechazaría como "ya facturado". Avisamos y no lo
-    // insertamos (evita atascos en procesando_correo esperando un correo viejo).
-    const folioUnico = datosOCR.folio || datosOCR.codigoTicket || datosOCR.referencia
-      || datosOCR.idFacturacion || datosOCR.folioFactura || datosOCR.idVenta || null;
-    if (folioUnico && datosOCR.comercio) {
-      try {
-        const [dups] = await db.query(
-          `SELECT id, status, creado FROM tickets
-           WHERE user_id = ? AND LOWER(comercio) = LOWER(?)
-             AND status NOT IN ('error')
-             AND COALESCE(
-               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.folio')),
-               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.codigoTicket')),
-               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.referencia')),
-               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.idFacturacion')),
-               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.folioFactura')),
-               JSON_UNQUOTE(JSON_EXTRACT(ocr_json,'$.idVenta'))
-             ) = ?
-           ORDER BY creado DESC LIMIT 1`,
-          [req.session.userId, datosOCR.comercio, String(folioUnico)]
-        );
-        if (dups.length) {
-          const d = dups[0];
-          const fechaPrev = d.creado ? new Date(d.creado).toLocaleDateString('es-MX') : '';
-          console.log(`🚫 Duplicado: folio ${folioUnico} ya existe en ticket #${d.id} (${d.status})`);
-          return res.json({
-            ok: false, duplicado: true, ticketExistente: d.id,
-            msg: `Este ticket ya fue registrado (folio ${folioUnico})${fechaPrev ? ' el ' + fechaPrev : ''} — ticket #${d.id}. Búscalo en "Mis Facturas".`,
-          });
-        }
-      } catch (e) { console.log("⚠️ Chequeo anti-duplicados falló (continúa):", e.message); }
-    }
-
-    // Persistir la imagen del ticket en R2 (el disco de Railway es efímero) para
-    // poder adjuntarla luego, p.ej. en la solicitud de factura por correo.
-    let imagenTicketUrl = req.file.path;
-    try {
-      const extImg = ((req.file.originalname || '').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-      imagenTicketUrl = await subirArchivoR2(imageData, `tickets/${req.session.userId}_${Date.now()}.${extImg}`, req.file.mimetype || 'image/jpeg');
-      console.log(`🖼️ Imagen de ticket guardada en R2: ${imagenTicketUrl}`);
-    } catch (e) {
-      console.log(`⚠️ No se pudo subir imagen del ticket a R2: ${e.message}`);
-    }
-
-    console.log(`💾 Insertando ticket — portal: ${portalDetectado}, confianza: ${confianza}, requiere_confirmacion: ${requiereConfirmacion}`);
+    // 2) Insertar el ticket en estado 'pendiente' (sin OCR aún)
     const [insertResult] = await db.query(
-      "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, ocr_text, ocr_json, comercio, status, residente_id, portal_url, requiere_confirmacion) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [req.session.userId, req.file.originalname, imagenTicketUrl, textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", "pendiente_confirmacion", residente_id, datosOCR.portalUrl || portalUrl || null, requiereConfirmacion]
+      "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, comercio, status, residente_id, requiere_confirmacion) VALUES (?, ?, ?, ?, 'pendiente', ?, 1)",
+      [req.session.userId, req.file.originalname, imagenTicketUrl, "Analizando…", residente_id]
     );
     const ticketId = insertResult.insertId;
-    console.log(`✅ Ticket #${ticketId} insertado — enviando respuesta al cliente`);
 
-    if (portalDetectado === 'desconocido') {
-      return res.json({ ok: true, agenteActivado: true, comercio: datosOCR.comercio || 'este comercio', urlQR: datosOCR.portalUrl || null, ticketId });
-    }
-
-    if (!requiereConfirmacion) {
-      setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
-      return res.json({ ok: true, autoFacturando: true, msg: "Ticket recibido — iniciando facturación automática", datos: datosOCR, ticketId, campos });
-    }
-
-    res.json({ ok: true, necesitaConfirmacion: true, confianza, campos_dudosos: camposDudosos, ticketId, datos: datosOCR, campos });
+    // 3) Encolar la lectura (cola vision del worker) y responder DE INMEDIATO
+    await encolarVision(ticketId, req.session.userId);
+    console.log(`📥 Ticket #${ticketId} recibido → cola vision`);
+    res.json({ ok: true, enCola: true, ticketId, msg: "Ticket recibido — leyendo con IA" });
   } catch (err) {
-    console.error("❌ Error:", err.message);
+    console.error("❌ upload-ticket:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
   }
 });
+
+// ── ESTADO DEL OCR (el frontend hace polling tras subir) ─────────────────────
+// Devuelve la misma información que antes entregaba la respuesta síncrona de
+// /upload-ticket: duplicado | agenteActivado | necesitaConfirmacion | autoFacturando.
+app.get("/api/tickets/:id/estado-ocr", auth, async (req, res) => {
+  try {
+    const [[t]] = await db.query(
+      "SELECT id, status, error_msg, ocr_json, comercio, requiere_confirmacion, portal_url FROM tickets WHERE id = ? AND user_id = ?",
+      [req.params.id, req.session.userId]
+    );
+    if (!t) return res.json({ ok: false, msg: "Ticket no encontrado" });
+
+    // OCR aún en proceso
+    if (t.status === 'pendiente' && !t.ocr_json) return res.json({ ok: true, listo: false });
+
+    let datos = {};
+    try { datos = JSON.parse(t.ocr_json || '{}'); } catch {}
+
+    if (t.status === 'error' && (t.error_msg || '').startsWith('duplicado:')) {
+      return res.json({
+        ok: true, listo: true, duplicado: true, ticketId: t.id,
+        msg: `Este ticket ya fue registrado (${t.error_msg.slice(11).trim()}). Búscalo en "Mis Facturas".`,
+      });
+    }
+    if (t.status === 'error') {
+      return res.json({ ok: true, listo: true, error: true, ticketId: t.id, msg: t.error_msg || 'No se pudo leer el ticket' });
+    }
+
+    const portal = (datos.portal || 'desconocido').toLowerCase();
+    if (portal === 'desconocido') {
+      return res.json({
+        ok: true, listo: true, agenteActivado: true, ticketId: t.id,
+        comercio: datos.comercio || t.comercio || 'este comercio', urlQR: datos.portalUrl || t.portal_url || null,
+      });
+    }
+
+    const campos = camposPorPortal[portal] || camposPorPortal.desconocido;
+    if (t.requiere_confirmacion) {
+      return res.json({
+        ok: true, listo: true, necesitaConfirmacion: true, ticketId: t.id, datos, campos,
+        campos_dudosos: Array.isArray(datos.campos_dudosos) ? datos.campos_dudosos : [],
+        confianza: datos.confianza || 'media',
+      });
+    }
+    return res.json({ ok: true, listo: true, autoFacturando: true, ticketId: t.id, datos, campos });
+  } catch (err) {
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
 
 // ── CONFIRMAR / RECHAZAR DATOS OCR ──
 app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
@@ -1629,7 +739,9 @@ app.post("/api/tickets/:id/confirmar", auth, async (req, res) => {
       [JSON.stringify(datosConfirmados), ticketId]
     );
 
-    setImmediate(() => autoFacturar(ticketId, req.session.userId).catch(console.error));
+    // FASE 1: encolar en la cola de bots (el worker factura; máx 2 por portal)
+    const portalKey = (datosConfirmados.portal || datosConfirmados.comercio || 'desconocido').toLowerCase().replace(/\s+/g, '');
+    await encolarBot(parseInt(ticketId), req.session.userId, portalKey);
     res.json({ ok: true, autoFacturando: true, ticketId });
   } catch (err) {
     console.error("❌ Error confirmar:", err.message);
@@ -1680,13 +792,12 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
     if (!rows.length) return res.json({ ok: false, msg: "Ticket no encontrado" });
     if (rows[0].status === 'procesando') return res.json({ ok: false, msg: "Ya está procesándose" });
 
-    // Verificar concurrencia
-    const [[{ procesando }]] = await db.query("SELECT COUNT(*) as procesando FROM tickets WHERE status = 'procesando'");
-    if (procesando >= 2) return res.json({ ok: false, enCola: true, msg: "Ya hay 2 tickets procesándose. Este se iniciará automáticamente cuando terminen." });
-
-    // Ejecutar en background y responder de inmediato
-    ejecutarFacturacion(parseInt(ticketId), req.session.userId).catch(console.error);
-    res.json({ ok: true, procesando: true, msg: "Facturación iniciada" });
+    // FASE 1: encolar — la cola de bots controla la concurrencia (máx 2 por portal)
+    const [[tk]] = await db.query("SELECT ocr_json, comercio FROM tickets WHERE id = ?", [ticketId]);
+    let ocr = {}; try { ocr = JSON.parse(tk?.ocr_json || '{}'); } catch {}
+    const portalKey = (ocr.portal || tk?.comercio || 'desconocido').toLowerCase().replace(/\s+/g, '');
+    await encolarBot(parseInt(ticketId), req.session.userId, portalKey);
+    res.json({ ok: true, procesando: true, msg: "Facturación encolada" });
   } catch (err) {
     console.error("❌ Error /facturar:", err.message);
     res.status(500).json({ ok: false, msg: err.message });
@@ -2087,8 +1198,9 @@ app.post("/api/tickets/:id/cuestionario-portal", auth, async (req, res) => {
       campos?.length ? `Campos del portal: ${campos.join(', ')}` : '',
     ].filter(Boolean).join('\n');
 
-    // Disparar agentes ahora que tenemos el contexto del residente
-    setImmediate(() => autoFacturar(ticketId, ticket.user_id).catch(console.error));
+    // FASE 1: disparar el agente directo en SU cola (concurrencia 1, aislada —
+    // el alta de un portal nuevo ya no bloquea la facturación normal)
+    await encolarAgente(parseInt(ticketId), ticket.user_id, ticket.comercio, linkPortal || null);
 
     // Notificar al admin
     const [admins] = await db.query("SELECT id FROM users WHERE rol = 'admin'");
@@ -2106,79 +1218,9 @@ app.post("/api/tickets/:id/cuestionario-portal", auth, async (req, res) => {
   }
 });
 
-// ── DEBUG SCREENSHOT ──
-app.get("/debug-screenshot", auth, async (req, res) => {
-  const resultado = await detectarYFacturar({
-    ocr_text: "oxxo fol_vta:4682868 id=10obr500ng1",
-    comercio: "OXXO",
-    fecha: "10/05/2026",
-    folio: "4682868",
-    idVenta: "10OBR500NG1",
-    total: "57.00",
-    rfc: "XAXX010101000",
-    razonSocial: "PUBLICO EN GENERAL",
-    calle: "AV TEST",
-    ext: "123",
-    colonia: "CENTRO",
-    municipio: "CD OBREGON",
-    codigoPostal: "85000",
-    estado: "SONORA",
-    regimenFiscal: "616",
-    usoCfdi: "S01",
-  });
-  if (resultado.screenshot) {
-    res.send(`<img src="data:image/png;base64,${resultado.screenshot}" style="max-width:100%">`);
-  } else {
-    res.json(resultado);
-  }
-});
+// FASE 1: /debug-screenshot eliminado (corría un bot Puppeteer en el proceso web).
+// Las limpiezas periódicas (tickets error +30d, R2 +60d) viven ahora en el worker.
 
-// ── LIMPIEZA AUTOMÁTICA DE TICKETS ──
-async function cleanupTickets() {
-  try {
-    const [rows] = await db.query(
-      "SELECT id, ruta_archivo FROM tickets WHERE status = 'error' AND creado < NOW() - INTERVAL 30 DAY"
-    );
-    for (const t of rows) {
-      if (t.ruta_archivo && fs.existsSync(t.ruta_archivo)) {
-        fs.unlinkSync(t.ruta_archivo);
-      }
-      await db.query("DELETE FROM tickets WHERE id = ?", [t.id]);
-    }
-    if (rows.length) console.log(`🧹 Cleanup: ${rows.length} ticket(s) eliminados`);
-  } catch (e) {
-    console.error("❌ cleanupTickets:", e.message);
-  }
-}
-cleanupTickets();
-setInterval(cleanupTickets, 24 * 60 * 60 * 1000);
-
-// ── LIMPIEZA DE FACTURAS VENCIDAS EN R2 ──
-async function limpiarFacturasVencidas() {
-  try {
-    const limite = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
-    const [rows] = await db.query(
-      "SELECT id, xml_url, pdf_url FROM facturas WHERE creado < ? AND xml_url IS NOT NULL",
-      [limite]
-    );
-    for (const f of rows) {
-      if (f.xml_url?.includes("r2.dev")) {
-        const key = f.xml_url.split(".dev/")[1];
-        await borrarArchivoR2(key);
-      }
-      if (f.pdf_url?.includes("r2.dev")) {
-        const key = f.pdf_url.split(".dev/")[1];
-        await borrarArchivoR2(key);
-      }
-      await db.query("UPDATE facturas SET xml_url = NULL, pdf_url = NULL WHERE id = ?", [f.id]);
-    }
-    if (rows.length > 0) console.log(`🗑️ ${rows.length} facturas vencidas limpiadas de R2`);
-  } catch (e) {
-    console.log("⚠️ Error en limpieza R2:", e.message);
-  }
-}
-limpiarFacturasVencidas();
-setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
 
 // GET /api/portales-pendientes/datos?comercio=X — notas y URL guardadas para ese comercio
 app.get("/api/portales-pendientes/datos", auth, requireAdmin, async (req, res) => {
@@ -2541,295 +1583,9 @@ app.post("/api/admin/facturas/renombrar-uuid", auth, requireAdmin, async (req, r
   }
 });
 
-// ── JOB IMAP: procesar tickets en espera de correo ──
-async function procesarTicketsPorCorreo() {
-  let rows;
-  try {
-    // Hacer timeout de seguridad: tickets en procesando_correo por más de 60 min → error
-    // Usa procesando_correo_desde (cuándo entró al estado) no creado (cuándo se creó el ticket)
-    const [atascados] = await db.query(
-      `SELECT t.id, t.user_id, t.comercio FROM tickets t
-       WHERE t.status = 'procesando_correo'
-         AND procesando_correo_desde < DATE_SUB(NOW(), INTERVAL 60 MINUTE)`
-    );
-    for (const t of atascados) {
-      await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [t.id]);
-      await crearNotificacion(
-        t.user_id,
-        "factura_error",
-        `El correo con tu factura de ${t.comercio || "comercio"} no llegó en el tiempo esperado. Por favor intenta facturar de nuevo.`
-      );
-      console.log(`⏰ Job IMAP: ticket #${t.id} expirado (>60 min en procesando_correo) → error`);
-    }
+// FASE 1: los jobs de IMAP (conciliación por correo) y reintentos programados
+// viven ahora en lib/imap-job.js y corren en el worker.
 
-    [rows] = await db.query(
-      `SELECT t.id, t.ocr_json, t.comercio, t.user_id, u.email, u.nombre AS user_nombre
-       FROM tickets t
-       JOIN users u ON t.user_id = u.id
-       WHERE t.status = 'procesando_correo'
-       ORDER BY t.creado ASC
-       LIMIT 5`
-    );
-  } catch (e) {
-    console.log("⚠️ procesarTicketsPorCorreo query:", e.message);
-    return;
-  }
-  if (!rows.length) return;
-
-  console.log(`📬 Job IMAP: ${rows.length} ticket(s) esperando correo`);
-  console.log(`🎫 Tickets en espera:`, rows.map(t => `#${t.id} (${t.comercio})`).join(", "));
-
-  for (const ticket of rows) {
-    const datos = JSON.parse(ticket.ocr_json || "{}");
-    const codigoTicket = datos.codigoTicket || String(ticket.id);
-    // Comercio usado para filtrar emails y no asignar facturas de otro portal
-    const expectedComercio = ticket.comercio || datos.comercio || null;
-    console.log(`📧 Procesando ticket #${ticket.id} (${ticket.comercio}) — buscando correo${expectedComercio ? ` [comercio: ${expectedComercio}]` : ''}...`);
-
-    try {
-      // Espera corta por ticket (3 min): si el correo no llegó, se deja en
-      // procesando_correo y el siguiente ciclo (cada 2 min) reintenta. Evita que
-      // un ticket sin correo bloquee a los demás del lote hasta 10 min cada uno.
-      const { xmlBuffer, pdfBuffer } = await esperarFacturaPorCorreo(codigoTicket, 3 * 60 * 1000, expectedComercio, datos.total ?? null);
-
-      // UUID desde el contenido del XML (fuente canónica del CFDI)
-      // Fallback: timestamp si el XML no está disponible
-      const uuid = xmlBuffer ? extraerUUIDcfdi(xmlBuffer) : null;
-      const prefijo = `facturas/${uuid || Date.now()}`;
-      console.log(`📄 UUID CFDI: ${uuid || 'no encontrado'}`);
-
-      let xmlUrl = null, pdfUrl = null;
-      if (xmlBuffer) xmlUrl = await subirArchivoR2(xmlBuffer, `${prefijo}.xml`, "application/xml");
-      if (pdfBuffer) pdfUrl = await subirArchivoR2(pdfBuffer, `${prefijo}.pdf`, "application/pdf");
-
-      await db.query(
-        "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
-        [ticket.user_id, ticket.id, ticket.comercio, pdfUrl, xmlUrl, "completado"]
-      );
-      await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticket.id]);
-      console.log(`✅ Job IMAP: ticket #${ticket.id} procesado`);
-
-      try {
-        if (ticket.email) {
-          await enviarCorreo({
-            from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
-            to: ticket.email,
-            subject: "✅ Tu factura está lista — GPN Pinturas y Recubrimientos",
-            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-              <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;">
-                <h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2>
-                <p style="color:#C0DD97;margin:4px 0 0;">Portal de Facturación Automática</p>
-              </div>
-              <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
-                <p>Hola <strong>${ticket.user_nombre || ""}</strong>,</p>
-                <p>Tu factura de <strong>${ticket.comercio || "comercio"}</strong> está lista para descargar.</p>
-                <div style="margin:20px 0;">
-                  ${xmlUrl ? `<a href="${xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ""}
-                  ${pdfUrl ? `<a href="${pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ""}
-                </div>
-                <a href="https://portal-facturas-production.up.railway.app/mis-facturas" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:500;">Ver mis facturas →</a>
-                <p style="color:#999;font-size:12px;margin-top:20px;">Los archivos estarán disponibles 60 días.</p>
-              </div>
-            </div>`,
-          });
-          console.log(`📧 Job IMAP: correo enviado a ${ticket.email}`);
-        }
-      } catch (mailErr) {
-        console.log("⚠️ Job IMAP: error enviando correo:", mailErr.message);
-      }
-
-    } catch (imapErr) {
-      console.log(`⚠️ Job IMAP: no llegó correo para ticket #${ticket.id} — intentando Estrategia B...`);
-
-      // Estrategia B solo aplica para BuzonFacturas/ARCO
-      const portalDelTicket = (datos.portal || ticket.comercio || "").toLowerCase();
-      const esArco = portalDelTicket === "arco" || portalDelTicket === "buzonfacturas" ||
-        (ticket.comercio || "").toLowerCase().includes("arco");
-
-      // Estrategia 7-Eleven: la factura NO llega por correo — se recupera del
-      // portal con los endpoints REST (findLastCfdi → descargaCfdiXml/Pdf).
-      const es7Eleven = portalDelTicket.includes("eleven") || (ticket.comercio || "").toLowerCase().includes("eleven");
-      if (es7Eleven) {
-        try {
-          const { recuperarFacturaExistente } = require("./bots/7elevenmexicosadecv");
-          const folio7e = datos.folio || datos.referencia || "";
-          console.log(`♻️ Job IMAP: recuperando CFDI de 7-Eleven del portal para #${ticket.id} (folio ${folio7e})...`);
-          const rec = await recuperarFacturaExistente(folio7e, ticket.id);
-          if (rec && (rec.xmlUrl || rec.pdfUrl)) {
-            await db.query(
-              "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
-              [ticket.user_id, ticket.id, ticket.comercio, rec.pdfUrl || null, rec.xmlUrl || null, "completado"]
-            );
-            await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticket.id]);
-            console.log(`✅ Job IMAP: 7-Eleven recuperado para #${ticket.id} (UUID ${rec.uuid}, folio ${rec.folio})`);
-            await crearNotificacion(ticket.user_id, "factura_lista",
-              `Tu factura de ${ticket.comercio || "7-Eleven"} ya está lista para descargar.`).catch(() => {});
-            try {
-              if (ticket.email) {
-                await enviarCorreo({
-                  from: '"GPN Facturas" <buzonfacturas@serviciosga.site>',
-                  to: ticket.email,
-                  subject: "✅ Tu factura está lista — GPN Pinturas y Recubrimientos",
-                  html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-                    <div style="background:#3B6D11;padding:20px;border-radius:12px 12px 0 0;"><h2 style="color:#fff;margin:0;">GPN Pinturas y Recubrimientos</h2></div>
-                    <div style="background:#f8faf6;padding:24px;border-radius:0 0 12px 12px;border:1px solid #e0edd5;">
-                      <p>Hola <strong>${ticket.user_nombre || ""}</strong>,</p>
-                      <p>Tu factura de <strong>${ticket.comercio || "7-Eleven"}</strong> está lista.</p>
-                      <div style="margin:20px 0;">
-                        ${rec.xmlUrl ? `<a href="${rec.xmlUrl}" style="display:inline-block;margin-right:10px;background:#EAF3DE;color:#27500A;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar XML</a>` : ""}
-                        ${rec.pdfUrl ? `<a href="${rec.pdfUrl}" style="display:inline-block;background:#3B6D11;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:500;">⬇ Descargar PDF</a>` : ""}
-                      </div>
-                    </div></div>`,
-                });
-                console.log(`📧 Job IMAP: correo enviado a ${ticket.email}`);
-              }
-            } catch (mailErr) { console.log("⚠️ Job IMAP: error enviando correo:", mailErr.message); }
-          } else {
-            console.log(`⚠️ Job IMAP: no se pudo recuperar CFDI de 7-Eleven para #${ticket.id} — reintentará en siguiente ciclo`);
-          }
-        } catch (e7) {
-          console.log(`⚠️ Job IMAP: error recuperando 7-Eleven #${ticket.id}: ${e7.message} — reintentará`);
-        }
-        continue;
-      }
-
-      if (!esArco) {
-        // Dejar en procesando_correo para que el próximo ciclo (2 min) reintente.
-        // El expirador de 30 min convertirá a error si el correo nunca llega.
-        console.log(`⚠️ IMAP: correo no encontrado aún para ticket #${ticket.id} (${portalDelTicket}) — reintentará en siguiente ciclo`);
-        continue;
-      }
-
-      try {
-        const { facturarBuzonFacturas } = require("./bots/buzonfacturas");
-        const datos = JSON.parse(ticket.ocr_json || "{}");
-        const r = await facturarBuzonFacturas({ ...datos, ticketId: ticket.id, rfc: null });
-        if (r.ok && (r.xmlUrl || r.pdfUrl)) {
-          await db.query(
-            "INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?, ?, ?, ?, ?, ?)",
-            [ticket.user_id, ticket.id, ticket.comercio, r.pdfUrl || null, r.xmlUrl || null, "completado"]
-          );
-          await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [ticket.id]);
-          console.log(`✅ Job IMAP: Estrategia B exitosa para ticket #${ticket.id}`);
-        } else {
-          throw new Error(r.msg || "Estrategia B sin archivos");
-        }
-      } catch (bErr) {
-        console.log(`❌ Job IMAP: Estrategia B falló para ticket #${ticket.id}:`, bErr.message);
-        await db.query("UPDATE tickets SET status = 'error' WHERE id = ?", [ticket.id]);
-        await crearNotificacion(
-          ticket.user_id,
-          "factura_error",
-          `No se pudieron recuperar los archivos de tu factura de ${ticket.comercio || "comercio"}. Por favor intenta de nuevo o contacta al administrador.`
-        );
-        const [adminRows] = await db.query("SELECT id FROM users WHERE email = ?", [ADMIN_EMAIL]);
-        if (adminRows.length > 0) {
-          await crearNotificacion(
-            adminRows[0].id,
-            "factura_error_admin",
-            `Error recuperando factura del ticket #${ticket.id} (${ticket.comercio || "?"}): ${bErr.message}`
-          );
-        }
-      }
-    }
-  }
-}
-setInterval(sinSolape(procesarTicketsPorCorreo, 'IMAP-correo'), 2 * 60 * 1000);
-
-// ── JOB REINTENTOS AUTOMÁTICOS: corre cada 5 min, procesa tickets con reintento_programado <= NOW() ──
-async function procesarReintentos() {
-  let tickets;
-  try {
-    const [rows] = await db.query(
-      `SELECT t.*, u.email, u.nombre AS user_nombre,
-              u.rfc, u.razon_social, u.codigo_postal, u.regimen_fiscal, u.uso_cfdi
-       FROM tickets t
-       JOIN users u ON t.user_id = u.id
-       WHERE t.status = 'error'
-         AND t.reintento_programado IS NOT NULL
-         AND t.reintento_programado <= NOW()`
-    );
-    tickets = rows;
-  } catch { return; }
-  if (!tickets.length) return;
-
-  console.log(`🔄 Reintentos automáticos: ${tickets.length} ticket(s)`);
-
-  for (const t of tickets) {
-    // Bloqueo: no reintentar si ya está siendo procesado
-    const [[check]] = await db.query("SELECT status FROM tickets WHERE id = ?", [t.id]);
-    if (check?.status === 'procesando') continue;
-
-    await db.query("UPDATE tickets SET status = 'procesando', reintento_programado = NULL WHERE id = ?", [t.id]);
-    console.log(`🔄 Reintentando ticket #${t.id} (${t.comercio})`);
-
-    const inicioMs = Date.now();
-    try {
-      const datos = JSON.parse(t.ocr_json || "{}");
-      const resultado = await detectarYFacturar({
-        ...datos,
-        rfc: t.rfc, razonSocial: t.razon_social,
-        codigoPostal: t.codigo_postal, regimenFiscal: t.regimen_fiscal,
-        usoCfdi: t.uso_cfdi || "G03", ticketId: t.id,
-        comercio: t.comercio, ocr_text: t.ocr_text,
-      }, db);
-      const durMs = Date.now() - inicioMs;
-
-      if (resultado.ok && resultado.procesandoCorreo) {
-        await db.query("UPDATE tickets SET status = 'procesando_correo', procesando_correo_desde = NOW() WHERE id = ?", [t.id]);
-        await registrarIntento(t.id, datos.portal || t.comercio, 'procesando_correo', 'Reintento automático — esperando correo', durMs);
-      } else if (resultado.ok) {
-        let xmlUrl = resultado.xmlUrl || resultado.xml || null;
-        let pdfUrl = resultado.pdfUrl || resultado.pdf || null;
-        if (xmlUrl) { const r = await renombrarConUUID(xmlUrl, pdfUrl, t.comercio); xmlUrl = r.xmlUrl; pdfUrl = r.pdfUrl; }
-        await registrarIntento(t.id, datos.portal || t.comercio, 'ok', 'Reintento automático exitoso', durMs);
-        await db.query("INSERT INTO facturas (user_id, ticket_id, comercio, pdf_url, xml_url, status) VALUES (?,?,?,?,?,?)",
-          [t.user_id, t.id, t.comercio, pdfUrl, xmlUrl, 'completado']);
-        await db.query("UPDATE tickets SET status = 'procesado' WHERE id = ?", [t.id]);
-        await crearNotificacion(t.user_id, "factura_lista",
-          `✅ Tu factura de ${t.comercio} fue generada en el reintento automático. Puedes descargarla en Mis Facturas.`);
-        console.log(`✅ Reintento exitoso ticket #${t.id}`);
-      } else {
-        // Contar cuántos reintentos fallidos lleva este ticket
-        const [[{ nFallos }]] = await db.query(
-          "SELECT COUNT(*) AS nFallos FROM ticket_intentos WHERE ticket_id = ? AND resultado = 'error'",
-          [t.id]
-        ).catch(() => [[{ nFallos: 0 }]]);
-
-        // Si el error es de datos inválidos o vencido → NO reintenta más (son datos del ticket, no bugs)
-        // Si lleva 3+ fallos → detener reintentos y pedir corrección manual
-        const esErrorDeDatos = resultado.error_code === 'datos_invalidos' ||
-                               resultado.error_code === 'ticket_vencido' ||
-                               resultado.error_code === 'captcha';
-        const demasiadosFallos = nFallos >= 3;
-
-        if (esErrorDeDatos || demasiadosFallos) {
-          await db.query("UPDATE tickets SET status = 'error', reintento_programado = NULL WHERE id = ?", [t.id]);
-          await registrarIntento(t.id, datos.portal || t.comercio, 'error', `Reintento automático falló: ${resultado.msg}`, durMs);
-          const razon = esErrorDeDatos
-            ? "Los datos del ticket son incorrectos o el plazo venció"
-            : `Después de ${nFallos} intentos, el sistema no pudo facturar`;
-          await crearNotificacion(t.user_id, "factura_error",
-            `⚠️ ${razon}. Entra a Mis Tickets → Editar datos para corregirlos manualmente.`);
-          console.log(`🛑 Ticket #${t.id} — reintentos detenidos (${razon})`);
-        } else {
-          // Error genuino (timeout, portal caído) — reintenta mañana
-          const sigMedianoche = proximaMedianoche();
-          await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [sigMedianoche, t.id]);
-          await registrarIntento(t.id, datos.portal || t.comercio, 'error', `Reintento automático falló: ${resultado.msg}`, durMs);
-          await crearNotificacion(t.user_id, "factura_error",
-            `Tu factura de ${t.comercio} sigue en proceso — el sistema lo reintentará mañana. Si los datos son incorrectos, usa "Editar datos".`);
-          console.log(`⚠️ Reintento fallido ticket #${t.id}: ${resultado.msg}`);
-        }
-      }
-    } catch (e) {
-      await db.query("UPDATE tickets SET status = 'error', reintento_programado = ? WHERE id = ?", [proximaMedianoche(), t.id]);
-      await registrarIntento(t.id, t.comercio, 'error', `Excepción en reintento: ${e.message}`, Date.now() - inicioMs);
-      console.log(`❌ Excepción reintentando ticket #${t.id}:`, e.message);
-    }
-  }
-}
-setInterval(sinSolape(procesarReintentos, 'reintentos'), 5 * 60 * 1000);
 
 // ── AGENTES — Fase 5: CRUD portales gestionados ──────────────────────────────
 
@@ -2923,18 +1679,52 @@ app.post("/api/admin/agente/portales/:id/reorquestar", requireAdmin, async (req,
   }
 });
 
-// Resetear ticket: borra factura mal guardada y regresa a pendiente_confirmacion
+// Resetear ticket: borra factura mal guardada y re-encola la facturación
 app.post("/api/admin/tickets/:id/resetear", auth, requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     await db.query("DELETE FROM facturas WHERE ticket_id = ?", [id]);
-    // requiere_confirmacion=0 → procesarCola lo retoma y lo factura solo
-    // (sin esto el ticket queda atascado esperando una confirmación manual).
     await db.query(
       "UPDATE tickets SET status='pendiente_confirmacion', requiere_confirmacion=0, error_msg=NULL, procesando_correo_desde=NULL, reintento_programado=NULL WHERE id=?",
       [id]
     );
+    // FASE 1: encolar directo en la cola de bots (antes lo retomaba procesarCola)
+    const [[tk]] = await db.query("SELECT user_id, ocr_json, comercio FROM tickets WHERE id = ?", [id]);
+    if (tk) {
+      let ocr = {}; try { ocr = JSON.parse(tk.ocr_json || '{}'); } catch {}
+      const portalKey = (ocr.portal || tk.comercio || 'desconocido').toLowerCase().replace(/\s+/g, '');
+      await encolarBot(id, tk.user_id, portalKey);
+    }
     res.json({ ok: true });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── COLA MUERTA (FASE 1): jobs que agotaron sus reintentos ───────────────────
+// Nada se pierde en silencio: aquí se listan, se reintentan o se descartan.
+app.get("/api/admin/cola-muerta", auth, requireAdmin, async (req, res) => {
+  try {
+    const jobs = await listarColaMuerta(parseInt(req.query.limite) || 50);
+    res.json({ ok: true, total: jobs.length, jobs });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+app.post("/api/admin/cola-muerta/:cola/:jobId/reintentar", auth, requireAdmin, async (req, res) => {
+  try {
+    await reintentarJobMuerto(req.params.cola, req.params.jobId);
+    res.json({ ok: true, msg: `Job ${req.params.jobId} re-encolado en ${req.params.cola}` });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+app.delete("/api/admin/cola-muerta/:cola/:jobId", auth, requireAdmin, async (req, res) => {
+  try {
+    const borrado = await borrarJobMuerto(req.params.cola, req.params.jobId);
+    res.json({ ok: borrado, msg: borrado ? "Job eliminado" : "Job no encontrado" });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }
