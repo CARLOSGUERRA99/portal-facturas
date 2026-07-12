@@ -19,6 +19,7 @@ const { crearNotificacion, esPortalFacturable, sinSolape } = require("./lib/util
 const {
   procesarTicketsPorCorreo, procesarReintentos, cleanupTickets, limpiarFacturasVencidas,
 } = require("./lib/imap-job");
+const { respaldarBaseDatos } = require("./lib/backup-db");
 const { restaurarBotsDinamicos } = require("./agentes/orquestador");
 
 const MIME_POR_EXT = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
@@ -167,8 +168,12 @@ setInterval(sinSolape(procesarReintentos, "reintentos"), 5 * 60 * 1000);
 setInterval(sinSolape(rescatarTicketsSinEncolar, "rescate"), 60 * 1000);
 setInterval(cleanupTickets, 24 * 60 * 60 * 1000);
 setInterval(limpiarFacturasVencidas, 24 * 60 * 60 * 1000);
+// Respaldo diario de la BD a R2 (capa extra — los backups de volumen de Railway
+// se administran aparte en el dashboard)
+setInterval(() => respaldarBaseDatos().catch(e => console.error("❌ respaldo DB:", e.message)), 24 * 60 * 60 * 1000);
 cleanupTickets();
 limpiarFacturasVencidas();
+respaldarBaseDatos().catch(e => console.error("❌ respaldo DB:", e.message));
 
 // Restaurar bots dinámicos (generados por agentes) al disco de ESTE contenedor
 restaurarBotsDinamicos(db).catch(e => console.log("⚠️ restaurarBots:", e.message));

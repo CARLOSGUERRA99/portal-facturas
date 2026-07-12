@@ -22,6 +22,9 @@ function nuevaConexion() {
   const conn = new IORedis(process.env.REDIS_URL, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
+    // Railway: la red privada (*.railway.internal) es IPv6-only y ioredis por
+    // defecto resuelve solo IPv4 → ETIMEDOUT. family 0 = autodetectar (dual).
+    family: 0,
   });
   // Sin este handler, un parpadeo de Redis emite 'error' sin listener y TUMBA
   // el proceso Node completo. ioredis reconecta solo; aquí solo registramos.
