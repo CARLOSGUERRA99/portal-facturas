@@ -40,13 +40,17 @@ function crearMcpServer() {
     "Resumen completo del estado del sistema: tickets por status, atascados, errores recientes y portales pendientes.",
     {},
     async () => {
+      // Estados REALES del enum de tickets: pendiente, procesando, procesando_correo,
+      // procesado, error, pendiente_confirmacion. (Antes consultaba 'facturando' y
+      // 'completado', que no existen — por eso reportaba 0 en todo.)
       const [[conteos]] = await db.query(`
         SELECT
+          SUM(status = 'pendiente')              AS pendiente,
           SUM(status = 'pendiente_confirmacion') AS pendiente_confirmacion,
-          SUM(status = 'facturando')             AS facturando,
-          SUM(status = 'completado')             AS completado,
-          SUM(status = 'error')                  AS error,
+          SUM(status = 'procesando')             AS procesando,
           SUM(status = 'procesando_correo')      AS procesando_correo,
+          SUM(status = 'procesado')              AS procesado,
+          SUM(status = 'error')                  AS error,
           COUNT(*)                               AS total
         FROM tickets
       `);
@@ -54,7 +58,7 @@ function crearMcpServer() {
       const [atascados] = await db.query(`
         SELECT id, comercio, status, creado
         FROM tickets
-        WHERE status IN ('procesando_correo','facturando')
+        WHERE status IN ('procesando_correo','procesando')
           AND creado < DATE_SUB(NOW(), INTERVAL 30 MINUTE)
         ORDER BY creado ASC
       `);
@@ -85,7 +89,7 @@ function crearMcpServer() {
     "consultar_tickets",
     "Consulta tickets con filtros opcionales por status, comercio o usuario.",
     {
-      status:   z.string().optional().describe("pendiente_confirmacion | facturando | completado | error | procesando_correo"),
+      status:   z.string().optional().describe("pendiente | pendiente_confirmacion | procesando | procesando_correo | procesado | error"),
       comercio: z.string().optional().describe("Nombre parcial del comercio"),
       limite:   z.number().optional().describe("Máximo de resultados (default 20)"),
     },
