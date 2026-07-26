@@ -6,7 +6,7 @@ const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
 const { execSync } = require("child_process");
-const { orquestar, activarBot } = require("./agentes/orquestador");
+const { activarBot } = require("./agentes/orquestador");
 const { subirArchivoR2, borrarArchivoR2, listarArchivosR2 } = require("./storage/r2");
 
 // ── FASE 1: módulos compartidos con el worker ────────────────────────────────
@@ -17,9 +17,11 @@ const { enviarCorreo } = require("./lib/correo");
 const { crearNotificacion, renombrarConUUID } = require("./lib/util");
 const { camposPorPortal } = require("./lib/vision");
 const {
-  encolarVision, encolarBot, encolarAgente,
+  encolarVision, encolarBot, encolarAgente, encolarOrquestacionManual, agenteQueue,
   listarColaMuerta, reintentarJobMuerto, borrarJobMuerto,
 } = require("./queues");
+const { RedisStore } = require("connect-redis");
+const IORedis = require("ioredis");
 
 const app = express();
 
@@ -59,10 +61,42 @@ app.get('/api/diag-mail', async (req, res) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+if (!process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET no configurada (Railway → Variables)");
+}
+if (!process.env.REDIS_URL) {
+  throw new Error("REDIS_URL no configurada — la sesión requiere Redis (Railway → servicio Redis → variable REDIS_URL)");
+}
+
+// ── FASE 5: sesión persistente en Redis (antes MemoryStore: se perdía en cada
+// restart/deploy, y no sirve si el web service llega a correr con >1 réplica).
+// Conexión dedicada, separada de la de BullMQ en queues/index.js (esa usa
+// maxRetriesPerRequest:null, pensado para Workers, no para un store de sesión).
+const sessionRedis = new IORedis(process.env.REDIS_URL, {
+  // Railway: la red privada (*.railway.internal) es IPv6-only y ioredis por
+  // defecto resuelve solo IPv4 → ETIMEDOUT. family 0 = autodetectar (dual).
+  family: 0,
+});
+sessionRedis.on("error", (e) => console.error("⚠️ [session-redis]", e.message));
+
+app.set("trust proxy", 1);
 app.use(session({
-  secret: process.env.SESSION_SECRET || "gpnsecret123",
+  store: new RedisStore({ client: sessionRedis, prefix: "sess:" }),
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  rolling: true,
+  name: "pf.sid",
+  cookie: {
+    httpOnly: true,
+    // Railway (RAILWAY_ENVIRONMENT) siempre sirve HTTPS; en local (node server.js
+    // sin Railway) no hay TLS, así que "secure" se desactiva para no romper el
+    // login al probar localmente.
+    secure: !!process.env.RAILWAY_ENVIRONMENT,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 días
+  },
 }));
 
 // ── MODO MANTENIMIENTO ──
@@ -322,7 +356,16 @@ async function migrarUUIDFacturas() {
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 // ── MIDDLEWARE ──
+// auth: usada por TODAS las rutas /api/* — responde 401 JSON (necesario para un
+// frontend en otro origen/dominio; un redirect no es un patrón usable para fetch()).
 function auth(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ ok: false, msg: "No autenticado" });
+  next();
+}
+
+// pageAuth: solo para las rutas que sirven HTML directamente (abajo) — conserva
+// el redirect de siempre, útil mientras esas páginas sigan viviendo en Express.
+function pageAuth(req, res, next) {
   if (!req.session.userId) return res.redirect("/");
   next();
 }
@@ -335,11 +378,11 @@ function requireAdmin(req, res, next) {
 
 // ── RUTAS WEB ──
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "login.html")));
-app.get("/dashboard", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
-app.get("/mis-tickets", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-tickets.html")));
-app.get("/mis-facturas", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-facturas.html")));
-app.get("/perfil", auth, (req, res) => res.sendFile(path.join(__dirname, "public", "perfil.html")));
-app.get("/admin-residentes", auth, requireAdmin, (req, res) =>
+app.get("/dashboard", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
+app.get("/mis-tickets", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-tickets.html")));
+app.get("/mis-facturas", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-facturas.html")));
+app.get("/perfil", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "perfil.html")));
+app.get("/admin-residentes", pageAuth, requireAdmin, (req, res) =>
   res.sendFile(path.join(__dirname, "public", "admin-residentes.html")));
 
 // ── REGISTRO ──
@@ -369,11 +412,18 @@ app.post("/login", async (req, res) => {
     if (rows.length === 0) return res.json({ ok: false, msg: "Usuario no existe" });
     const match = await bcrypt.compare(password, rows[0].password_hash);
     if (!match) return res.json({ ok: false, msg: "Contraseña incorrecta" });
-    req.session.userId   = rows[0].id;
-    req.session.userName = rows[0].nombre;
-    req.session.userRfc  = rows[0].rfc || "";
-    req.session.userRol  = rows[0].rol || "residente";
-    res.json({ ok: true });
+    // session.regenerate evita session fixation (no reusar el id de sesión pre-login)
+    req.session.regenerate((err) => {
+      if (err) return res.json({ ok: false, msg: "Error de sesión" });
+      req.session.userId   = rows[0].id;
+      req.session.userName = rows[0].nombre;
+      req.session.userRfc  = rows[0].rfc || "";
+      req.session.userRol  = rows[0].rol || "residente";
+      req.session.save((err2) => {
+        if (err2) return res.json({ ok: false, msg: "Error de sesión" });
+        res.json({ ok: true });
+      });
+    });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }
@@ -1295,18 +1345,38 @@ app.post("/api/admin/agente/validar", auth, requireAdmin, async (req, res) => {
 // POST /api/admin/agente/orquestar — pipeline completo con DB + corrección automática
 app.post("/api/admin/agente/orquestar", auth, requireAdmin, async (req, res) => {
   try {
-    const { ticketId, portalUrl, url, comercioNombre, nombrePortal, instrucciones, notas } = req.body;
+    const { portalUrl, url, comercioNombre, nombrePortal, instrucciones, notas } = req.body;
     const urlFinal = portalUrl || url;
     const nombreFinal = comercioNombre || nombrePortal;
     if (!urlFinal || !nombreFinal)
       return res.json({ ok: false, msg: "portalUrl y comercioNombre son requeridos" });
 
-    console.log(`🎭 [Orquestador] Iniciando para: ${nombreFinal}`);
-    const resultado = await orquestar({ db, ticketId: ticketId || null, portalUrl: urlFinal, comercioNombre: nombreFinal, instrucciones: instrucciones || notas || '' });
-    res.json(resultado);
+    // FASE 5: encolado (el pipeline puede tardar 40+ min — ya no cabe dentro de
+    // un solo request HTTP, ni en Railway ni sobre todo detrás de Vercel). El
+    // panel hace polling de GET /api/admin/agente/estado/:jobId.
+    const job = await encolarOrquestacionManual(req.session.userId, nombreFinal, urlFinal, instrucciones || notas || '');
+    console.log(`🎭 [Orquestador] Encolado job ${job.id} para: ${nombreFinal}`);
+    res.json({ ok: true, encolado: true, jobId: job.id });
   } catch (err) {
     console.error("❌ Orquestador:", err.message);
     res.json({ ok: false, msg: err.message });
+  }
+});
+
+// GET /api/admin/agente/estado/:jobId — polling del resultado de /orquestar
+app.get("/api/admin/agente/estado/:jobId", auth, requireAdmin, async (req, res) => {
+  try {
+    const job = await agenteQueue.getJob(req.params.jobId);
+    if (!job) return res.json({ ok: false, msg: "Job no encontrado" });
+    const estado = await job.getState(); // waiting | active | completed | failed | delayed
+    res.json({
+      ok: true,
+      estado,
+      resultado: estado === "completed" ? job.returnvalue : null,
+      error: estado === "failed" ? job.failedReason : null,
+    });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
   }
 });
 
@@ -1590,7 +1660,7 @@ app.post("/api/admin/facturas/renombrar-uuid", auth, requireAdmin, async (req, r
 // ── AGENTES — Fase 5: CRUD portales gestionados ──────────────────────────────
 
 // Listar todos los portales gestionados por agentes
-app.get("/api/admin/agente/portales", requireAdmin, async (req, res) => {
+app.get("/api/admin/agente/portales", auth, requireAdmin, async (req, res) => {
   try {
     const [rows] = await db.query(
       "SELECT id, comercio, nombre, estado, intentos_correccion, error_msg, nombre_archivo, nombre_funcion, creado, actualizado FROM portales_agente ORDER BY creado DESC"
@@ -1602,7 +1672,7 @@ app.get("/api/admin/agente/portales", requireAdmin, async (req, res) => {
 });
 
 // Detalle de un portal (incluye código generado y análisis)
-app.get("/api/admin/agente/portales/:id", requireAdmin, async (req, res) => {
+app.get("/api/admin/agente/portales/:id", auth, requireAdmin, async (req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM portales_agente WHERE id = ? LIMIT 1", [req.params.id]);
     if (!rows.length) return res.json({ ok: false, msg: "No encontrado" });
@@ -1626,7 +1696,7 @@ app.post("/api/admin/agente/portales/:id/aprobar", auth, requireAdmin, async (re
 });
 
 // Rechazar y reiniciar orquestación con notas
-app.post("/api/admin/agente/portales/:id/rechazar", requireAdmin, async (req, res) => {
+app.post("/api/admin/agente/portales/:id/rechazar", auth, requireAdmin, async (req, res) => {
   const { notas } = req.body;
   try {
     await db.query(
@@ -1650,7 +1720,7 @@ app.delete("/api/admin/agente/portales/:id", auth, requireAdmin, async (req, res
 });
 
 // Editar código del bot manualmente
-app.put("/api/admin/agente/portales/:id/codigo", requireAdmin, async (req, res) => {
+app.put("/api/admin/agente/portales/:id/codigo", auth, requireAdmin, async (req, res) => {
   try {
     const { bot_code } = req.body;
     await db.query("UPDATE portales_agente SET bot_code = ? WHERE id = ?", [bot_code, req.params.id]);
@@ -1661,19 +1731,18 @@ app.put("/api/admin/agente/portales/:id/codigo", requireAdmin, async (req, res) 
 });
 
 // Re-orquestar un portal existente (con notas corregidas)
-app.post("/api/admin/agente/portales/:id/reorquestar", requireAdmin, async (req, res) => {
+app.post("/api/admin/agente/portales/:id/reorquestar", auth, requireAdmin, async (req, res) => {
   try {
     const [rows] = await db.query("SELECT * FROM portales_agente WHERE id = ? LIMIT 1", [req.params.id]);
     if (!rows.length) return res.json({ ok: false, msg: "No encontrado" });
     const portal = rows[0];
     const { instrucciones } = req.body;
-    const resultado = await orquestar({
-      db,
-      portalUrl: portal.portal_url,
-      comercioNombre: portal.nombre,
-      instrucciones: instrucciones || portal.instrucciones || '',
-    });
-    res.json(resultado);
+    // Mismo fix que /orquestar: el pipeline puede tardar 40+ min, no cabe inline
+    // en un request HTTP. Se encola y el panel hace polling del jobId.
+    const job = await encolarOrquestacionManual(
+      req.session.userId, portal.nombre, portal.portal_url, instrucciones || portal.instrucciones || ''
+    );
+    res.json({ ok: true, encolado: true, jobId: job.id });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }

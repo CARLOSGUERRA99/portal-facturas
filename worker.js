@@ -20,7 +20,7 @@ const {
   procesarTicketsPorCorreo, procesarReintentos, cleanupTickets, limpiarFacturasVencidas,
 } = require("./lib/imap-job");
 const { respaldarBaseDatos } = require("./lib/backup-db");
-const { restaurarBotsDinamicos } = require("./agentes/orquestador");
+const { restaurarBotsDinamicos, orquestar } = require("./agentes/orquestador");
 
 const MIME_POR_EXT = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
 
@@ -119,9 +119,22 @@ const botsWorker = new Worker("bots", async (job, token) => {
 
 // ── Worker AGENTE (concurrencia 1 — nunca bloquea la facturación normal) ─────
 const agenteWorker = new Worker("agente", async (job) => {
-  const { ticketId, userId, comercioNombre, portalUrl } = job.data;
-  console.log(`🧠 [agente] Alta de portal nuevo: ${comercioNombre} (ticket #${ticketId})`);
-  await manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl);
+  // "alta-portal": flujo automático disparado por un ticket con portal desconocido.
+  if (job.name === "alta-portal") {
+    const { ticketId, userId, comercioNombre, portalUrl } = job.data;
+    console.log(`🧠 [agente] Alta de portal nuevo: ${comercioNombre} (ticket #${ticketId})`);
+    await manejarNuevoPortal(ticketId, userId, comercioNombre, portalUrl);
+    return;
+  }
+  // "orquestar-manual": botón "Orquestar" del panel admin — antes corría inline
+  // en el request HTTP; el resultado queda en job.returnvalue para que
+  // GET /api/admin/agente/estado/:jobId lo reporte (polling).
+  if (job.name === "orquestar-manual") {
+    const { comercioNombre, portalUrl, instrucciones } = job.data;
+    console.log(`🎭 [agente] Orquestación manual: ${comercioNombre}`);
+    return await orquestar({ db, ticketId: null, portalUrl, comercioNombre, instrucciones: instrucciones || '' });
+  }
+  console.log(`⚠️ [agente] Job de tipo desconocido: ${job.name}`);
 }, {
   connection: nuevaConexion(),
   concurrency: 1,

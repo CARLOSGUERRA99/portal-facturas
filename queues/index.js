@@ -61,6 +61,17 @@ async function encolarAgente(ticketId, userId, comercioNombre, portalUrl) {
     { jobId: `agente-${ticketId}-${Date.now()}` });
 }
 
+// FASE 5: variante para el botón "Orquestar" del panel admin (sin ticket, con
+// instrucciones manuales) — antes corría orquestar() síncrono dentro del
+// request HTTP (podía tardar 40+ min); ahora se encola igual que el alta
+// automática, pero como job "orquestar-manual" para que el worker llame a
+// orquestar() directo en vez de manejarNuevoPortal (que marca tickets/notifica
+// al residente, comportamiento que no aplica aquí).
+async function encolarOrquestacionManual(userId, comercioNombre, portalUrl, instrucciones = '') {
+  return agenteQueue.add("orquestar-manual", { userId, comercioNombre, portalUrl, instrucciones },
+    { jobId: `orquestar-manual-${Date.now()}` });
+}
+
 // ── Límite de concurrencia POR PORTAL (cola bots) ────────────────────────────
 // Contador en Redis por portal con TTL de seguridad. Si ya hay `limite` bots del
 // mismo portal corriendo, el job se re-agenda +15-30s (jitter) en vez de correr.
@@ -125,7 +136,7 @@ async function borrarJobMuerto(cola, jobId) {
 module.exports = {
   connection, nuevaConexion,
   visionQueue, botsQueue, agenteQueue,
-  encolarVision, encolarBot, encolarAgente,
+  encolarVision, encolarBot, encolarAgente, encolarOrquestacionManual,
   tomarSlotPortal, soltarSlotPortal, LIMITE_POR_PORTAL,
   listarColaMuerta, reintentarJobMuerto, borrarJobMuerto,
 };
