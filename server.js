@@ -1813,11 +1813,21 @@ app.delete("/api/admin/limpiar-comercio/:slug", auth, requireAdmin, async (req, 
 });
 
 // ── Endpoint de versión (diagnóstico) ─────────────────────────────────────────
+// Railway no incluye .git/ en la imagen final (Nixpacks) → "git rev-parse" en
+// runtime siempre fallaba y devolvía 'desconocido'. Railway sí inyecta el commit
+// como variable de entorno en cada deploy — eso es lo que hay que leer.
 app.get('/api/version', (req, res) => {
-  const { execSync } = require('child_process');
-  let commit = 'desconocido';
-  try { commit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim(); } catch {}
-  res.json({ commit, ts: new Date().toISOString(), node: process.version });
+  let commit = process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || null;
+  if (!commit) {
+    try { commit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim(); }
+    catch { commit = 'desconocido'; }
+  }
+  res.json({
+    commit,
+    branch: process.env.RAILWAY_GIT_BRANCH || null,
+    ts: new Date().toISOString(),
+    node: process.version,
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
