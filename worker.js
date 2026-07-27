@@ -15,7 +15,7 @@ const {
 } = require("./queues");
 const { procesarImagenTicket, buscarDuplicado } = require("./lib/vision");
 const { ejecutarFacturacion, manejarNuevoPortal } = require("./lib/facturacion");
-const { crearNotificacion, esPortalFacturable, sinSolape } = require("./lib/util");
+const { crearNotificacion, esPortalFacturable, sinSolape, esComercioBloqueado } = require("./lib/util");
 const {
   procesarTicketsPorCorreo, procesarReintentos, cleanupTickets, limpiarFacturasVencidas,
 } = require("./lib/imap-job");
@@ -55,6 +55,19 @@ const visionWorker = new Worker("vision", async (job) => {
   }
 
   const { datosOCR, textoOCR, portalDetectado, confianza, camposDudosos, requiereConfirmacion, portalUrl } = r;
+
+  // Comercios cuyo portal bloquea el acceso automatizado (ver esComercioBloqueado
+  // en lib/util.js) — no se tratan como "portal nuevo" para el agente de alta
+  // automática, se rechazan explícitamente con un mensaje claro.
+  if (esComercioBloqueado(datosOCR.comercio || ticket.comercio)) {
+    const comercioNombre = datosOCR.comercio || ticket.comercio || "este comercio";
+    const msg = `${comercioNombre} no se puede facturar de forma automática: su portal bloquea el acceso automatizado (protección anti-bots) y por eso no está soportado. Solicita esta factura directamente en el sitio del comercio.`;
+    console.log(`🛑 [vision] Ticket #${ticketId} — comercio bloqueado (${comercioNombre})`);
+    await db.query("UPDATE tickets SET status = 'error', error_msg = ?, ocr_json = ?, comercio = ? WHERE id = ?",
+      [msg, JSON.stringify(datosOCR), comercioNombre, ticketId]);
+    await crearNotificacion(userId, "factura_error", msg);
+    return;
+  }
 
   // Anti-duplicados (misma regla que antes, ahora post-OCR): si ya existe un
   // ticket del mismo comercio+folio no-error, este se marca como duplicado.
