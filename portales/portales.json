@@ -2,6 +2,30 @@
   "version": "1.0",
   "actualizado": "2026-05-28",
   "portales": {
+    "bodegaaurrera": {
+      "nombre": "Walmart de México (Bodega Aurrera / Mi Bodega Aurrera / Walmart / Sam's Club / Superama)",
+      "bot": "bots/bodegaaurrera.js",
+      "estado": "produccion",
+      "url_base": "https://facturacion.walmartmexico.com.mx/frmDatos.aspx",
+      "tecnologia": "ASP.NET WebForms",
+      "comercios": [
+        "Bodega Aurrera", "Mi Bodega Aurrera", "Walmart", "Sam's Club", "Superama",
+        "NUEVA WAL MART DE MEXICO S DE RL DE CV"
+      ],
+      "deteccion": {
+        "por_portal_field": "bodegaaurrera",
+        "por_texto_ocr": ["bodega aurrera", "bodegaaurrera", "wal mart", "walmart", "sam's club", "superama"],
+        "por_comercio": ["bodega aurrera", "walmart", "wal mart", "sam's club", "superama"],
+        "por_url_qr": []
+      },
+      "campos_ticket": ["tc", "tr", "fecha", "total"],
+      "campos_fiscales": ["rfc", "codigoPostal"],
+      "datos_fijos": {
+        "regimenFiscal": "601 — General de Ley Personas Morales",
+        "usoCfdi": "G03 — Gastos en general",
+        "email_captura": "buzonfacturas@serviciosga.site"
+      }
+    },
     "oxxo": {
       "nombre": "OXXO Facturación Electrónica",
       "bot": "bots/oxxo.js",

@@ -11,6 +11,7 @@ const { facturarSushito } = require('./sushito');
 const { facturarAutoZone } = require('./autozone');
 const { facturarDana } = require('./dana');
 const { facturarTufesa } = require('./tufesa');
+const { facturarBodegaAurrera } = require('./bodegaaurrera');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -156,6 +157,19 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: TUFESA');
     return await facturarTufesa(datos);
+  }
+
+  if (
+    portal === 'bodegaaurrera' ||
+    comercio.includes('bodega aurrera') ||
+    comercio.includes('wal mart') ||
+    comercio.includes('walmart') ||
+    comercio.includes("sam's club") ||
+    comercio.includes('superama') ||
+    portalUrl.includes('walmartmexico.com.mx')
+  ) {
+    console.log('🎯 Portal detectado: Bodega Aurrera / Walmart de México');
+    return await facturarBodegaAurrera(datos);
   }
 
   if (
