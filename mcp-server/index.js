@@ -145,6 +145,22 @@ function crearMcpServer() {
       );
       if (!ticket) return { content: [{ type: "text", text: `Ticket #${ticket_id} no encontrado` }] };
 
+      // Si ya existe una fila de factura INCOMPLETA (sin XML) para este
+      // ticket, se borra antes de reintentar — si no, el job de IMAP la
+      // encuentra duplicada (facturas.ticket_id es UNIQUE) al insertar la
+      // nueva con los archivos reales. Una factura ya COMPLETA (con XML)
+      // no se toca — reprocesar no debe borrar un CFDI válido existente.
+      const [[facturaExistente]] = await db.query(
+        "SELECT id, xml_url FROM facturas WHERE ticket_id = ?", [ticket_id]
+      );
+      let notaFactura = "";
+      if (facturaExistente && !facturaExistente.xml_url) {
+        await db.query("DELETE FROM facturas WHERE id = ?", [facturaExistente.id]);
+        notaFactura = ` (se borró una fila de factura incompleta previa #${facturaExistente.id}, sin XML)`;
+      } else if (facturaExistente) {
+        notaFactura = ` ⚠️ Ya existe una factura completa (#${facturaExistente.id}) para este ticket — no se tocó, revisa antes de reprocesar si esto es intencional`;
+      }
+
       await db.query(
         "UPDATE tickets SET status = 'procesando_correo' WHERE id = ?",
         [ticket_id]
@@ -152,7 +168,7 @@ function crearMcpServer() {
       return {
         content: [{
           type: "text",
-          text: `✅ Ticket #${ticket_id} (${ticket.comercio}) encolado para reproceso. Status anterior: ${ticket.status}`
+          text: `✅ Ticket #${ticket_id} (${ticket.comercio}) encolado para reproceso. Status anterior: ${ticket.status}${notaFactura}`
         }]
       };
     }

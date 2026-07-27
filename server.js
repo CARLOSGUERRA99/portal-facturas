@@ -303,6 +303,17 @@ async function initDB() {
   } catch(e) { /* tabla ya existe */ }
 
   try {
+    // Un ticket genera a lo más UNA factura. Sin este constraint, dos
+    // procesos concurrentes (p.ej. el job de IMAP en dos ciclos que se
+    // solapan, o un reprocesamiento manual corriendo a la par del job
+    // automático) pueden insertar dos filas para el mismo ticket_id —
+    // pasó en producción (ticket #116, mismo UUID duplicado). sinSolape()
+    // solo evita que un mismo proceso se solape consigo mismo; esto cierra
+    // la puerta también entre procesos distintos.
+    await db.query("ALTER TABLE facturas ADD UNIQUE KEY uq_facturas_ticket_id (ticket_id)");
+  } catch(e) { /* constraint ya existe */ }
+
+  try {
     const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM residentes");
     if (n === 0) {
       for (const r of DEFAULT_RESIDENTES) {
