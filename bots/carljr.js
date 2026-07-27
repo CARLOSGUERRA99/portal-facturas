@@ -144,26 +144,28 @@ async function facturarCarlsJr({
       return { ok: true, procesandoCorreo: true };
     }
 
-    // Detectar errores del portal (patrones ampliados)
-    const errTexto = await page.evaluate(() => {
+    // Detectar SOLO los casos que de verdad significan "no hay nada que llenar"
+    // (referencia ya facturada, o inexistente) — estos sí paran de inmediato.
+    // El escaneo GENÉRICO de .alert/.error se movió a DESPUÉS de intentar llenar
+    // Uso CFDI/Régimen Fiscal (ver más abajo): cuando ICR ya tiene un perfil
+    // guardado para el RFC pero con esos dos campos vacíos ("Ninguno"), el
+    // portal pinta un aviso de "formulario incompleto" apenas se carga la
+    // pantalla — ANTES de que el bot alcance a llenarlos. Si se revisaba aquí,
+    // el bot se rendía sin intentar completar el formulario (bug real
+    // encontrado en producción, 2026-07-27, ticket #117).
+    const errTemprano = await page.evaluate(() => {
       const body = document.body.innerText;
       if (/ya fue facturado|ya facturado|factura.*ya.*generada/i.test(body)) return "YA_FACTURADO";
-      if (/no encontrado|no existe|datos incorrectos|ticket inv|referencia.*inv|inv.*referencia|no.*v[aá]lido|no se encontr/i.test(body)) return "DATOS_INVALIDOS";
-      // Capturar cualquier mensaje de alerta/error genérico visible
-      const alertas = document.querySelectorAll('.alert, .error, .mensaje-error, [class*="error"], [class*="alert"], .ui-state-error');
-      for (const el of alertas) {
-        const txt = (el.textContent || '').trim();
-        if (txt.length > 5 && txt.length < 300) return 'ERROR_PORTAL: ' + txt;
-      }
+      if (/no encontrado|no existe|ticket inv|referencia.*inv|inv.*referencia|no se encontr/i.test(body)) return "DATOS_INVALIDOS";
       return null;
     });
-    if (errTexto === "YA_FACTURADO") {
+    if (errTemprano === "YA_FACTURADO") {
       await browser.close();
       return { ok: false, error_code: "ya_facturado", msg: "Carl's Jr: la referencia ya fue facturada" };
     }
-    if (errTexto) {
+    if (errTemprano) {
       await browser.close();
-      return { ok: false, error_code: "datos_invalidos", msg: `Carl's Jr: ${errTexto}` };
+      return { ok: false, error_code: "datos_invalidos", msg: `Carl's Jr: ${errTemprano}` };
     }
 
     // Esperar paso 2 (campo Uso CFDI) — si no aparece, capturar pantalla y reportar
@@ -231,6 +233,24 @@ async function facturarCarlsJr({
     });
     console.log("📧 Correo: buzonfacturas@serviciosga.site");
     await screenshot("p4_datos_fiscales_llenados");
+
+    // Ahora sí, escaneo genérico de errores — DESPUÉS de haber llenado Uso
+    // CFDI/Régimen/Correo. Si el portal sigue quejándose con estos campos ya
+    // completos, es un error real (no el aviso de "formulario incompleto").
+    const errGenerico = await page.evaluate(() => {
+      const alertas = document.querySelectorAll('.alert, .error, .mensaje-error, [class*="error"], [class*="alert"], .ui-state-error');
+      for (const el of alertas) {
+        if (el.offsetParent === null) continue; // ignora alertas ocultas/desmontadas
+        const txt = (el.textContent || '').trim();
+        if (txt.length > 5 && txt.length < 300) return txt;
+      }
+      return null;
+    });
+    if (errGenerico) {
+      await screenshot("p4_error_persistente");
+      await browser.close();
+      return { ok: false, error_code: "datos_invalidos", msg: `Carl's Jr: ERROR_PORTAL: ${errGenerico}` };
+    }
 
     // ── PASO 5 — Siguiente → Confirmar Datos ─────────────────────────────
     console.log("➡️ Avanzando a Confirmar Datos...");
