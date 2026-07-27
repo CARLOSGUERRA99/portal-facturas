@@ -314,6 +314,16 @@ async function initDB() {
   } catch(e) { /* constraint ya existe */ }
 
   try {
+    // La tabla vive en producción desde antes de que este archivo declarara
+    // VARCHAR(100) para comercio — CREATE TABLE IF NOT EXISTS nunca ensancha
+    // una columna ya existente, así que se quedó en VARCHAR(50) real. Un
+    // comercio detectado por OCR más largo que eso (p.ej. "CAPUFE /
+    // Comunicaciones y Transportes (plaza de cobro)") tronaba con
+    // ER_DATA_TOO_LONG al guardar el ticket.
+    await db.query("ALTER TABLE tickets MODIFY COLUMN comercio VARCHAR(150) NOT NULL");
+  } catch(e) { /* columna ya ensanchada */ }
+
+  try {
     const [[{ n }]] = await db.query("SELECT COUNT(*) AS n FROM residentes");
     if (n === 0) {
       for (const r of DEFAULT_RESIDENTES) {
