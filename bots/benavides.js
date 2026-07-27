@@ -175,11 +175,16 @@ async function facturarBenavides({
     console.log("➡️ Avanzando a Datos Fiscales...");
     await clickSiguiente(page);
 
-    // Detectar si el portal rechazó los datos o si ya fue facturado
+    // Detectar SOLO "ya facturado" en este punto. El portal auto-llena razón
+    // social/CP/colonia/calle/municipio desde el RFC pero deja Uso CFDI y
+    // Régimen Fiscal vacíos, y en ese estado puede mostrar un banner de
+    // validación que contiene frases como "datos incorrectos" — el mismo
+    // patrón que causó un falso positivo en Carl's Jr (bots/carljr.js) por
+    // escanear errores ANTES de llenar esos dos campos. Ese chequeo se movió
+    // más abajo, después de llenarlos (ver "errGenerico").
     const errTexto = await page.evaluate(() => {
       const body = document.body.innerText;
       if (/ya fue facturado|ya facturado|ha sido generada/i.test(body)) return "YA_FACTURADO";
-      if (/no encontrado|no existe|datos incorrectos|ticket inv/i.test(body)) return "DATOS_INVALIDOS";
       return null;
     });
     if (errTexto === "YA_FACTURADO") {
@@ -229,10 +234,6 @@ async function facturarBenavides({
       await page.waitForTimeout(2000);
       await browser.close();
       return { ok: true, procesandoCorreo: true };
-    }
-    if (errTexto) {
-      await browser.close();
-      return { ok: false, error_code: "datos_invalidos", msg: `Benavides: ${errTexto}` };
     }
 
     // Esperar que cargue paso 2 (aparece el campo Uso de CFDI)
@@ -293,6 +294,21 @@ async function facturarBenavides({
     });
     console.log("📧 Correo: buzonfacturas@serviciosga.site");
     await screenshot("p4_datos_fiscales_llenados");
+
+    // Chequeo genérico de rechazo, movido a DESPUÉS de llenar Uso CFDI y
+    // Régimen Fiscal (ver comentario en errTexto más arriba) — si a esta
+    // altura el portal sigue mostrando un banner de folio/RFC inválido, sí
+    // es un error real y no un artefacto de campos vacíos.
+    const errGenerico = await page.evaluate(() => {
+      const body = document.body.innerText;
+      const m = body.match(/[^\n]*(no encontrado|no existe|datos incorrectos|ticket inv[aá]lido)[^\n]*/i);
+      return m ? m[0].trim() : null;
+    });
+    if (errGenerico) {
+      await screenshot("p4_error_persistente");
+      await browser.close();
+      return { ok: false, error_code: "datos_invalidos", msg: `Benavides: ${errGenerico}` };
+    }
 
     // ── PASO 4 — Siguiente → Confirmar Datos ─────────────────────────────
     console.log("➡️ Avanzando a Confirmar Datos...");
