@@ -19,6 +19,7 @@ const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
 const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarRAMCAL } = require('./ramcal');
+const { facturarOxxoGas } = require('./oxxogas');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -28,6 +29,25 @@ async function detectarYFacturar(datos, db = null) {
   const comercio = (datos.comercio || '').toLowerCase();
   const portalUrl = (datos.portalUrl || '').toLowerCase();
   const portal = (datos.portal || '').toLowerCase();
+
+  // ── OXXO GAS — DEBE ir antes que el chequeo genérico de "oxxo" (línea
+  // ~42/239 más abajo), porque "OXXO GAS" contiene la palabra "oxxo" y
+  // sería capturado por error por el bot de la tienda de conveniencia.
+  // ⚠️ Este bot NO es autónomo: requiere cookies de sesión inyectadas por
+  // variables de entorno (OXXO_GAS_CI_SESSION y similares) que el usuario
+  // debe generar iniciando sesión a mano — el login tiene reCAPTCHA v2 que
+  // este proyecto nunca resuelve. Si no hay sesión vigente, el bot regresa
+  // error_code:'captcha' de forma controlada (ver bots/oxxogas.js).
+  if (
+    portal === 'oxxogas' ||
+    portalUrl.includes('oxxogas.com') ||
+    comercio.includes('oxxo gas') ||
+    texto.includes('oxxo gas') ||
+    texto.includes('oxxogas.com')
+  ) {
+    console.log('🎯 Portal detectado: OXXO GAS (requiere sesión manual)');
+    return await facturarOxxoGas(datos);
+  }
 
   // ── ENGINE EXPERIMENTAL — intenta primero con el portal declarativo ───────
   // Resolver variante NexusFuel: gasmaz (gasmazfactura) vs ramsa (redmaxfactura).
