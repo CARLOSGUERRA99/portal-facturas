@@ -18,6 +18,7 @@ const { facturarFacturaGAS } = require('./facturagas');
 const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
 const { facturarEnerfuelTech } = require('./enerfueltech');
+const { facturarRAMCAL } = require('./ramcal');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -312,6 +313,16 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Enerfuel Tech');
     return await facturarEnerfuelTech(datos);
+  }
+
+  if (
+    portal === 'ramcal' ||
+    portalUrl.includes('ramcal') ||
+    comercio.includes('ramcal') ||
+    texto.includes('ramcal')
+  ) {
+    console.log('🎯 Portal detectado: RAMCAL');
+    return await facturarRAMCAL(datos);
   }
 
   // Buscar bot dinámico generado por el sistema de agentes
