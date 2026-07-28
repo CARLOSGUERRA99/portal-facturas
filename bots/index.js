@@ -17,6 +17,7 @@ const { facturarGASHR } = require('./gashr');
 const { facturarFacturaGAS } = require('./facturagas');
 const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
+const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -302,6 +303,15 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Orler / Sinaloa (casetas de peaje)');
     return await facturarOrler(datos);
+  }
+
+  if (
+    portal === 'enerfueltech' ||
+    portalUrl.includes('enerfueltech.com') ||
+    texto.includes('enerfueltech')
+  ) {
+    console.log('🎯 Portal detectado: Enerfuel Tech');
+    return await facturarEnerfuelTech(datos);
   }
 
   // Buscar bot dinámico generado por el sistema de agentes
