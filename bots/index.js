@@ -12,6 +12,11 @@ const { facturarAutoZone } = require('./autozone');
 const { facturarDana } = require('./dana');
 const { facturarTufesa } = require('./tufesa');
 const { facturarBodegaAurrera } = require('./bodegaaurrera');
+const { facturarPetrofigues } = require('./petrofigues');
+const { facturarGASHR } = require('./gashr');
+const { facturarFacturaGAS } = require('./facturagas');
+const { facturarERFC } = require('./erfc');
+const { facturarOrler } = require('./orler');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -244,6 +249,59 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('[LEGACY][gasmaz] Ejecutando bot legacy NexusFuel/Gasmaz');
     return await facturarGasmaz(datos);
+  }
+
+  if (
+    portal === 'petrofigues' ||
+    comercio.includes('gonzer') ||
+    portalUrl.includes('petrofigues') ||
+    texto.includes('petrofigues')
+  ) {
+    console.log('🎯 Portal detectado: Petrofigues');
+    return await facturarPetrofigues(datos);
+  }
+
+  if (
+    portal === 'gashr' ||
+    comercio.includes('gashr') ||
+    portalUrl.includes('grupogashr') ||
+    portalUrl.includes('valerogdl.facturacionestacion.com') ||
+    texto.includes('grupogashr.com.mx') ||
+    texto.includes('gashr')
+  ) {
+    console.log('🎯 Portal detectado: Grupo GASHR');
+    return await facturarGASHR(datos);
+  }
+
+  if (
+    portal === 'facturagas' ||
+    portalUrl.includes('facturagas.net') ||
+    texto.includes('facturagas') ||
+    texto.includes('controlgasfe') ||
+    texto.includes('ddns.net')
+  ) {
+    console.log('🎯 Portal detectado: FacturaGAS/ControlGAS');
+    return await facturarFacturaGAS(datos);
+  }
+
+  if (
+    portal === 'erfc' ||
+    portalUrl.includes('erfc.com.mx') ||
+    texto.includes('erfc.com.mx') ||
+    texto.includes('idw:')
+  ) {
+    console.log('🎯 Portal detectado: eRFC');
+    return await facturarERFC(datos);
+  }
+
+  if (
+    portal === 'orler' ||
+    portalUrl.includes('sinaloa.gob.mx') ||
+    comercio.includes('caseta') ||
+    (texto.includes('caseta') && texto.includes('sinaloa'))
+  ) {
+    console.log('🎯 Portal detectado: Orler / Sinaloa (casetas de peaje)');
+    return await facturarOrler(datos);
   }
 
   // Buscar bot dinámico generado por el sistema de agentes
