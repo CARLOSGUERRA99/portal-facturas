@@ -61,6 +61,19 @@ REGLAS OBLIGATORIAS (NO las incumplas):
 5. Email de captura FIJO: buzonfacturas@serviciosga.site
 6. Régimen fiscal default: 601 | Uso CFDI default: G03
 7. Detectar y manejar caso "ya facturado" si el portal lo expone
+7.1. ORDEN DE DETECCIÓN DE ERRORES (crítico — bug real encontrado en producción):
+    muchos portales precargan un perfil/cliente guardado (razón social,
+    domicilio, etc.) pero dejan 1-2 campos obligatorios vacíos (típicamente
+    Uso de CFDI o Régimen Fiscal) para que el usuario los complete. Si
+    escaneas la pantalla en busca de errores ANTES de llenar esos campos,
+    el propio banner de "complete los campos requeridos" del portal se
+    puede confundir con un error real de datos inválidos — falso positivo.
+    Regla: cualquier chequeo de "datos_invalidos" con texto AMPLIO (ej.
+    coincide con "inválido", "incorrecto", "no encontrado" en cualquier
+    parte de la pantalla) debe ir DESPUÉS de llenar TODOS los campos
+    fiscales requeridos, nunca antes. Si necesitas un chequeo temprano
+    (por ejemplo para "ya facturado"), restríngelo a frases específicas
+    e inequívocas — no una lista amplia de palabras sueltas.
 8. Retorno estándar:
    - { ok: true, xmlUrl, pdfUrl }           → éxito con archivos directos
    - { ok: true, procesandoCorreo: true }    → éxito, IMAP recogerá archivos

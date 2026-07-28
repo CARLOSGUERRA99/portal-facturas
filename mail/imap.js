@@ -39,7 +39,63 @@ function extraerTotalCFDI(xmlBuffer) {
   } catch { return null; }
 }
 
-// Extrae XML y PDF (incluyendo ZIPs) de los adjuntos de un correo ya parseado
+// Algunos remitentes (confirmado con eRFC — erfc.com.mx / mibuzon.com.mx) NO
+// mandan el XML/PDF como adjunto real: solo mandan 3 imágenes pequeñas de
+// ícono de botón (pdf.png/xml.png/zip.png, ~2KB) y el archivo real vive
+// detrás de un link firmado en el CUERPO del correo, con texto tipo "Clic
+// para descargar PDF/XML/ZIP". Busca esos links en el HTML del correo.
+// Devuelve { pdfLink, xmlLink, zipLink } (null si no encuentra alguno).
+function extraerLinksDescarga(html) {
+  if (!html) return { pdfLink: null, xmlLink: null, zipLink: null };
+  const links = {};
+  // Cada <a href="...">...contenido (incluye <img>, <b>, etc)...</a> — el
+  // contenido se recorre buscando la palabra "descargar" junto a pdf/xml/zip.
+  const anchorRe = /<a\s+href=['"]?\s*([^'">\s]+)['"]?[^>]*>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = anchorRe.exec(html))) {
+    const href = m[1].trim();
+    const contenido = m[2].replace(/<[^>]+>/g, ' ').toLowerCase();
+    if (!/descargar/.test(contenido)) continue;
+    if (/pdf/.test(contenido) && !links.pdfLink) links.pdfLink = href;
+    else if (/xml/.test(contenido) && !links.xmlLink) links.xmlLink = href;
+    else if (/zip/.test(contenido) && !links.zipLink) links.zipLink = href;
+  }
+  return { pdfLink: links.pdfLink || null, xmlLink: links.xmlLink || null, zipLink: links.zipLink || null };
+}
+
+// Descarga un link de correo (puede ser XML/PDF directo o un ZIP) y regresa
+// el buffer ya identificado por tipo. No lanza si falla (link vencido,
+// timeout, etc.) — regresa null y el llamador trata "no se pudo verificar"
+// igual que un correo sin adjuntos.
+async function descargarLinkCorreo(url, tipoEsperado) {
+  // AbortController manual en vez de AbortSignal.timeout() — este último
+  // provoca un crash nativo de libuv al limpiar en Windows (Assertion
+  // failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c) con
+  // ciertas versiones de Node. Con clearTimeout explícito se evita del todo.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    if (!resp.ok) {
+      console.log(`⚠️ Link de correo (${tipoEsperado}) respondió ${resp.status} — probablemente vencido`);
+      return null;
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length < 100) return null; // respuesta vacía o página de error disfrazada de 200
+    return buf;
+  } catch (e) {
+    console.log(`⚠️ Error descargando link de correo (${tipoEsperado}):`, e.message);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Extrae XML y PDF de los adjuntos de un correo ya parseado (incluyendo
+// ZIPs adjuntos). Si no hay adjuntos reales, intenta los links de descarga
+// del cuerpo HTML (ver extraerLinksDescarga) — mismo resultado final,
+// { xmlBuffer, pdfBuffer }, para que el resto del pipeline (verificación de
+// monto, subida a R2, etc.) no necesite saber de dónde vino el archivo.
 async function extraerAdjuntos(parsed) {
   let xmlBuffer = null, pdfBuffer = null;
   const attachments = parsed.attachments || [];
@@ -64,6 +120,31 @@ async function extraerAdjuntos(parsed) {
       pdfBuffer = att.content;
     }
   }
+
+  if (!xmlBuffer && !pdfBuffer) {
+    const { pdfLink, xmlLink, zipLink } = extraerLinksDescarga(parsed.html);
+    if (pdfLink || xmlLink || zipLink) {
+      console.log('📎 Sin adjuntos reales — probando links de descarga del cuerpo del correo:',
+        { pdfLink: !!pdfLink, xmlLink: !!xmlLink, zipLink: !!zipLink });
+    }
+    if (zipLink) {
+      const zipBuf = await descargarLinkCorreo(zipLink, 'zip');
+      if (zipBuf) {
+        try {
+          const zip = await unzipper.Open.buffer(zipBuf);
+          for (const file of zip.files) {
+            if (file.path.endsWith('.xml') && !xmlBuffer) xmlBuffer = await file.buffer();
+            if (file.path.endsWith('.pdf') && !pdfBuffer) pdfBuffer = await file.buffer();
+          }
+        } catch (e) {
+          console.log('⚠️ Error descomprimiendo ZIP del link de correo:', e.message);
+        }
+      }
+    }
+    if (xmlLink && !xmlBuffer) xmlBuffer = await descargarLinkCorreo(xmlLink, 'xml');
+    if (pdfLink && !pdfBuffer) pdfBuffer = await descargarLinkCorreo(pdfLink, 'pdf');
+  }
+
   return { xmlBuffer, pdfBuffer };
 }
 
@@ -266,4 +347,4 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
   });
 }
 
-module.exports = { esperarFacturaPorCorreo, extraerTotalCFDI };
+module.exports = { esperarFacturaPorCorreo, extraerTotalCFDI, extraerLinksDescarga, descargarLinkCorreo };
