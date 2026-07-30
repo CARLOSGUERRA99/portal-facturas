@@ -7,6 +7,17 @@ const { corregirBot } = require('./corrector');
 
 const MAX_CORRECCIONES = 2; // El corrector auto-arregla hasta 2 veces con feedback de la prueba en vivo
 
+// Lee una columna MySQL de tipo JSON de forma segura.
+// mysql2 deserializa las columnas `json` automáticamente, así que el valor puede
+// llegar YA como objeto. Hacerle JSON.parse() encima revienta con
+// `"[object Object]" is not valid JSON`. Esta helper acepta ambas formas (objeto
+// ya parseado o string) y nunca lanza — devuelve {} si no se puede interpretar.
+function parseJsonCol(valor) {
+  if (!valor) return {};
+  if (typeof valor === 'object') return valor;
+  try { return JSON.parse(valor); } catch { return {}; }
+}
+
 // Datos de prueba genéricos — el portal devolverá "ticket no encontrado"
 // pero eso demuestra que el bot cargó el portal e interactuó con el formulario
 const DATOS_TEST = {
@@ -248,7 +259,13 @@ async function activarBot({ db, portalId }) {
     if (!portalesData.portales || typeof portalesData.portales !== 'object') {
       portalesData.portales = {};
     }
-    const analisis = portal.analisis ? JSON.parse(portal.analisis) : {};
+    // portales_agente.analisis es una columna de tipo JSON en MySQL, así que
+    // mysql2 YA la entrega deserializada como objeto. Hacerle JSON.parse()
+    // encima lanza `"[object Object]" is not valid JSON` (el objeto se
+    // convierte a string primero) — ese era el origen real del error
+    // "No se pudo actualizar portales.json: Unexpected token o in JSON at
+    // position 1" del deploy: portales.json NUNCA estuvo corrupto.
+    const analisis = parseJsonCol(portal.analisis);
 
     portalesData.portales[portal.comercio] = {
       nombre: portal.nombre,
@@ -314,8 +331,10 @@ async function restaurarBotsDinamicos(db) {
       let updated = false;
       for (const row of rows) {
         if (portalesData.portales[row.comercio]) continue; // ya existe
-        let analisis = {};
-        try { analisis = row.analisis ? JSON.parse(row.analisis) : {}; } catch {}
+        // Mismo caso que en activarBot: la columna es de tipo JSON y mysql2 ya
+        // la deserializa. Aquí el bug quedaba silenciado por el catch vacío
+        // (analisis={} → portales.json se escribía sin tecnología/campos/flujo).
+        const analisis = parseJsonCol(row.analisis);
         portalesData.portales[row.comercio] = {
           nombre: row.nombre,
           bot: `bots/${row.nombre_archivo || row.comercio + '.js'}`,
