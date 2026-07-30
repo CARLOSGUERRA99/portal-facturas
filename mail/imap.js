@@ -257,6 +257,15 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
               { domains: ['pade.mx'], portals: ['rendichicas', 'caffenio'] },
               // mefacturo.mx es la plataforma SoftRestaurant usada por SushiO, El Caporal, Allegro
               { domains: ['mefacturo', 'softrestaurant'], portals: ['sushito', 'sushio', 'elcaporal', 'allegro', 'caporal', 'allegrezona'] },
+              // buzonfacturas.com es la plataforma agregadora de las gasolineras ARCO
+              // (Multiservicios La Pilarica, Grupo Enermar, ARCO Insurgentes, …). Su
+              // asunto es siempre genérico ("Comprobante fiscal digital Buzón
+              // Facturas: NB-0124497") y el remitente es notificaciones@buzonfacturas.com:
+              // NUNCA menciona el nombre del comercio, así que el filtro por keywords
+              // descartaba TODOS sus correos y los tickets expiraban en error pese a
+              // que la factura sí había llegado (confirmado con los tickets #129 y
+              // #154: los CFDI estaban en el buzón, sin leer, con el total exacto).
+              { domains: ['buzonfacturas'], portals: ['arco', 'buzonfacturas', 'pilarica', 'enermar', 'insurgentes', 'multiservicios'] },
             ];
             const fromLower = from.toLowerCase();
             const expectedLower = (expectedComercio || '').toLowerCase();
@@ -273,12 +282,21 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
               const keywords = expectedComercio.toLowerCase()
                 .split(/[\s,./]+/)
                 .filter(w => w.length >= 3 && !['s.a', 'de', 'c.v', 'sab', 'del', 'los'].includes(w));
-              const hayMatch = keywords.some(kw =>
-                subject.toLowerCase().includes(kw) || from.toLowerCase().includes(kw)
-              );
+              // El nombre del comercio suele venir en el CFDI mismo (Nombre del
+              // Emisor), aunque el asunto y el remitente sean genéricos de una
+              // plataforma. Mirar el XML además del sobre evita descartar correos
+              // legítimos de agregadores que aún no estén en platformPortalMap.
+              const nombreEmisorXml = xmlBuffer
+                ? ((xmlBuffer.toString('utf8').match(/<(?:cfdi:)?Emisor[^>]*\sNombre="([^"]{0,120})"/i) || [])[1] || '')
+                : '';
+              const dondeBuscar = `${subject} ${from} ${nombreEmisorXml}`.toLowerCase();
+              const hayMatch = keywords.some(kw => dondeBuscar.includes(kw));
               if (!hayMatch) {
-                console.log(`   ↳ ⚠️ Correo no menciona "${expectedComercio}" — es de otro comercio, ignorando`);
+                console.log(`   ↳ ⚠️ Correo no menciona "${expectedComercio}" (ni en asunto/remitente ni en el Emisor del XML) — es de otro comercio, ignorando`);
                 continue;
+              }
+              if (nombreEmisorXml && !keywords.some(kw => `${subject} ${from}`.toLowerCase().includes(kw))) {
+                console.log(`   ↳ 🔎 Comercio confirmado por el Emisor del XML: "${nombreEmisorXml}"`);
               }
             }
             // ── Verificación por MONTO (anti-cruce de facturas) ──────────────
