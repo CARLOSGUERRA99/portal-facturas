@@ -19,6 +19,7 @@ const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
 const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarRAMCAL } = require('./ramcal');
+const { facturarCaffenio } = require('./caffenio');
 const { facturarOxxoGas } = require('./oxxogas');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
@@ -343,6 +344,16 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: RAMCAL');
     return await facturarRAMCAL(datos);
+  }
+
+  if (
+    portal === 'caffenio' ||
+    portalUrl.includes('facturaciondrive.caffenio') ||
+    comercio.includes('caffenio') ||
+    texto.includes('caffenio')
+  ) {
+    console.log('🎯 Portal detectado: CAFFENIO');
+    return await facturarCaffenio(datos);
   }
 
   // Buscar bot dinámico generado por el sistema de agentes
