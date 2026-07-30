@@ -198,8 +198,10 @@ async function facturarOrler({ carril, folio, fechaPago, importe, ticketId }) {
       };
     }
 
-    // ── A partir de aquí: SIN VERIFICAR en vivo (ver nota al inicio del archivo) ──
-    console.log("🧾 Folio reconocido — buscando botón Facturar (flujo NO verificado en vivo)...");
+    // ── Folio reconocido: FACTURAR → modal "Datos a Facturar" → TIMBRAR ────────
+    // Verificado en vivo el 2026-07-29 con el ticket real folio 0944056
+    // (Caseta El Pisal, carril 5801, 24/07/2026, $101.00).
+    console.log("🧾 Folio reconocido — click FACTURAR...");
     const facturarClicked = await page.evaluate(() => {
       const b = Array.from(document.querySelectorAll("button, a")).find(x => /^facturar$/i.test((x.textContent || "").trim()));
       if (b) { b.click(); return true; }
@@ -208,28 +210,69 @@ async function facturarOrler({ carril, folio, fechaPago, importe, ticketId }) {
     if (!facturarClicked) {
       await screenshot("p4_sin_boton_facturar");
       await browser.close();
-      return { ok: false, msg: "Orler: folio reconocido pero no se encontró el botón 'Facturar' — revisar screenshot p4_sin_boton_facturar (selector no confirmado)" };
+      return { ok: false, msg: "Orler: folio reconocido pero no se encontró el botón 'Facturar'" };
     }
-    await page.waitForTimeout(1500);
-    await screenshot("p4_post_facturar_click");
+    await page.waitForTimeout(2000);
+    await screenshot("p4_modal_datos_a_facturar");
 
-    const confirmarClicked = await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll("button")).find(x => /confirmar/i.test(x.textContent || ""));
+    // El modal "Datos a Facturar" llega PRE-LLENADO con los datos fiscales de la
+    // cuenta (Razón Social, RFC, CP, Régimen, Correo) y con el concepto ya armado
+    // por el portal ("<Plaza> (peaje) Plaza: ... Carril: ... Folio: ... Fecha: ...").
+    // Solo hay que verificar el Uso del CFDi y pulsar TIMBRAR — NO hay que llenar
+    // la tabla de conceptos a mano.
+    const datosModal = await page.evaluate(() => {
+      const t = document.body.innerText;
+      const g = (re) => { const m = t.match(re); return m ? m[1].trim() : null; };
+      return {
+        rfc: g(/RFC:\s*\n?\s*([A-Z0-9]{12,13})/i),
+        importe: g(/Importe:\s*\n?\s*([\d.,]+)/i),
+        cp: g(/C[oó]digo Postal:\s*\n?\s*(\d{5})/i),
+        usoCfdi: g(/Uso del CFDi:\s*\n?\s*([^\n]+)/i),
+      };
+    });
+    console.log(`   Modal — RFC: ${datosModal.rfc} | Importe: ${datosModal.importe} | CP: ${datosModal.cp} | Uso CFDI: ${datosModal.usoCfdi}`);
+
+    if (datosModal.rfc && datosModal.rfc !== "GPR110128QD8") {
+      await browser.close();
+      return { ok: false, msg: `Orler: el modal muestra un RFC receptor inesperado (${datosModal.rfc}) — se aborta sin timbrar` };
+    }
+
+    // TIMBRAR: es el botón real de emisión (NO se llama "Confirmar").
+    console.log("⚡ Click TIMBRAR (emisión real del CFDI)...");
+    const timbrarClicked = await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button, a, input[type=button], input[type=submit]"))
+        .find(x => /^timbrar$/i.test(((x.textContent || x.value) || "").trim()));
       if (b) { b.click(); return true; }
       return false;
     });
-    console.log(`   Click confirmar: ${confirmarClicked}`);
-    await page.waitForTimeout(2500);
-    await screenshot("p5_post_confirmar");
+    if (!timbrarClicked) {
+      await screenshot("p5_sin_boton_timbrar");
+      await browser.close();
+      return { ok: false, msg: "Orler: no se encontró el botón TIMBRAR en el modal 'Datos a Facturar'" };
+    }
+    // El timbrado ante el PAC tarda: esperar generoso antes de concluir.
+    await page.waitForTimeout(9000);
+    await screenshot("p5_post_timbrar");
 
     const textoFinal = await page.evaluate(() => document.body.innerText);
     await browser.close();
 
-    if (/correo electr[oó]nico/i.test(textoFinal)) {
-      console.log("✅ Orler — factura solicitada, se enviará por correo (IMAP la recogerá)");
+    // ⚠️ La detección de éxito TIENE que ser la frase exacta del modal de
+    // confirmación ("Correcto — La factura ha sido timbrada correctamente").
+    // Un regex amplio tipo /timbrad/ da FALSO POSITIVO: la palabra "Timbrado"
+    // es el encabezado de una columna del historial de facturas y aparece en la
+    // página incluso cuando el timbrado NO ocurrió (bug real: el ticket #141 /
+    // folio 2860513 se reportó como timbrado y luego se comprobó por la API del
+    // portal que esa factura nunca existió).
+    const exito = /la factura ha sido timbrada correctamente/i.test(textoFinal);
+    if (exito) {
+      console.log("✅ Orler — CFDI timbrado (confirmado por el modal del portal)");
       return { ok: true, procesandoCorreo: true };
     }
-    return { ok: false, msg: `Orler: no se confirmó el envío tras Facturar/Confirmar. Texto: ${textoFinal.slice(0, 300)}` };
+    if (/ya (fue|ha sido) facturad|previamente facturad/i.test(textoFinal)) {
+      return { ok: false, error_code: "ya_facturado", msg: `Orler: el folio ${folio} ya había sido facturado` };
+    }
+    return { ok: false, msg: `Orler: no se confirmó el timbrado (no apareció el modal "La factura ha sido timbrada correctamente"). Texto: ${textoFinal.slice(0, 300)}` };
 
   } catch (err) {
     console.error("❌ Error en bot Orler:", err.message);
