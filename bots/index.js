@@ -20,12 +20,52 @@ const { facturarOrler } = require('./orler');
 const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarRAMCAL } = require('./ramcal');
 const { facturarCaffenio } = require('./caffenio');
+const { facturarCapufe } = require('./capufe');
 const { facturarOxxoGas } = require('./oxxogas');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
 
-async function detectarYFacturar(datos, db = null) {
+// ⚠️ NORMALIZACIÓN DE CAMPOS — no quitar.
+//
+// El OCR entrega SIEMPRE nombres genéricos (folio, total, fecha, referencia,
+// portalUrl), pero cada bot se escribió con los nombres del portal que
+// automatiza: `importe` en GASHR/Petrofigues, `fechaPago` en Orler, `codigo` en
+// CAPUFE/RAMCAL, `urlEstacion` en RAMCAL, `idw` en eRFC...
+//
+// Cuando no coinciden, el bot recibe `undefined` y falla de forma críptica
+// ("Fecha de pago con formato inesperado: undefined",
+// "Cannot read properties of undefined (reading 'replace')"). Ha pasado ya con
+// RAMCAL, CAFFENIO y Orler, así que se resuelve UNA vez aquí en el router en
+// lugar de parchear cada bot por separado.
+//
+// Solo se RELLENAN huecos: si el dato ya viene con el nombre que el bot espera,
+// no se toca.
+function normalizarDatos(datos) {
+  const d = { ...datos };
+  const primero = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
+
+  d.folio      = primero(d.folio, d.codigoTicket, d.referencia, d.numeroTicket, d.noTicket);
+  d.importe    = primero(d.importe, d.total, d.monto);
+  d.total      = primero(d.total, d.importe, d.monto);
+  d.monto      = primero(d.monto, d.total, d.importe);
+  d.fechaPago  = primero(d.fechaPago, d.fecha, d.fechaCompra);
+  d.fecha      = primero(d.fecha, d.fechaPago, d.fechaCompra);
+  d.codigo     = primero(d.codigo, d.codigoTicket, d.codigoFacturacion, d.folio);
+  d.referencia = primero(d.referencia, d.codigoTicket, d.folio);
+  d.urlEstacion = primero(d.urlEstacion, d.portalUrl, d.portal_url);
+  d.portalUrl  = primero(d.portalUrl, d.portal_url, d.urlEstacion);
+
+  // Datos fiscales de GPN: constantes del emisor receptor, no salen del ticket.
+  d.rfc = primero(d.rfc, 'GPR110128QD8');
+  d.regimenFiscal = primero(d.regimenFiscal, '601');
+  d.usoCfdi = primero(d.usoCfdi, 'G03');
+
+  return d;
+}
+
+async function detectarYFacturar(datosCrudos, db = null) {
+  const datos = normalizarDatos(datosCrudos);
   const texto = (datos.ocr_text || '').toLowerCase();
   const comercio = (datos.comercio || '').toLowerCase();
   const portalUrl = (datos.portalUrl || '').toLowerCase();
@@ -354,6 +394,20 @@ async function detectarYFacturar(datos, db = null) {
   ) {
     console.log('🎯 Portal detectado: CAFFENIO');
     return await facturarCaffenio(datos);
+  }
+
+  // CAPUFE — el bot existía desde hace sesiones pero nunca se enrutó aquí ni se
+  // añadió al gate, así que sus tickets caían en "portal no reconocido" y
+  // disparaban al agente de altas para un portal que YA tenía bot.
+  if (
+    portal === 'capufe' ||
+    portalUrl.includes('facturacioncapufe') ||
+    portalUrl.includes('capufe.gob.mx') ||
+    comercio.includes('capufe') ||
+    /plaza de cobro|caminos y puentes/i.test(comercio)
+  ) {
+    console.log('🎯 Portal detectado: CAPUFE');
+    return await facturarCapufe(datos);
   }
 
   // Buscar bot dinámico generado por el sistema de agentes

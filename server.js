@@ -977,7 +977,10 @@ app.delete("/api/tickets/:id", auth, async (req, res) => {
 app.get("/api/tickets", auth, async (req, res) => {
   try {
     const { residente_id } = req.query;
-    let query = "SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id, error_msg, email_contacto, solicitud_correo_enviada, solicitud_correo_fecha, solicitud_correo_error FROM tickets WHERE user_id = ?";
+    // `ruta_archivo` se incluye para que la UI pueda saber si hay foto que ver;
+    // la imagen NO se sirve por esa URL directa sino por /api/tickets/:id/imagen,
+    // que comprueba que el ticket sea del usuario en sesión.
+    let query = "SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id, error_msg, email_contacto, solicitud_correo_enviada, solicitud_correo_fecha, solicitud_correo_error, (ruta_archivo IS NOT NULL AND ruta_archivo <> '') AS tiene_imagen FROM tickets WHERE user_id = ?";
     const params = [req.session.userId];
     if (residente_id === 'sin_asignar') {
       query += " AND residente_id IS NULL";
@@ -990,6 +993,93 @@ app.get("/api/tickets", auth, async (req, res) => {
     res.json({ ok: true, tickets: rows });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
+  }
+});
+
+// ── VER / DESCARGAR LA FOTO DE UN TICKET ─────────────────────────────────────
+// La imagen vive en R2 con URL pública, pero se sirve a través del backend para
+// que solo el dueño del ticket pueda verla y para poder forzar la descarga con
+// un nombre de archivo legible.
+//   GET /api/tickets/:id/imagen              → la muestra en el navegador
+//   GET /api/tickets/:id/imagen?descargar=1  → la descarga
+const TIPOS_IMAGEN = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic', gif: 'image/gif', pdf: 'application/pdf' };
+
+function nombreDescarga(ticket, ext) {
+  const limpio = String(ticket.comercio || 'ticket')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'ticket';
+  return `ticket-${String(ticket.id).padStart(4, '0')}-${limpio}.${ext}`;
+}
+
+app.get("/api/tickets/:id/imagen", auth, async (req, res) => {
+  try {
+    const [[t]] = await db.query(
+      "SELECT id, comercio, ruta_archivo FROM tickets WHERE id = ? AND user_id = ?",
+      [req.params.id, req.session.userId]
+    );
+    if (!t) return res.status(404).json({ ok: false, msg: "Ticket no encontrado" });
+    if (!t.ruta_archivo) return res.status(404).json({ ok: false, msg: "Este ticket no tiene imagen guardada" });
+    if (!/^https?:\/\//i.test(t.ruta_archivo)) {
+      // Tickets anteriores a la migración a R2: apuntaban al disco de Railway,
+      // que es efímero. Esas fotos ya no existen en ningún sitio.
+      return res.status(410).json({ ok: false, msg: "La imagen de este ticket es anterior a la migración a R2 y ya no está disponible" });
+    }
+
+    const r = await fetch(t.ruta_archivo);
+    if (!r.ok) return res.status(502).json({ ok: false, msg: `No se pudo leer la imagen (HTTP ${r.status})` });
+    const buf = Buffer.from(await r.arrayBuffer());
+
+    const ext = (t.ruta_archivo.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
+    res.setHeader('Content-Type', TIPOS_IMAGEN[ext] || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader(
+      'Content-Disposition',
+      `${req.query.descargar ? 'attachment' : 'inline'}; filename="${nombreDescarga(t, ext)}"`
+    );
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ ok: false, msg: e.message });
+  }
+});
+
+// ── DESCARGAR TODOS LOS TICKETS EN UN ZIP ────────────────────────────────────
+// Se transmite en streaming según se van bajando de R2, para no cargar 40 MB de
+// imágenes en memoria de golpe (Railway va justo de RAM).
+app.get("/api/tickets/descargar-todos", auth, async (req, res) => {
+  try {
+    const [tickets] = await db.query(
+      "SELECT id, comercio, status, ruta_archivo, ocr_json FROM tickets WHERE user_id = ? ORDER BY id",
+      [req.session.userId]
+    );
+    const conImagen = tickets.filter(t => t.ruta_archivo && /^https?:\/\//i.test(t.ruta_archivo));
+    if (!conImagen.length) return res.status(404).json({ ok: false, msg: "No hay imágenes de tickets que descargar" });
+
+    const archiver = require('archiver');
+    const zip = archiver('zip', { zlib: { level: 6 } });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="mis-tickets-${new Date().toISOString().slice(0, 10)}.zip"`);
+    zip.on('error', (e) => { console.error('❌ zip:', e.message); try { res.end(); } catch {} });
+    zip.pipe(res);
+
+    const filas = [['id', 'estado', 'comercio', 'fecha', 'total', 'folio', 'archivo'].join(',')];
+    for (const t of conImagen) {
+      let o = {};
+      try { o = typeof t.ocr_json === 'object' ? (t.ocr_json || {}) : JSON.parse(t.ocr_json || '{}'); } catch {}
+      const ext = (t.ruta_archivo.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
+      const nombre = nombreDescarga(t, ext);
+      try {
+        const r = await fetch(t.ruta_archivo);
+        if (r.ok) zip.append(Buffer.from(await r.arrayBuffer()), { name: `${t.status}/${nombre}` });
+      } catch (e) {
+        console.error(`⚠️ zip ticket #${t.id}: ${e.message}`);
+      }
+      const folio = o.folio || o.codigoTicket || o.referencia || o.folioFactura || '';
+      filas.push([t.id, t.status, `"${String(t.comercio || '').replace(/"/g, '""')}"`, o.fecha || '', o.total ?? '', folio, `${t.status}/${nombre}`].join(','));
+    }
+    zip.append('﻿' + filas.join('\r\n'), { name: 'INDICE.csv' });
+    await zip.finalize();
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ ok: false, msg: e.message });
   }
 });
 

@@ -129,17 +129,37 @@ async function facturarOrler({ carril, folio, fechaPago, importe, ticketId }) {
     await page.waitForSelector('input[name="user"]', { timeout: 15000 });
     await page.click('input[name="user"]'); await page.keyboard.type(user, { delay: 25 });
     await page.click('input[name="password"]'); await page.keyboard.type(pass, { delay: 25 });
-    await page.evaluate(() => {
+    // Clic SINTÉTICO: .click() dentro de page.evaluate() no siempre dispara los
+    // handlers de este formulario. Se cae al clic por JS solo si no se localiza
+    // el elemento.
+    const btnLogin = await page.evaluateHandle(() =>
+      Array.from(document.querySelectorAll("button")).find(x => /iniciar sesi[oó]n/i.test(x.textContent || "")) || null
+    );
+    const btnLoginEl = btnLogin.asElement();
+    if (btnLoginEl) await btnLoginEl.click();
+    else await page.evaluate(() => {
       const b = Array.from(document.querySelectorAll("button")).find(x => /iniciar sesi[oó]n/i.test(x.textContent || ""));
       if (b) b.click();
     });
-    await page.waitForTimeout(3000);
 
-    const loginOk = await page.evaluate(() => !/BIENVENIDO/i.test(document.body.innerText || ""));
+    // ⚠️ Espera CONDICIONAL, no un sleep fijo. El login del portal tarda a veces
+    // más de 3 s y con el sleep corto se fotografiaba la pantalla de
+    // "BIENVENIDO" todavía visible y se daba por fallido un login que iba a
+    // funcionar (falso negativo real en los tickets #136/#137/#138).
+    let loginOk = false;
+    for (let i = 0; i < 20 && !loginOk; i++) {
+      await page.waitForTimeout(1000);
+      loginOk = await page.evaluate(() => !/BIENVENIDO/i.test(document.body.innerText || "")).catch(() => false);
+    }
     if (!loginOk) {
+      const aviso = await page.evaluate(() => {
+        const t = document.body.innerText || "";
+        const m = t.match(/(usuario|contrase|incorrect|inv[aá]lid|bloque)[^\n]{0,90}/i);
+        return m ? m[0] : "";
+      }).catch(() => "");
       await screenshot("login_fallido");
       await browser.close();
-      return { ok: false, msg: "Orler: no se pudo iniciar sesión — revisa ORLER_SINALOA_USER/PASS" };
+      return { ok: false, msg: `Orler: no se pudo iniciar sesión tras 20 s${aviso ? ` — el portal dice: "${aviso}"` : " (sin mensaje de error en pantalla)"}` };
     }
     console.log("✅ Sesión iniciada");
     await screenshot("p1_post_login");
@@ -208,9 +228,27 @@ async function facturarOrler({ carril, folio, fechaPago, importe, ticketId }) {
       return false;
     });
     if (!facturarClicked) {
+      // Antes de darlo por fallido: el portal puede haber abierto un modal de
+      // Alerta que tapa el formulario. El caso más común es "El folio ya fue
+      // timbrado" — no es un fallo del bot, es que la caseta ya se facturó
+      // (confirmado con los tickets #137/#144, folio 3017725).
+      const alerta = await page.evaluate(() => {
+        const t = (document.body.innerText || "").replace(/\s+/g, " ");
+        const m = t.match(/Alerta\s*(.{0,120})/i);
+        return m ? m[1].trim() : "";
+      });
+      if (/ya fue timbrad|ya (fue|est[aá]) facturad/i.test(alerta)) {
+        await screenshot("p4_folio_ya_timbrado");
+        await browser.close();
+        return {
+          ok: false,
+          error_code: "ya_facturado",
+          msg: `Orler: el folio ${folio} ya fue timbrado — el portal lo rechaza. El CFDI existe en la cuenta; recuperarlo con scripts/orler-descargar-lote.js`,
+        };
+      }
       await screenshot("p4_sin_boton_facturar");
       await browser.close();
-      return { ok: false, msg: "Orler: folio reconocido pero no se encontró el botón 'Facturar'" };
+      return { ok: false, msg: `Orler: folio reconocido pero no se encontró el botón 'Facturar'${alerta ? ` (el portal muestra: "${alerta}")` : ""}` };
     }
     await page.waitForTimeout(2000);
     await screenshot("p4_modal_datos_a_facturar");

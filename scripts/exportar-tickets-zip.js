@@ -112,6 +112,12 @@ async function descargar(url, destino) {
     `Las fotos están agrupadas en carpetas por estado. INDICE.csv relaciona cada`,
     `archivo con su ticket: comercio, fecha, total, folio, portal, UUID del CFDI`,
     `si se facturó, y el motivo del error si lo hay.`,
+    ``,
+    `NOTA sobre las imágenes no recuperables: son tickets antiguos cuya`,
+    `ruta_archivo apunta al disco local de Railway, de antes de que el sistema`,
+    `guardara las fotos en Cloudflare R2. Ese disco es efímero, así que esas`,
+    `imágenes ya no existen en ningún sitio — no es un fallo de esta exportación.`,
+    `Sus datos (comercio, folio, total, CFDI) sí están completos en INDICE.csv.`,
   ].join('\n');
   fs.writeFileSync(path.join(raiz, 'RESUMEN.txt'), resumen, 'utf8');
 

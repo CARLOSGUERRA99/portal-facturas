@@ -15,7 +15,20 @@
     .ticket-name { font-weight: 600; font-size: 0.9rem; color: var(--text); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ticket-meta { font-size: 0.78rem; color: var(--text-muted); }
     .ticket-datos { font-size: 0.8rem; color: var(--green); font-weight: 500; margin-top: 3px; }
-    .ticket-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .ticket-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+    /* Miniatura de la foto del ticket */
+    .ticket-thumb { width: 46px; height: 60px; object-fit: cover; border-radius: 7px; border: 1.5px solid #e6ece0; background: #fafcf8; cursor: pointer; flex-shrink: 0; transition: transform .15s, box-shadow .15s; }
+    .ticket-thumb:hover { transform: scale(1.06); box-shadow: 0 3px 10px rgba(0,0,0,.16); }
+    .ticket-thumb-vacia { display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #b9c4ad; cursor: default; }
+    .btn-ghost { background: #f5f8f2; color: #4b5d3a; border: 1.5px solid #e2e9d9; font-size: .78rem; text-decoration: none; display: inline-flex; align-items: center; }
+    .btn-ghost:hover { background: #eaf1e2; }
+    /* Visor de ticket a pantalla completa */
+    .visor-fondo { position: fixed; inset: 0; background: rgba(20,26,16,.82); display: none; align-items: center; justify-content: center; z-index: 1200; padding: 24px; }
+    .visor-fondo.abierto { display: flex; }
+    .visor-caja { max-width: min(94vw, 760px); max-height: 92vh; display: flex; flex-direction: column; gap: 12px; }
+    .visor-caja img { max-width: 100%; max-height: 78vh; object-fit: contain; border-radius: 10px; background: #fff; }
+    .visor-barra { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #fff; font-size: .86rem; }
+    @media (max-width: 640px) { .ticket-row { flex-wrap: wrap; } .ticket-thumb { width: 40px; height: 52px; } }
     .tickets-card { background: white; border-radius: var(--card-radius); box-shadow: var(--shadow); overflow: hidden; }
     .tickets-card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 16px; border-bottom: 1px solid #f0f4ec; }
     /* Modal editar datos */
@@ -138,7 +151,11 @@
     <div class="tickets-card" id="tickets-container">
       <div class="tickets-card-header">
         <div class="card-title">Todos los tickets</div>
-        <span id="tickets-count" style="font-size:0.8rem;color:var(--text-muted);font-weight:600;"></span>
+        <span style="display:flex;align-items:center;gap:12px;">
+          <span id="tickets-count" style="font-size:0.8rem;color:var(--text-muted);font-weight:600;"></span>
+          <a class="btn btn-sm btn-ghost" href="/api/tickets/descargar-todos"
+             title="Descargar todas las fotos de tus tickets en un ZIP, con un índice en CSV">⬇ Descargar todos (ZIP)</a>
+        </span>
       </div>
       <div id="lista">
         <div class="empty-state">
@@ -374,8 +391,16 @@
           }
         }
 
+        // Miniatura de la foto: se sirve por /api/tickets/:id/imagen (no por la
+        // URL pública de R2) para que solo el dueño del ticket pueda verla.
+        const miniatura = t.tiene_imagen
+          ? `<img src="/api/tickets/${t.id}/imagen" alt="Ticket ${t.id}" class="ticket-thumb" loading="lazy"
+                  onclick="verTicket(${t.id})" title="Ver el ticket en grande">`
+          : `<div class="ticket-thumb ticket-thumb-vacia" title="Sin imagen guardada">📄</div>`;
+
         return `
           <div class="ticket-row" id="ticket-${t.id}">
+            ${miniatura}
             <div class="ticket-main">
               <div class="ticket-name">${t.comercio || 'Comercio desconocido'}</div>
               <div class="ticket-meta">${t.nombre_archivo} · ${new Date(t.creado).toLocaleDateString('es-MX', {day:'2-digit',month:'short',year:'numeric'})}</div>
@@ -397,6 +422,8 @@
                       : `<button class="btn btn-primary btn-sm" id="btn-${t.id}" onclick="facturar(${t.id})">Facturar</button>`
               }
               ${btnSolicitar}
+              ${t.tiene_imagen ? `<button class="btn btn-sm btn-ghost" onclick="verTicket(${t.id})" title="Ver el ticket">👁 Ver</button>
+              <a class="btn btn-sm btn-ghost" href="/api/tickets/${t.id}/imagen?descargar=1" title="Descargar la foto del ticket">⬇ Descargar</a>` : ''}
               ${canDelete ? `<button class="btn btn-sm" id="del-${t.id}" onclick="eliminarTicket(${t.id})" style="background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;">Eliminar</button>` : ''}
               ${residenteSelect}
             </div>
@@ -663,6 +690,41 @@
       <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 0C7.163 0 0 7.163 0 16c0 2.833.738 5.488 2.031 7.794L0 32l8.418-2.009A15.93 15.93 0 0016 32c8.837 0 16-7.163 16-16S24.837 0 16 0zm0 29.333a13.27 13.27 0 01-6.818-1.877l-.488-.293-5.003 1.194 1.227-4.872-.32-.503A13.267 13.267 0 012.667 16C2.667 8.636 8.636 2.667 16 2.667S29.333 8.636 29.333 16 23.364 29.333 16 29.333zm7.293-9.907c-.4-.2-2.368-1.168-2.735-1.301-.368-.133-.635-.2-.902.2-.267.4-1.034 1.301-1.268 1.568-.233.267-.467.3-.867.1-.4-.2-1.688-.622-3.215-1.981-1.188-1.058-1.99-2.365-2.223-2.765-.233-.4-.025-.616.175-.815.18-.178.4-.467.6-.7.2-.233.267-.4.4-.667.133-.267.067-.5-.033-.7-.1-.2-.902-2.168-1.235-2.968-.325-.78-.655-.674-.902-.686l-.768-.013c-.267 0-.7.1-1.067.5-.368.4-1.4 1.368-1.4 3.335 0 1.967 1.433 3.868 1.633 4.135.2.267 2.82 4.305 6.833 6.034.955.412 1.7.659 2.281.844.958.305 1.831.262 2.52.159.769-.115 2.368-.969 2.702-1.904.333-.935.333-1.736.233-1.904-.1-.167-.367-.267-.767-.467z"/></svg>
     </div>
   </div>
+
+  <!-- Visor de ticket a pantalla completa -->
+  <div class="visor-fondo" id="visor" onclick="if(event.target===this)cerrarVisor()">
+    <div class="visor-caja">
+      <div class="visor-barra">
+        <span id="visor-titulo"></span>
+        <span style="display:flex;gap:8px;">
+          <a id="visor-descargar" class="btn btn-sm btn-ghost" href="#">⬇ Descargar</a>
+          <button class="btn btn-sm btn-ghost" onclick="cerrarVisor()">✕ Cerrar</button>
+        </span>
+      </div>
+      <img id="visor-img" alt="Ticket">
+    </div>
+  </div>
+
+  <script>
+    // Visor de la foto del ticket. La imagen se pide al backend, que comprueba
+    // que el ticket sea del usuario en sesión antes de servirla.
+    function verTicket(id) {
+      // _todosTickets se declara con `let` en el otro <script>: es visible desde
+      // aquí (ámbito léxico global) pero NO como propiedad de window.
+      const lista = typeof _todosTickets !== 'undefined' ? _todosTickets : [];
+      const t = lista.find(x => x.id === id);
+      document.getElementById('visor-titulo').textContent =
+        t ? `#${t.id} · ${t.comercio || 'Ticket'}` : `Ticket #${id}`;
+      document.getElementById('visor-img').src = `/api/tickets/${id}/imagen`;
+      document.getElementById('visor-descargar').href = `/api/tickets/${id}/imagen?descargar=1`;
+      document.getElementById('visor').classList.add('abierto');
+    }
+    function cerrarVisor() {
+      document.getElementById('visor').classList.remove('abierto');
+      document.getElementById('visor-img').src = '';
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarVisor(); });
+  </script>
 
 </body>
 </html>
