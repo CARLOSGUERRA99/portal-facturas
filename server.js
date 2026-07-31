@@ -718,6 +718,64 @@ app.post("/upload-ticket", auth, upload.single("ticket"), async (req, res) => {
   }
 });
 
+// ── SUBIR VARIOS TICKETS DE GOLPE ────────────────────────────────────────────
+// Mismo pipeline que /upload-ticket pero en lote: sube todas las imágenes a R2,
+// inserta todas las filas y las encola de una vez. Responde de inmediato SIN
+// esperar el OCR de ninguna.
+//
+// Filosofía deliberada (pedida por el usuario): en lote NO se bloquea ni se
+// avisa por ticket. Lo que falle, lo que resulte duplicado o lo que caiga en un
+// portal sin bot se queda simplemente EN PROCESO dentro de "Mis Tickets" para
+// revisión interna. Un solo archivo problemático no debe frenar a los demás:
+// por eso cada archivo se procesa en su propio try/catch y el lote sigue.
+// La cola de Redis ya serializa la facturación (máx. 2 concurrentes), así que
+// aceptar muchos de golpe no satura nada.
+const MAX_TICKETS_LOTE = 25;
+app.post("/upload-tickets", auth, upload.array("tickets", MAX_TICKETS_LOTE), async (req, res) => {
+  try {
+    const archivos = req.files || [];
+    if (!archivos.length) return res.status(400).json({ ok: false, msg: "No se recibió ningún archivo" });
+    const residente_id = req.body.residente_id ? parseInt(req.body.residente_id) : null;
+
+    const resultados = await Promise.all(archivos.map(async (file) => {
+      try {
+        const extImg = ((file.originalname || '').split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+        // Sufijo aleatorio además del timestamp: subidas en paralelo pueden caer
+        // en el mismo milisegundo y sobrescribirse entre ellas en R2.
+        const imagenTicketUrl = await subirArchivoR2(
+          file.buffer,
+          `tickets/${req.session.userId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${extImg}`,
+          file.mimetype || 'image/jpeg'
+        );
+        if (!imagenTicketUrl) return { archivo: file.originalname, ok: false };
+
+        const [ins] = await db.query(
+          "INSERT INTO tickets (user_id, nombre_archivo, ruta_archivo, comercio, status, residente_id, requiere_confirmacion) VALUES (?, ?, ?, ?, 'pendiente', ?, 1)",
+          [req.session.userId, file.originalname, imagenTicketUrl, "Analizando…", residente_id]
+        );
+        await encolarVision(ins.insertId, req.session.userId);
+        return { archivo: file.originalname, ok: true, ticketId: ins.insertId };
+      } catch (e) {
+        console.error(`❌ upload-tickets (${file.originalname}):`, e.message);
+        return { archivo: file.originalname, ok: false };
+      }
+    }));
+
+    const encolados = resultados.filter(r => r.ok);
+    console.log(`📥 Lote de ${archivos.length} ticket(s) → ${encolados.length} en cola vision`);
+    res.json({
+      ok: true,
+      enCola: true,
+      total: archivos.length,
+      encolados: encolados.length,
+      ticketIds: encolados.map(r => r.ticketId),
+    });
+  } catch (err) {
+    console.error("❌ upload-tickets:", err.message);
+    res.status(500).json({ ok: false, msg: err.message });
+  }
+});
+
 // ── ESTADO DEL OCR (el frontend hace polling tras subir) ─────────────────────
 // Devuelve la misma información que antes entregaba la respuesta síncrona de
 // /upload-ticket: duplicado | agenteActivado | necesitaConfirmacion | autoFacturando.

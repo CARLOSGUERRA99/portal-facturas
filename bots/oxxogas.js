@@ -1,5 +1,44 @@
 // OXXO GAS — facturacion.oxxogas.com
 //
+// ══════════════════════════════════════════════════════════════════════════
+// ⛔ BLOQUEADO A NIVEL WAF. Medido el 2026-07-31, no supuesto:
+//
+//   El portal sirve a la IP de Browserless un HTML PELADO: la página trae
+//   CERO etiquetas <script src> (comprobado con page.evaluate sobre
+//   document.querySelectorAll('script[src]') → 0, y ninguna respuesta .js en
+//   el listener de red). En consecuencia jQuery, Chosen y Angular valen
+//   `false` en window: el JavaScript del portal NUNCA se ejecuta.
+//
+//   Consecuencias observadas, todas explicadas por lo mismo:
+//     · #rfc sí tiene opciones (vienen renderizadas del servidor), pero
+//       #regimen_fiscal y #usocfdi quedan con 0 opciones para siempre —
+//       los puebla un AJAX que no corre.
+//     · page.select() no lanza error al no encontrar la opción: deja el
+//       <select> vacío EN SILENCIO.
+//     · El clic en "Agregar Ticket" no dispara ninguna petición a
+//       /facturacion/facturar/tickets porque no hay handler JS que la haga.
+//       Ese era el síntoma que durante 4 intentos se atribuyó a
+//       rate-limiting: NO era rate-limiting.
+//
+//   Se descartaron una por una las otras hipótesis:
+//     · Rate-limiting → probado con 35 s entre acciones: mismo resultado.
+//     · Sesión expirada → el dashboard saluda "Hola CARLOS DANIEL", la
+//       sesión es válida.
+//     · Widget Chosen sin inicializar por page.select() → no existe ni un
+//       solo .chosen-container en el DOM; la librería no está cargada.
+//     · Timeout de Browserless (60 s exactos, medido) → se rediseñó el flujo
+//       para caber en 45 s y el fallo se produce igual a los 25 s.
+//
+//   La única facturación que sí cerró (ticket 02, folio 62703067, UUID
+//   d9edf987-788b-4f71-97cb-2ccc55d449af) ocurrió en una ventana en la que
+//   el WAF sí entregó la página completa. No es reproducible a voluntad.
+//
+//   👉 Este bot NO debe entrar al gate de la cola (ver lib/util.js). Se
+//      conserva porque el flujo documentado abajo es correcto y sirve el día
+//      que el WAF deje de degradar la página; ahora detecta el shell sin JS
+//      y aborta de inmediato en vez de quemar sesiones de Browserless.
+// ══════════════════════════════════════════════════════════════════════════
+//
 // ⚠️ ESTE BOT NO ES AUTÓNOMO. Requiere una cookie de sesión ya
 // autenticada MANUALMENTE por el usuario (ver más abajo). NO intenta
 // resolver el reCAPTCHA v2 del login bajo ninguna circunstancia — esa
@@ -137,6 +176,22 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
     if (!facturarEl) throw new Error("no se encontró el enlace Facturar en el dashboard");
     await facturarEl.click();
     await page.waitForTimeout(2500);
+
+    // Detección temprana del shell sin JavaScript (ver cabecera). Si el portal
+    // degradó la página, seguir adelante solo desperdicia la sesión: los
+    // selects dependientes jamás se poblarán y el botón no tendrá handler.
+    const sinJs = await page.evaluate(() => ({
+      scripts: document.querySelectorAll("script[src]").length,
+      jquery: !!window.jQuery,
+    }));
+    if (sinJs.scripts === 0 || !sinJs.jquery) {
+      await browser.close();
+      return {
+        ok: false,
+        error_code: "captcha",
+        msg: `OXXO GAS: el portal entregó la página SIN JavaScript (${sinJs.scripts} scripts, jQuery=${sinJs.jquery}) — su WAF degrada la respuesta para tráfico automatizado. El formulario es inoperable así. Hay que facturar manualmente.`,
+      };
+    }
 
     let enCarrito = false;
     for (let intento = 1; intento <= 2 && !enCarrito; intento++) {
