@@ -938,6 +938,55 @@ app.post("/facturar/:ticketId", auth, async (req, res) => {
   }
 });
 
+// ⚠️ ORDEN IMPORTANTE: cualquier ruta literal bajo /api/tickets/ tiene que ir
+// ANTES de "/api/tickets/:id", o Express la captura como si el literal fuera un
+// id. Pasó con /api/tickets/descargar-todos, que respondía
+// {"ok":false,"msg":"Ticket no encontrado"} en vez del ZIP.
+// ── DESCARGAR TODOS LOS TICKETS EN UN ZIP ────────────────────────────────────
+// Se transmite en streaming según se van bajando de R2, para no cargar decenas
+// de MB de imágenes en memoria de golpe (Railway va justo de RAM).
+app.get("/api/tickets/descargar-todos", auth, async (req, res) => {
+  try {
+    const [tickets] = await db.query(
+      "SELECT id, comercio, status, ruta_archivo, ocr_json FROM tickets WHERE user_id = ? ORDER BY id",
+      [req.session.userId]
+    );
+    const conImagen = tickets.filter(t => t.ruta_archivo && /^https?:\/\//i.test(t.ruta_archivo));
+    if (!conImagen.length) return res.status(404).json({ ok: false, msg: "No hay imágenes de tickets que descargar" });
+
+    // ⚠️ archiver fijado a la 7.x. La 8.x cambió la API: ya no exporta una
+    // función invocable (`archiver('zip')` → "archiver is not a function") y
+    // `new Archiver('zip')` revienta más tarde, en pleno streaming, con
+    // "this._module.append is not a function" — tumbando el proceso entero.
+    const archiver = require('archiver');
+    const zip = archiver('zip', { zlib: { level: 6 } });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="mis-tickets-${new Date().toISOString().slice(0, 10)}.zip"`);
+    zip.on('error', (e) => { console.error('❌ zip:', e.message); try { res.end(); } catch {} });
+    zip.pipe(res);
+
+    const filas = [['id', 'estado', 'comercio', 'fecha', 'total', 'folio', 'archivo'].join(',')];
+    for (const t of conImagen) {
+      let o = {};
+      try { o = typeof t.ocr_json === 'object' ? (t.ocr_json || {}) : JSON.parse(t.ocr_json || '{}'); } catch {}
+      const ext = (t.ruta_archivo.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
+      const nombre = nombreDescarga(t, ext);
+      try {
+        const r = await fetch(t.ruta_archivo);
+        if (r.ok) zip.append(Buffer.from(await r.arrayBuffer()), { name: `${t.status}/${nombre}` });
+      } catch (e) {
+        console.error(`⚠️ zip ticket #${t.id}: ${e.message}`);
+      }
+      const folio = o.folio || o.codigoTicket || o.referencia || o.folioFactura || '';
+      filas.push([t.id, t.status, `"${String(t.comercio || '').replace(/"/g, '""')}"`, o.fecha || '', o.total ?? '', folio, `${t.status}/${nombre}`].join(','));
+    }
+    zip.append('﻿' + filas.join('\r\n'), { name: 'INDICE.csv' });
+    await zip.finalize();
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ ok: false, msg: e.message });
+  }
+});
+
 // ── BORRAR TICKET ──
 app.get("/api/tickets/:id", auth, async (req, res) => {
   try {
@@ -1039,47 +1088,6 @@ app.get("/api/tickets/:id/imagen", auth, async (req, res) => {
     res.send(buf);
   } catch (e) {
     res.status(500).json({ ok: false, msg: e.message });
-  }
-});
-
-// ── DESCARGAR TODOS LOS TICKETS EN UN ZIP ────────────────────────────────────
-// Se transmite en streaming según se van bajando de R2, para no cargar 40 MB de
-// imágenes en memoria de golpe (Railway va justo de RAM).
-app.get("/api/tickets/descargar-todos", auth, async (req, res) => {
-  try {
-    const [tickets] = await db.query(
-      "SELECT id, comercio, status, ruta_archivo, ocr_json FROM tickets WHERE user_id = ? ORDER BY id",
-      [req.session.userId]
-    );
-    const conImagen = tickets.filter(t => t.ruta_archivo && /^https?:\/\//i.test(t.ruta_archivo));
-    if (!conImagen.length) return res.status(404).json({ ok: false, msg: "No hay imágenes de tickets que descargar" });
-
-    const archiver = require('archiver');
-    const zip = archiver('zip', { zlib: { level: 6 } });
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="mis-tickets-${new Date().toISOString().slice(0, 10)}.zip"`);
-    zip.on('error', (e) => { console.error('❌ zip:', e.message); try { res.end(); } catch {} });
-    zip.pipe(res);
-
-    const filas = [['id', 'estado', 'comercio', 'fecha', 'total', 'folio', 'archivo'].join(',')];
-    for (const t of conImagen) {
-      let o = {};
-      try { o = typeof t.ocr_json === 'object' ? (t.ocr_json || {}) : JSON.parse(t.ocr_json || '{}'); } catch {}
-      const ext = (t.ruta_archivo.split('?')[0].split('.').pop() || 'jpg').toLowerCase();
-      const nombre = nombreDescarga(t, ext);
-      try {
-        const r = await fetch(t.ruta_archivo);
-        if (r.ok) zip.append(Buffer.from(await r.arrayBuffer()), { name: `${t.status}/${nombre}` });
-      } catch (e) {
-        console.error(`⚠️ zip ticket #${t.id}: ${e.message}`);
-      }
-      const folio = o.folio || o.codigoTicket || o.referencia || o.folioFactura || '';
-      filas.push([t.id, t.status, `"${String(t.comercio || '').replace(/"/g, '""')}"`, o.fecha || '', o.total ?? '', folio, `${t.status}/${nombre}`].join(','));
-    }
-    zip.append('﻿' + filas.join('\r\n'), { name: 'INDICE.csv' });
-    await zip.finalize();
-  } catch (e) {
-    if (!res.headersSent) res.status(500).json({ ok: false, msg: e.message });
   }
 });
 
