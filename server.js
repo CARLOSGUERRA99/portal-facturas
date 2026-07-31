@@ -65,7 +65,12 @@ app.use(express.urlencoded({ extended: true }));
 if (!process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET no configurada (Railway → Variables)");
 }
-if (!process.env.REDIS_URL) {
+// SIN_REDIS=1 es la salida explícita para levantar el servidor en local: el
+// Redis de Railway vive en la red privada y no es alcanzable desde fuera. En
+// ese modo la sesión usa el MemoryStore de express-session (se pierde al
+// reiniciar y no vale con varias réplicas — por eso NO se usa en producción).
+const SIN_REDIS = process.env.SIN_REDIS === "1";
+if (!process.env.REDIS_URL && !SIN_REDIS) {
   throw new Error("REDIS_URL no configurada — la sesión requiere Redis (Railway → servicio Redis → variable REDIS_URL)");
 }
 
@@ -73,16 +78,16 @@ if (!process.env.REDIS_URL) {
 // restart/deploy, y no sirve si el web service llega a correr con >1 réplica).
 // Conexión dedicada, separada de la de BullMQ en queues/index.js (esa usa
 // maxRetriesPerRequest:null, pensado para Workers, no para un store de sesión).
-const sessionRedis = new IORedis(process.env.REDIS_URL, {
+const sessionRedis = SIN_REDIS ? null : new IORedis(process.env.REDIS_URL, {
   // Railway: la red privada (*.railway.internal) es IPv6-only y ioredis por
   // defecto resuelve solo IPv4 → ETIMEDOUT. family 0 = autodetectar (dual).
   family: 0,
 });
-sessionRedis.on("error", (e) => console.error("⚠️ [session-redis]", e.message));
+if (sessionRedis) sessionRedis.on("error", (e) => console.error("⚠️ [session-redis]", e.message));
 
 app.set("trust proxy", 1);
 app.use(session({
-  store: new RedisStore({ client: sessionRedis, prefix: "sess:" }),
+  ...(sessionRedis ? { store: new RedisStore({ client: sessionRedis, prefix: "sess:" }) } : {}),
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
