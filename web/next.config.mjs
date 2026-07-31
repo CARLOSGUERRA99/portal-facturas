@@ -26,6 +26,16 @@ const nextConfig = {
       { source: "/register", destination: `${BACKEND_ORIGIN}/register` },
       { source: "/logout", destination: `${BACKEND_ORIGIN}/logout` },
       { source: "/upload-ticket", destination: `${BACKEND_ORIGIN}/upload-ticket` },
+      // Subida en lote (hasta 25 tickets). Necesita el proxyClientMaxBodySize de
+      // arriba: 25 fotos pueden pasar de largo los 10 MB por defecto.
+      { source: "/upload-tickets", destination: `${BACKEND_ORIGIN}/upload-tickets` },
+      // Páginas del portal que siguen sirviéndose desde Railway mientras se
+      // migran. Solo la carátula (/) vive en Vercel por ahora.
+      { source: "/dashboard", destination: `${BACKEND_ORIGIN}/dashboard` },
+      { source: "/mis-tickets", destination: `${BACKEND_ORIGIN}/mis-tickets` },
+      { source: "/mis-facturas", destination: `${BACKEND_ORIGIN}/mis-facturas` },
+      { source: "/perfil", destination: `${BACKEND_ORIGIN}/perfil` },
+      { source: "/admin-residentes", destination: `${BACKEND_ORIGIN}/admin-residentes` },
     ];
   },
 };
