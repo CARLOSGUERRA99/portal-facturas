@@ -24,7 +24,19 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
   });
 
-  async function screenshot(label) {
+  // ⚠️ PRESUPUESTO DE SESIÓN: Browserless corta la sesión a los 60 s EXACTOS en
+  // este plan (medido) y rechaza con HTTP 400 cualquier `&timeout=`. Cada
+  // screenshot cuesta entre 2 y 5 s reales entre la captura y la subida a R2, y
+  // este bot tomaba 12 — más de un tercio del presupuesto gastado en imágenes
+  // de depuración. Ese era el motivo de que muriera siempre en el mismo punto
+  // con "Protocol error (Input.dispatchKeyEvent): Target closed" (tickets #130
+  // y #158).
+  //
+  // Por defecto solo se capturan los momentos marcados como CLAVE (errores y
+  // pantallas de decisión). Con DEBUG_SHOTS=1 se capturan todos, para depurar.
+  const TODAS_LAS_CAPTURAS = process.env.DEBUG_SHOTS === "1";
+  async function screenshot(label, clave = false) {
+    if (!clave && !TODAS_LAS_CAPTURAS) return;
     try {
       const buf = await page.screenshot({ fullPage: false });
       const url = await subirArchivoR2(buf, `debug/fg_${label}_${Date.now()}.png`, "image/png");
@@ -178,7 +190,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
       return false;
     });
     if (!validarClicked) {
-      await screenshot("error_sin_btn_validar");
+      await screenshot("error_sin_btn_validar", true);
       throw new Error("No se encontró el botón 'Validar Folio'");
     }
     console.log("✅ Clic en Validar Folio — esperando respuesta...");
@@ -191,7 +203,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
       console.log("ℹ️ Sin modal tras validar — verificando si los campos ya están activos...");
       const rfcHabilitado = await page.$("input#rfc:not([disabled])");
       if (!rfcHabilitado) {
-        await screenshot("paso4_sin_modal_sin_campos");
+        await screenshot("paso4_sin_modal_sin_campos", true);
         throw new Error("No apareció modal y los campos fiscales no se habilitaron");
       }
       console.log("✅ Campos habilitados directamente (sin modal de sucursal)");
@@ -203,7 +215,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
       console.log(`📍 Tipo de modal detectado: ${tipo}`);
 
       if (tipo === "sistema_caido") {
-        await screenshot("sistema_caido");
+        await screenshot("sistema_caido", true);
         await browser.close();
         return {
           ok: false,
@@ -212,7 +224,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
       }
 
       if (tipo === "datos_invalidos") {
-        await screenshot("datos_invalidos");
+        await screenshot("datos_invalidos", true);
         await browser.close();
         return {
           ok: false,
@@ -296,7 +308,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
       if (btn) { btn.scrollIntoView(); btn.click(); }
     });
     await page.waitForTimeout(12000);
-    await screenshot("paso6_post_generar");
+    await screenshot("paso6_post_generar", true);
     console.log("✅ Factura solicitada");
 
     const textoPost = await page.evaluate(() => document.body.innerText.toLowerCase());
@@ -369,7 +381,7 @@ async function facturarFarmaciasGuadalajara({ rfc, codigoPostal, razonSocial, re
 
   } catch (err) {
     console.error("❌ Error en bot Farmacias Guadalajara:", err.message);
-    await screenshot("error").catch(() => {});
+    await screenshot("error", true).catch(() => {});
     try { await browser.close(); } catch {}
     return { ok: false, msg: err.message };
   }

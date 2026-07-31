@@ -16,6 +16,21 @@
     .ticket-meta { font-size: 0.78rem; color: var(--text-muted); }
     .ticket-datos { font-size: 0.8rem; color: var(--green); font-weight: 500; margin-top: 3px; }
     .ticket-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+    /* Resumen por estado */
+    .resumen { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+    .resumen-tarjeta {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      padding: 12px 14px; border-radius: 12px; cursor: pointer; text-align: left;
+      background: var(--bg); border: 1.5px solid transparent; font-family: inherit;
+      transition: border-color .15s, transform .12s;
+    }
+    .resumen-tarjeta:hover { transform: translateY(-1px); border-color: var(--c); }
+    .resumen-tarjeta.activa { border-color: var(--c); box-shadow: 0 2px 10px rgba(0,0,0,.07); }
+    .resumen-icono { font-size: .95rem; }
+    .resumen-n { font-size: 1.5rem; font-weight: 700; color: var(--c); line-height: 1.1; }
+    .resumen-txt { font-size: .74rem; font-weight: 600; color: var(--text-muted); }
+    @media (max-width: 720px) { .resumen { grid-template-columns: repeat(2, 1fr); } }
+
     /* Miniatura de la foto del ticket */
     .ticket-thumb { width: 46px; height: 60px; object-fit: cover; border-radius: 7px; border: 1.5px solid #e6ece0; background: #fafcf8; cursor: pointer; flex-shrink: 0; transition: transform .15s, box-shadow .15s; }
     .ticket-thumb:hover { transform: scale(1.06); box-shadow: 0 3px 10px rgba(0,0,0,.16); }
@@ -142,10 +157,18 @@
 
     <div class="residente-tabs" id="residente-tabs" style="display:none;"></div>
 
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+    <!-- Resumen por estado: de un vistazo se ve qué está facturado, qué espera
+         al comercio y qué necesita atención. Cada tarjeta filtra la lista. -->
+    <div class="resumen" id="resumen"></div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
       <select id="filtro-mes" onchange="renderTickets()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:0.85rem;background:white;color:var(--text);outline:none;cursor:pointer;">
         <option value="">Todos los meses</option>
       </select>
+      <span id="filtro-estado-activo" style="display:none;font-size:0.8rem;color:var(--text-muted);">
+        Filtrando por <b id="filtro-estado-nombre"></b>
+        <button onclick="filtrarEstado(null)" style="margin-left:6px;border:0;background:#eef3e8;color:#3B6D11;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.75rem;font-weight:600;">quitar</button>
+      </span>
     </div>
 
     <div class="tickets-card" id="tickets-container">
@@ -292,6 +315,44 @@
           .map(([k, label]) => `<option value="${k}" ${k === current ? 'selected' : ''}>${label}</option>`).join('');
     }
 
+    // Los estados de la BD se agrupan en 4 categorías que significan algo para
+    // quien usa el portal, no para el sistema: lo que ya tiene CFDI, lo que
+    // está en marcha, lo que espera una decisión suya, y lo que se atoró.
+    const CATEGORIAS = [
+      { id: 'procesado',  nombre: 'Facturados',       icono: '✅', color: '#3B6D11', bg: '#f0f7e9', estados: ['procesado'] },
+      { id: 'encurso',    nombre: 'En proceso',       icono: '⏳', color: '#0369a1', bg: '#eff8fd', estados: ['pendiente', 'procesando', 'procesando_correo'] },
+      { id: 'revisar',    nombre: 'Necesitan tus datos', icono: '✏️', color: '#a16207', bg: '#fffbeb', estados: ['pendiente_confirmacion'] },
+      { id: 'error',      nombre: 'Con problema',     icono: '⚠️', color: '#c0392b', bg: '#fef2f2', estados: ['error'] },
+    ];
+    let _filtroEstado = null;
+
+    function filtrarEstado(id) {
+      _filtroEstado = (_filtroEstado === id) ? null : id;
+      renderTickets();
+    }
+
+    function renderResumen(tickets) {
+      const cont = document.getElementById('resumen');
+      if (!cont) return;
+      cont.innerHTML = CATEGORIAS.map(c => {
+        const n = tickets.filter(t => c.estados.includes(t.status)).length;
+        const activa = _filtroEstado === c.id;
+        return `<button class="resumen-tarjeta${activa ? ' activa' : ''}" onclick="filtrarEstado('${c.id}')"
+                        style="--c:${c.color};--bg:${c.bg};" title="Ver solo estos">
+                  <span class="resumen-icono">${c.icono}</span>
+                  <span class="resumen-n">${n}</span>
+                  <span class="resumen-txt">${c.nombre}</span>
+                </button>`;
+      }).join('');
+
+      const av = document.getElementById('filtro-estado-activo');
+      const cat = CATEGORIAS.find(c => c.id === _filtroEstado);
+      if (av) {
+        av.style.display = cat ? 'inline' : 'none';
+        if (cat) document.getElementById('filtro-estado-nombre').textContent = cat.nombre;
+      }
+    }
+
     function renderTickets() {
       const lista = document.getElementById('lista');
       const mesFiltro = document.getElementById('filtro-mes').value;
@@ -305,6 +366,12 @@
           return `${y}-${m}` === mesFiltro;
         });
       }
+
+      // El resumen se calcula ANTES de aplicar el filtro por estado, si no los
+      // contadores se pondrían a cero en cuanto seleccionas una categoría.
+      renderResumen(tickets);
+      const cat = CATEGORIAS.find(c => c.id === _filtroEstado);
+      if (cat) tickets = tickets.filter(t => cat.estados.includes(t.status));
 
       if (tickets.length === 0) {
         lista.innerHTML = `
