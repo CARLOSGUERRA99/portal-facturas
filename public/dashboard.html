@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — GPN Portal Facturas</title>
+  <title>Dashboard — Timbra</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -17,7 +17,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: 0 4px 20px rgba(59,109,17,0.25);
+      box-shadow: 0 4px 20px rgba(123,18,32,0.28);
     }
     .greeting-text h2 {
       color: white;
@@ -39,7 +39,7 @@
       display: none;
     }
     .result-card-title { font-size: 0.8rem; font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 12px; }
-    .result-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(59,109,17,0.12); font-size: 0.875rem; }
+    .result-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(123,18,32,0.12); font-size: 0.875rem; }
     .result-row:last-child { border-bottom: none; }
     .result-label { color: var(--text-muted); font-weight: 500; }
     .result-value { color: var(--text); font-weight: 600; }
@@ -90,10 +90,10 @@
 
   <nav class="navbar">
     <a href="/dashboard" class="nav-brand">
-      <div class="nav-brand-icon">🎨</div>
+      <img src="https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png" alt="G&amp;A" class="nav-brand-logo">
       <div>
-        <div class="nav-brand-name">GPN</div>
-        <div class="nav-brand-sub">Pinturas y Recubrimientos</div>
+        <div class="nav-brand-name">Timbra</div>
+        <div class="nav-brand-sub">G&amp;A Servicios Administrativos</div>
       </div>
     </a>
     <div class="nav-links">
@@ -219,7 +219,7 @@
       </div>
 
       <!-- Versículo del día -->
-      <div style="background:linear-gradient(145deg,#1e4208 0%,#2d5c10 50%,#3d7a18 100%);border-radius:var(--card-radius);padding:30px 28px;display:flex;flex-direction:column;min-height:300px;position:relative;overflow:hidden;box-shadow:0 6px 24px rgba(30,66,8,0.35);">
+      <div style="background:linear-gradient(145deg,var(--vino-oscuro) 0%,var(--vino-hover) 50%,#3d7a18 100%);border-radius:var(--card-radius);padding:30px 28px;display:flex;flex-direction:column;min-height:300px;position:relative;overflow:hidden;box-shadow:0 6px 24px rgba(30,66,8,0.35);">
         <div style="position:absolute;right:-10px;top:-20px;font-size:160px;line-height:1;color:rgba(255,255,255,0.04);font-family:Georgia,serif;user-select:none;pointer-events:none;">"</div>
         <div style="font-size:0.7rem;font-weight:700;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:22px;">✝ Palabra del día</div>
         <div id="versiculo-texto" style="font-size:1.08rem;color:white;line-height:1.7;font-weight:400;flex:1;font-style:italic;z-index:1;">
@@ -298,7 +298,7 @@
         </div>
         <div>
           <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:6px;">Describe el proceso (opcional):</div>
-          <textarea id="mpn-descripcion" placeholder='Ej: "Entro a la página, pongo el número del ticket, luego mi RFC, selecciono G03 Gastos en general y descargo el PDF..."' style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 14px;font-size:0.83rem;font-family:inherit;color:var(--text);background:#fafcf8;resize:vertical;min-height:80px;outline:none;box-sizing:border-box;line-height:1.5;"></textarea>
+          <textarea id="mpn-descripcion" placeholder='Ej: "Entro a la página, pongo el número del ticket, luego mi RFC, selecciono G03 Gastos en general y descargo el PDF..."' style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:11px 14px;font-size:0.83rem;font-family:inherit;color:var(--text);background:#FCFAFA;resize:vertical;min-height:80px;outline:none;box-sizing:border-box;line-height:1.5;"></textarea>
         </div>
         <div style="margin-top:16px;display:flex;gap:10px;justify-content:space-between;">
           <button class="btn btn-ghost btn-sm" onclick="mpnSiguiente(1)">← Atrás</button>
@@ -314,7 +314,7 @@
         <div style="font-size:0.93rem;font-weight:700;color:var(--text);margin-bottom:4px;">Link del portal de facturación</div>
         <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:16px;">Si no lo tienes, no hay problema — intentaremos encontrarlo automáticamente.</div>
         <div style="margin-bottom:16px;">
-          <input id="mpn-link" type="url" placeholder="https://..." style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:10px 14px;font-size:0.84rem;font-family:inherit;background:#fafcf8;outline:none;box-sizing:border-box;">
+          <input id="mpn-link" type="url" placeholder="https://..." style="width:100%;border:1.5px solid var(--border);border-radius:11px;padding:10px 14px;font-size:0.84rem;font-family:inherit;background:#FCFAFA;outline:none;box-sizing:border-box;">
         </div>
         <div>
           <div style="font-size:0.78rem;font-weight:600;color:var(--text);margin-bottom:10px;">¿Qué datos te piden? (opcional)</div>
@@ -351,14 +351,14 @@
   <!-- ── MODAL CONFIRMACIÓN OCR ── -->
   <div id="modal-confirmacion" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;align-items:center;justify-content:center;padding:16px;">
     <div style="background:white;border-radius:18px;padding:32px;max-width:480px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.18);position:relative;">
-      <div style="font-size:1.15rem;font-weight:700;color:#3B6D11;margin-bottom:6px;">Confirma los datos del ticket</div>
+      <div style="font-size:1.15rem;font-weight:700;color:var(--vino);margin-bottom:6px;">Confirma los datos del ticket</div>
       <div style="font-size:0.82rem;color:#666;margin-bottom:20px;">Revisa que los datos extraídos sean correctos antes de facturar. Puedes editarlos si hay algún error.</div>
       <div id="modal-ocr-warning" style="display:none;background:#FFF7ED;border:1px solid #F97316;border-radius:10px;padding:10px 14px;font-size:0.82rem;color:#c2410c;margin-bottom:16px;"></div>
       <div id="modal-campos-container" style="display:grid;gap:12px;"></div>
       <div id="modal-result-msg" style="display:none;margin-top:14px;font-size:0.85rem;padding:10px 14px;border-radius:10px;"></div>
       <div style="display:flex;gap:12px;margin-top:24px;">
         <button id="modal-btn-rechazar" onclick="rechazarTicket()" style="flex:1;padding:12px;border-radius:10px;background:#fef0ef;color:#c0392b;border:1.5px solid #fad7d5;font-weight:600;font-size:0.88rem;cursor:pointer;">Eliminar ticket</button>
-        <button id="modal-btn-confirmar" onclick="confirmarTicket()" style="flex:2;padding:12px;border-radius:10px;background:#3B6D11;color:white;border:none;font-weight:600;font-size:0.88rem;cursor:pointer;">Confirmar y facturar</button>
+        <button id="modal-btn-confirmar" onclick="confirmarTicket()" style="flex:2;padding:12px;border-radius:10px;background:var(--vino);color:white;border:none;font-weight:600;font-size:0.88rem;cursor:pointer;">Confirmar y facturar</button>
       </div>
     </div>
   </div>
@@ -825,7 +825,7 @@
 
         if (data.ok) {
           msgEl.style.background = '#f0faf0';
-          msgEl.style.color = '#3B6D11';
+          msgEl.style.color = 'var(--vino)';
           msgEl.style.border = '1px solid #c3e6c3';
           msgEl.textContent = '⏳ Facturando... Revisa el estado en "Mis Tickets" en un momento.';
           msgEl.style.display = 'block';

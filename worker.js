@@ -76,17 +76,41 @@ const visionWorker = new Worker("vision", async (job) => {
     const fechaPrev = dup.creado ? new Date(dup.creado).toLocaleDateString("es-MX") : "";
     const msg = `duplicado: folio ${dup.folio} ya registrado${fechaPrev ? " el " + fechaPrev : ""} — ticket #${dup.id}`;
     console.log(`🚫 [vision] Ticket #${ticketId} es duplicado de #${dup.id}`);
-    await db.query("UPDATE tickets SET status = 'error', error_msg = ?, ocr_json = ?, comercio = ? WHERE id = ?",
-      [msg, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido", ticketId]);
+    // ⚠️ NO se guarda ocr_json en un duplicado: la columna generada
+    // `clave_dedupe` saldría idéntica a la del ticket original y el índice
+    // UNIQUE `uq_ticket_dedupe` rechazaría el UPDATE, dejando el ticket colgado
+    // sin explicación. Se conserva la fila (para que quede el rastro de que se
+    // intentó subir) pero sin los datos que colisionan.
+    await db.query("UPDATE tickets SET status = 'error', error_msg = ?, comercio = ? WHERE id = ?",
+      [msg, datosOCR.comercio || "desconocido", ticketId]);
     return;
   }
 
-  await db.query(
-    `UPDATE tickets SET ocr_text = ?, ocr_json = ?, comercio = ?, portal_url = ?,
-     requiere_confirmacion = ?, status = 'pendiente_confirmacion' WHERE id = ?`,
-    [textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido",
-     datosOCR.portalUrl || portalUrl || null, requiereConfirmacion, ticketId]
-  );
+  try {
+    await db.query(
+      `UPDATE tickets SET ocr_text = ?, ocr_json = ?, comercio = ?, portal_url = ?,
+       requiere_confirmacion = ?, status = 'pendiente_confirmacion' WHERE id = ?`,
+      [textoOCR, JSON.stringify(datosOCR), datosOCR.comercio || "desconocido",
+       datosOCR.portalUrl || portalUrl || null, requiereConfirmacion, ticketId]
+    );
+  } catch (e) {
+    // Red de seguridad del candado: si el chequeo de arriba no lo vio pero el
+    // índice UNIQUE sí (p.ej. dos fotos idénticas subidas a la vez y leídas en
+    // paralelo), MySQL rechaza el UPDATE con ER_DUP_ENTRY. Se marca el ticket
+    // como duplicado en vez de dejar el job reventado y el ticket colgado.
+    if (e.code === 'ER_DUP_ENTRY') {
+      const [[orig]] = await db.query(
+        'SELECT id FROM tickets WHERE clave_dedupe = (SELECT CONCAT(?, "|", UPPER(REPLACE(?," ","")), "|", CAST(? AS DECIMAL(12,2)))) AND id <> ? LIMIT 1',
+        [ticket.user_id, String(datosOCR.folio || datosOCR.codigoTicket || datosOCR.referencia || ''), datosOCR.total, ticketId]
+      ).catch(() => [[]]);
+      const msg = `duplicado: este ticket ya está registrado${orig ? ` — ticket #${orig.id}` : ''}`;
+      console.log(`🚫 [vision] Ticket #${ticketId} bloqueado por el candado anti-duplicados`);
+      await db.query("UPDATE tickets SET status='error', error_msg=?, comercio=? WHERE id=?",
+        [msg, datosOCR.comercio || 'desconocido', ticketId]);
+      return;
+    }
+    throw e;
+  }
   console.log(`✅ [vision] Ticket #${ticketId} — portal: ${portalDetectado}, confianza: ${confianza}, dudosos: [${camposDudosos.join(",")}], confirmación: ${requiereConfirmacion}`);
 
   // Confianza alta + portal facturable → directo a la cola de bots.

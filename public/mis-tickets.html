@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mis Tickets — GPN Portal Facturas</title>
+  <title>Mis Tickets — Timbra</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <script src="/notificaciones.js"></script>
   <style>
-    .ticket-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid #f0f4ec; transition: background 0.15s; }
+    .ticket-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid #F3ECED; transition: background 0.15s; }
     .ticket-row:last-child { border-bottom: none; }
-    .ticket-row:hover { background: #fafcf8; }
+    .ticket-row:hover { background: #FCFAFA; }
     .ticket-main { flex: 1; min-width: 0; }
     .ticket-name { font-weight: 600; font-size: 0.9rem; color: var(--text); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ticket-meta { font-size: 0.78rem; color: var(--text-muted); }
@@ -32,20 +32,20 @@
     @media (max-width: 720px) { .resumen { grid-template-columns: repeat(2, 1fr); } }
 
     /* Miniatura de la foto del ticket */
-    .ticket-thumb { width: 46px; height: 60px; object-fit: cover; border-radius: 7px; border: 1.5px solid #e6ece0; background: #fafcf8; cursor: pointer; flex-shrink: 0; transition: transform .15s, box-shadow .15s; }
+    .ticket-thumb { width: 46px; height: 60px; object-fit: cover; border-radius: 7px; border: 1.5px solid var(--border); background: #FCFAFA; cursor: pointer; flex-shrink: 0; transition: transform .15s, box-shadow .15s; }
     .ticket-thumb:hover { transform: scale(1.06); box-shadow: 0 3px 10px rgba(0,0,0,.16); }
-    .ticket-thumb-vacia { display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #b9c4ad; cursor: default; }
-    .btn-ghost { background: #f5f8f2; color: #4b5d3a; border: 1.5px solid #e2e9d9; font-size: .78rem; text-decoration: none; display: inline-flex; align-items: center; }
-    .btn-ghost:hover { background: #eaf1e2; }
+    .ticket-thumb-vacia { display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #C9B6B9; cursor: default; }
+    .btn-ghost { background: #FBF4F5; color: var(--vino); border: 1.5px solid var(--border); font-size: .78rem; text-decoration: none; display: inline-flex; align-items: center; }
+    .btn-ghost:hover { background: var(--vino-light); }
     /* Visor de ticket a pantalla completa */
-    .visor-fondo { position: fixed; inset: 0; background: rgba(20,26,16,.82); display: none; align-items: center; justify-content: center; z-index: 1200; padding: 24px; }
+    .visor-fondo { position: fixed; inset: 0; background: rgba(36,20,23,.84); display: none; align-items: center; justify-content: center; z-index: 1200; padding: 24px; }
     .visor-fondo.abierto { display: flex; }
     .visor-caja { max-width: min(94vw, 760px); max-height: 92vh; display: flex; flex-direction: column; gap: 12px; }
     .visor-caja img { max-width: 100%; max-height: 78vh; object-fit: contain; border-radius: 10px; background: #fff; }
     .visor-barra { display: flex; gap: 10px; align-items: center; justify-content: space-between; color: #fff; font-size: .86rem; }
     @media (max-width: 640px) { .ticket-row { flex-wrap: wrap; } .ticket-thumb { width: 40px; height: 52px; } }
     .tickets-card { background: white; border-radius: var(--card-radius); box-shadow: var(--shadow); overflow: hidden; }
-    .tickets-card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 16px; border-bottom: 1px solid #f0f4ec; }
+    .tickets-card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 16px; border-bottom: 1px solid #F3ECED; }
     /* Modal editar datos */
     .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:9000; align-items:center; justify-content:center; }
     .modal-overlay.open { display:flex; }
@@ -64,10 +64,10 @@
 
   <nav class="navbar">
     <a href="/dashboard" class="nav-brand">
-      <div class="nav-brand-icon">🎨</div>
+      <img src="https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png" alt="G&amp;A" class="nav-brand-logo">
       <div>
-        <div class="nav-brand-name">GPN</div>
-        <div class="nav-brand-sub">Pinturas y Recubrimientos</div>
+        <div class="nav-brand-name">Timbra</div>
+        <div class="nav-brand-sub">G&amp;A Servicios Administrativos</div>
       </div>
     </a>
     <div class="nav-links">
@@ -167,7 +167,7 @@
       </select>
       <span id="filtro-estado-activo" style="display:none;font-size:0.8rem;color:var(--text-muted);">
         Filtrando por <b id="filtro-estado-nombre"></b>
-        <button onclick="filtrarEstado(null)" style="margin-left:6px;border:0;background:#eef3e8;color:#3B6D11;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.75rem;font-weight:600;">quitar</button>
+        <button onclick="filtrarEstado(null)" style="margin-left:6px;border:0;background:var(--vino-light);color:var(--vino);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.75rem;font-weight:600;">quitar</button>
       </span>
     </div>
 
@@ -319,7 +319,7 @@
     // quien usa el portal, no para el sistema: lo que ya tiene CFDI, lo que
     // está en marcha, lo que espera una decisión suya, y lo que se atoró.
     const CATEGORIAS = [
-      { id: 'procesado',  nombre: 'Facturados',       icono: '✅', color: '#3B6D11', bg: '#f0f7e9', estados: ['procesado'] },
+      { id: 'procesado',  nombre: 'Facturados',       icono: '✅', color: 'var(--vino)', bg: 'var(--vino-light)', estados: ['procesado'] },
       { id: 'encurso',    nombre: 'En proceso',       icono: '⏳', color: '#0369a1', bg: '#eff8fd', estados: ['pendiente', 'procesando', 'procesando_correo'] },
       { id: 'revisar',    nombre: 'Necesitan tus datos', icono: '✏️', color: '#a16207', bg: '#fffbeb', estados: ['pendiente_confirmacion'] },
       { id: 'error',      nombre: 'Con problema',     icono: '⚠️', color: '#c0392b', bg: '#fef2f2', estados: ['error'] },
@@ -431,11 +431,11 @@
         if (isError) {
           const emailCfg = (t.email_contacto || '').replace(/'/g, '');
           if (t.solicitud_correo_enviada) {
-            btnSolicitar = `<button class="btn btn-sm" disabled style="background:#eaf3de;color:#27500A;border:1.5px solid #b8d98a;font-size:0.78rem;cursor:default;">✅ Solicitud enviada</button>`;
+            btnSolicitar = `<button class="btn btn-sm" disabled style="background:#eaf3de;color:var(--vino-oscuro);border:1.5px solid #b8d98a;font-size:0.78rem;cursor:default;">✅ Solicitud enviada</button>`;
           } else if (t.solicitud_correo_error) {
             btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id}, '${emailCfg}')" style="background:#fff8e6;color:#c97b00;border:1.5px solid #f5d76e;font-size:0.78rem;" title="${t.solicitud_correo_error}">⚠️ Reintentar solicitud</button>`;
           } else {
-            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id}, '${emailCfg}')" style="background:#eaf3de;color:#27500A;border:1.5px solid #b8d98a;font-size:0.78rem;">📧 Solicitar por correo</button>`;
+            btnSolicitar = `<button class="btn btn-sm" id="sol-${t.id}" onclick="solicitarPorCorreo(${t.id}, '${emailCfg}')" style="background:#eaf3de;color:var(--vino-oscuro);border:1.5px solid #b8d98a;font-size:0.78rem;">📧 Solicitar por correo</button>`;
           }
         }
 

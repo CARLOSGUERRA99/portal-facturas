@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mi Perfil Fiscal — GPN Portal Facturas</title>
+  <title>Mi Perfil Fiscal — Timbra</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <script src="/notificaciones.js"></script>
@@ -29,10 +29,10 @@
 
   <nav class="navbar">
     <a href="/dashboard" class="nav-brand">
-      <div class="nav-brand-icon">🎨</div>
+      <img src="https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png" alt="G&amp;A" class="nav-brand-logo">
       <div>
-        <div class="nav-brand-name">GPN</div>
-        <div class="nav-brand-sub">Pinturas y Recubrimientos</div>
+        <div class="nav-brand-name">Timbra</div>
+        <div class="nav-brand-sub">G&amp;A Servicios Administrativos</div>
       </div>
     </a>
     <div class="nav-links">
@@ -203,7 +203,7 @@
       <span style="font-size:1.3rem;">📄</span>
       <div style="flex:1;min-width:0;">
         <div style="font-size:0.8rem;color:#555;">Constancia actual:</div>
-        <a id="constancia-link" href="#" target="_blank" style="font-size:0.85rem;color:#27500A;font-weight:600;word-break:break-all;">Ver archivo</a>
+        <a id="constancia-link" href="#" target="_blank" style="font-size:0.85rem;color:var(--vino-oscuro);font-weight:600;word-break:break-all;">Ver archivo</a>
       </div>
     </div>
 
@@ -339,7 +339,7 @@
         const res = await fetch('/api/perfil/constancia', { method: 'POST', body: form });
         const data = await res.json();
         if (data.ok) {
-          msg.style.cssText = 'display:block;background:#eaf3de;color:#27500A;border:1px solid #b8d98a;';
+          msg.style.cssText = 'display:block;background:#eaf3de;color:var(--vino-oscuro);border:1px solid #b8d98a;';
           msg.textContent = '✅ Constancia guardada correctamente.';
           cargarConstancia();
         } else {

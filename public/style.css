@@ -1,22 +1,39 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
+/* ── Paleta G&A ───────────────────────────────────────────────────────────
+   Guinda y gris, tomados del logo de G&A Servicios Administrativos: las
+   letras van en vino profundo y el ampersand en gris.
+
+   Los nombres --green* se conservan como ALIAS del guinda a propósito: están
+   usados en cientos de sitios de las plantillas y renombrarlos uno a uno solo
+   invitaba a romper algo. La fuente de la verdad son las variables --vino*.
+   Para cambiar toda la identidad basta tocar este bloque.                    */
 :root {
-  --bg: #f2f5ef;
-  --green: #3B6D11;
-  --green-hover: #4e8a1a;
-  --green-light: #eaf2e0;
+  --vino: #7B1220;
+  --vino-hover: #99182A;
+  --vino-oscuro: #4E0B15;
+  --vino-light: #F9EDEF;
+  --gris-marca: #9A9A9A;
+
+  --bg: #F8F6F6;
   --white: #ffffff;
   --card-radius: 18px;
-  --text: #1a2e0d;
-  --text-muted: #6b7c5e;
-  --border: #dde8d0;
-  --shadow: 0 2px 16px rgba(59,109,17,0.07);
-  --shadow-md: 0 6px 28px rgba(59,109,17,0.13);
-  --success-bg: #eaf2e0;
-  --warning-bg: #fff8e6;
-  --error-bg: #fef0ef;
-  --error: #c0392b;
-  --warning: #c97b00;
+  --text: #241417;
+  --text-muted: #7C6A6D;
+  --border: #EDDFE1;
+  --shadow: 0 2px 16px rgba(123,18,32,0.07);
+  --shadow-md: 0 6px 28px rgba(123,18,32,0.14);
+  --success-bg: #F0F7EC;
+  --success: #2F7D32;
+  --warning-bg: #FFF8E6;
+  --error-bg: #FDEDEE;
+  --error: #B3261E;
+  --warning: #A16207;
+
+  /* Alias heredados — apuntan al guinda para no tocar cada plantilla. */
+  --green: var(--vino);
+  --green-hover: var(--vino-hover);
+  --green-light: var(--vino-light);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -44,7 +61,7 @@ body {
   align-items: center;
   justify-content: space-between;
   z-index: 100;
-  box-shadow: 0 4px 24px rgba(59,109,17,0.28);
+  box-shadow: 0 4px 24px rgba(123,18,32,0.30);
 }
 
 .nav-brand {
@@ -65,6 +82,20 @@ body {
   align-items: center;
   justify-content: center;
   font-size: 17px;
+}
+
+/* Logo de G&A. El PNG tiene mucho margen blanco alrededor del monograma, así
+   que se escala y se recorta con object-fit para que las letras llenen el
+   recuadro; sobre fondo blanco el guinda del logo se lee bien. */
+.nav-brand-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: #fff;
+  object-fit: cover;
+  object-position: center 42%;
+  padding: 2px;
+  flex-shrink: 0;
 }
 
 .nav-brand-name {
@@ -256,7 +287,7 @@ body {
 .btn-primary:hover {
   background: var(--green-hover);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(59,109,17,0.3);
+  box-shadow: 0 4px 14px rgba(123,18,32,0.32);
 }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
@@ -295,7 +326,7 @@ body {
   border: 1.5px solid var(--border);
   border-radius: 11px;
   font-size: 0.9rem;
-  background: #fafcf8;
+  background: #FCFAFA;
   color: var(--text);
   transition: border-color 0.18s, box-shadow 0.18s;
   font-family: inherit;
@@ -305,7 +336,7 @@ body {
   outline: none;
   border-color: var(--green);
   background: white;
-  box-shadow: 0 0 0 3px rgba(59,109,17,0.1);
+  box-shadow: 0 0 0 3px rgba(123,18,32,0.10);
 }
 
 select.input { cursor: pointer; }
@@ -349,9 +380,9 @@ thead th {
   border-bottom: 1.5px solid var(--border);
 }
 
-tbody tr { border-bottom: 1px solid #f0f4ec; transition: background 0.15s; }
+tbody tr { border-bottom: 1px solid #F3ECED; transition: background 0.15s; }
 tbody tr:last-child { border-bottom: none; }
-tbody tr:hover { background: #fafcf8; }
+tbody tr:hover { background: #FCFAFA; }
 
 tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
 
@@ -382,7 +413,7 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
   text-align: center;
   cursor: pointer;
   transition: all 0.2s;
-  background: #fafcf8;
+  background: #FCFAFA;
 }
 .upload-zone:hover, .upload-zone.drag-over { border-color: var(--green); background: var(--green-light); }
 .upload-zone .upload-icon { font-size: 38px; margin-bottom: 12px; }
@@ -448,7 +479,7 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-  border-bottom: 1px solid #f0f4ec;
+  border-bottom: 1px solid #F3ECED;
 }
 .residente-option {
   padding: 11px 16px;
@@ -583,7 +614,7 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
 .notif-item:last-child { border-bottom: none; }
 .notif-item:hover { background: #e8f3dc; }
 .notif-item.leida { background: white; }
-.notif-item.leida:hover { background: #fafcf8; }
+.notif-item.leida:hover { background: #FCFAFA; }
 
 .notif-msg {
   font-size: 0.8rem;

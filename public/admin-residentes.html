@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Administración — GPN Portal Facturas</title>
+  <title>Administración — Timbra</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <script src="/notificaciones.js"></script>
@@ -11,7 +11,7 @@
     .admin-grid { display: grid; grid-template-columns: 1fr 380px; gap: 24px; align-items: start; }
 
     .empleado-card { background: white; border-radius: var(--card-radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 16px; }
-    .empleado-header { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid #f0f4ec; }
+    .empleado-header { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid #F3ECED; }
     .empleado-avatar { width: 44px; height: 44px; background: var(--green-light); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; color: var(--green); flex-shrink: 0; }
     .empleado-info { flex: 1; min-width: 0; }
     .empleado-name { font-weight: 700; font-size: 0.95rem; color: var(--text); }
@@ -20,13 +20,13 @@
     .empleado-residentes-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 10px; }
     .residentes-asignados { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; min-height: 28px; }
     .residente-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--green-light); color: var(--green); padding: 5px 10px 5px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
-    .tag-remove { width: 18px; height: 18px; background: rgba(59,109,17,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; line-height: 1; transition: background 0.15s; border: none; color: var(--green); }
-    .tag-remove:hover { background: rgba(59,109,17,0.3); }
+    .tag-remove { width: 18px; height: 18px; background: rgba(123,18,32,0.16); border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; line-height: 1; transition: background 0.15s; border: none; color: var(--green); }
+    .tag-remove:hover { background: rgba(123,18,32,0.32); }
     .no-asignados { font-size: 0.82rem; color: var(--text-muted); font-style: italic; }
     .assign-row { display: flex; gap: 8px; align-items: center; }
     .assign-row select { flex: 1; }
 
-    .residente-catalog-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #f0f4ec; }
+    .residente-catalog-item { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #F3ECED; }
     .residente-catalog-item:last-child { border-bottom: none; }
     .rc-name { font-weight: 600; font-size: 0.875rem; }
     .rc-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
@@ -64,10 +64,10 @@
 
   <nav class="navbar">
     <a href="/dashboard" class="nav-brand">
-      <div class="nav-brand-icon">🎨</div>
+      <img src="https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png" alt="G&amp;A" class="nav-brand-logo">
       <div>
-        <div class="nav-brand-name">GPN</div>
-        <div class="nav-brand-sub">Pinturas y Recubrimientos</div>
+        <div class="nav-brand-name">Timbra</div>
+        <div class="nav-brand-sub">G&amp;A Servicios Administrativos</div>
       </div>
     </a>
     <div class="nav-links">
@@ -291,7 +291,7 @@
             <div id="ag-validacion-info" style="margin-top:16px;padding:12px 16px;border-radius:10px;background:var(--bg);font-size:0.82rem;"></div>
             <pre id="ag-codigo-js" style="background:#1a1a2e;color:#e2e8f0;border-radius:10px;padding:16px;font-size:0.72rem;overflow:auto;max-height:400px;white-space:pre-wrap;margin-top:16px;"></pre>
             <div style="display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;">
-              <button class="btn btn-primary" onclick="aprobarBot()" id="ag-btn-aprobar" style="background:#27500A;">
+              <button class="btn btn-primary" onclick="aprobarBot()" id="ag-btn-aprobar" style="background:var(--vino-oscuro);">
                 ✅ Aprobar y desplegar
               </button>
               <button class="btn btn-outline" onclick="ejecutarAgente('generar')">
@@ -304,7 +304,7 @@
 
       <!-- Resultado del despliegue -->
       <div id="agente-resultado-deploy" style="display:none;">
-        <div class="card" style="border:2px solid #4CAF50;">
+        <div class="card" style="border:2px solid var(--success);">
           <div style="padding:24px;text-align:center;">
             <div style="font-size:40px;margin-bottom:12px;">🚀</div>
             <div style="font-weight:700;font-size:1rem;color:var(--text);margin-bottom:8px;">Bot desplegado a producción</div>
@@ -472,7 +472,7 @@
               const total = ocr.total ? `$${ocr.total}` : '—';
               const fecha = new Date(t.creado).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
               return `
-              <tr style="border-bottom:1px solid #f0f4ec;">
+              <tr style="border-bottom:1px solid #F3ECED;">
                 <td style="padding:12px 20px;font-size:0.8rem;color:var(--text-muted);">#${t.id}</td>
                 <td style="padding:12px 20px;font-size:0.875rem;font-weight:600;">${t.user_nombre || '—'}</td>
                 <td style="padding:12px 20px;">
@@ -553,19 +553,19 @@
           const analisis = (() => { try { return JSON.parse(p.analisis || '{}'); } catch { return {}; } })();
           const screenshot = analisis._screenshots?.[0]?.url || null;
           return `<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px;">
-            <div style="padding:16px 20px;border-bottom:1px solid #f0f4ec;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="padding:16px 20px;border-bottom:1px solid #F3ECED;display:flex;align-items:center;justify-content:space-between;gap:12px;">
               <div>
                 <div style="font-weight:700;font-size:0.95rem;">${p.nombre || p.comercio}</div>
                 <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">${p.portal_url || ''} · ${p.intentos_correccion} corrección(es)</div>
               </div>
               <div style="display:flex;gap:8px;flex-shrink:0;">
                 <button class="btn btn-outline btn-sm" onclick="verCodigoBot(${p.id})">Ver código</button>
-                <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="activarBotGenerado(${p.id}, this)">Activar</button>
+                <button class="btn btn-sm" style="background:var(--success-bg);color:#2e7d32;border:1px solid #a5d6a7;" onclick="activarBotGenerado(${p.id}, this)">Activar</button>
                 <button class="btn btn-sm" style="background:#fef0ef;color:#c0392b;border:1px solid #fad7d5;" onclick="rechazarBot(${p.id}, this)">Rechazar</button>
                 <button class="btn btn-sm" style="background:#fff;color:#888;border:1px solid #ddd;" onclick="eliminarBotGenerado(${p.id}, this)" title="Eliminar permanentemente">🗑</button>
               </div>
             </div>
-            ${screenshot ? `<div style="padding:16px 20px;border-bottom:1px solid #f0f4ec;">
+            ${screenshot ? `<div style="padding:16px 20px;border-bottom:1px solid #F3ECED;">
               <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px;">Screenshot del portal analizado</div>
               <img src="${screenshot}" style="max-width:100%;border-radius:8px;border:1px solid #e0e0e0;" loading="lazy">
             </div>` : ''}
@@ -677,14 +677,14 @@
             <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;">
               <div style="flex:1;min-width:0;">
                 <div style="display:flex;align-items:center;gap:8px;">
-                  <span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:700;">ACTIVO</span>
+                  <span style="background:var(--success-bg);color:#2e7d32;padding:2px 8px;border-radius:20px;font-size:0.72rem;font-weight:700;">ACTIVO</span>
                   <span style="font-weight:700;font-size:0.95rem;">${p.nombre || p.comercio}</span>
                 </div>
                 <div style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;">${p.portal_url || ''} · ${p.nombre_archivo || p.comercio + '.js'}</div>
               </div>
               <div style="display:flex;gap:8px;flex-shrink:0;">
                 <button class="btn btn-outline btn-sm" onclick="verCodigoBotActivo(${p.id})">Editar código</button>
-                <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="reactivarBot(${p.id}, this)">Re-activar</button>
+                <button class="btn btn-sm" style="background:var(--success-bg);color:#2e7d32;border:1px solid #a5d6a7;" onclick="reactivarBot(${p.id}, this)">Re-activar</button>
               </div>
             </div>
             <div id="codigo-activo-${p.id}" style="display:none;padding:0 20px 16px;">
@@ -692,7 +692,7 @@
               <textarea style="width:100%;height:400px;font-family:monospace;font-size:0.75rem;border:1px solid #e0e0e0;border-radius:6px;padding:10px;resize:vertical;box-sizing:border-box;" id="codigo-activo-txt-${p.id}"></textarea>
               <div style="display:flex;gap:8px;margin-top:8px;">
                 <button class="btn btn-sm btn-outline" onclick="guardarCodigoBotActivo(${p.id}, this)">Guardar cambios</button>
-                <button class="btn btn-sm" style="background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;" onclick="guardarYReactivar(${p.id}, this)">Guardar y re-activar</button>
+                <button class="btn btn-sm" style="background:var(--success-bg);color:#2e7d32;border:1px solid #a5d6a7;" onclick="guardarYReactivar(${p.id}, this)">Guardar y re-activar</button>
               </div>
             </div>
           </div>`).join('');
@@ -804,7 +804,7 @@
           </thead>
           <tbody>
             ${data.grupos.map(g => `
-              <tr style="border-bottom:1px solid #f0f4ec;">
+              <tr style="border-bottom:1px solid #F3ECED;">
                 <td style="padding:14px 20px;font-weight:600;font-size:0.875rem;">${g.comercio || 'Desconocido'}</td>
                 <td style="padding:14px 20px;"><span class="badge badge-error">${g.total_tickets}</span></td>
                 <td style="padding:14px 20px;font-size:0.8rem;color:var(--text-muted);">${new Date(g.ultimo_ticket).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'})}</td>
@@ -1017,7 +1017,7 @@ D) La entrada completa para portales/portales.json`;
           </thead>
           <tbody>
             ${data.tickets.map(t => `
-              <tr style="border-bottom:1px solid #f0f4ec;">
+              <tr style="border-bottom:1px solid #F3ECED;">
                 <td style="padding:12px 20px;font-size:0.875rem;font-weight:600;">${t.user_nombre || '—'}</td>
                 <td style="padding:12px 20px;font-size:0.875rem;">${t.comercio || '—'}</td>
                 <td style="padding:12px 20px;font-size:0.875rem;">${t.residente_nombre || '—'}</td>

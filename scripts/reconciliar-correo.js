@@ -91,6 +91,22 @@ const parseJson = (v) => {
                 const cand = objetivos.find((t) => !usados.has(t.id) && Math.abs(t.total - parseFloat(total)) <= 0.01);
                 if (!cand) continue;
 
+                // ⚠️ Emparejar SOLO por importe puede robarle el CFDI a otro
+                // ticket: pasó de verdad con el UUID 6e804707, que se asignó a
+                // la vez al #125 y al #169, ambos de $1,500. Antes de escribir
+                // hay que comprobar que ese CFDI no esté ya registrado, y que
+                // el emisor tenga algo que ver con el comercio del ticket.
+                const uuidPrev = (extraerUUIDcfdi(xmlAtt.content) || '').toLowerCase();
+                const [yaUsado] = await db.query('SELECT ticket_id FROM facturas WHERE xml_url LIKE ?', [`%${uuidPrev}%`]);
+                if (yaUsado.length) { console.log(`   ⏭️ CFDI ${uuidPrev} ya está en el ticket #${yaUsado[0].ticket_id}`); continue; }
+
+                const palabras = String(cand.comercio || '').toUpperCase().split(/[^A-ZÁÉÍÓÚÑ]+/).filter((p) => p.length > 4);
+                const emisorUp = nombreEmisor.toUpperCase();
+                if (palabras.length && !palabras.some((p) => emisorUp.includes(p))) {
+                  console.log(`   ⚠️ $${total}: el emisor "${nombreEmisor.slice(0, 40)}" no se parece al comercio del ticket #${cand.id} ("${String(cand.comercio).slice(0, 40)}") — se omite por seguridad`);
+                  continue;
+                }
+
                 const uuid = (extraerUUIDcfdi(xmlAtt.content) || '').toLowerCase();
                 if (!uuid) { console.log(`   ⚠️ correo UID ${uid} ($${total}) sin UUID legible — se omite`); continue; }
 

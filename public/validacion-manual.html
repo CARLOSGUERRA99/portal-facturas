@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Validación manual — GPN Portal Facturas</title>
+  <title>Validación manual — Timbra</title>
   <link rel="stylesheet" href="/estilos.css">
   <style>
-    :root { --verde:#3B6D11; --texto:#1f2a17; --suave:#6b7861; --borde:#e2e9d9; --bg:#f6f9f2; }
+    :root { --verde:var(--vino); --texto:var(--text); --suave:var(--text-muted); --borde:var(--border); --bg:var(--bg); }
     * { box-sizing: border-box; }
     body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--texto); }
     .barra { background:var(--verde); color:#fff; padding:14px 22px; display:flex; align-items:center; gap:18px; }
@@ -18,7 +18,7 @@
     .chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
     .chip { padding:7px 13px; border-radius:999px; border:1.5px solid var(--borde); background:#fff;
             font-size:.78rem; font-weight:600; cursor:pointer; font-family:inherit; color:var(--suave); }
-    .chip.act { border-color:var(--verde); color:var(--verde); background:#f0f7e9; }
+    .chip.act { border-color:var(--verde); color:var(--verde); background:var(--vino-light); }
     .caso { background:#fff; border-radius:13px; padding:16px 18px; margin-bottom:12px;
             box-shadow:0 1px 3px rgba(0,0,0,.06); display:flex; gap:16px; align-items:flex-start; }
     .caso img.foto { width:60px; height:78px; object-fit:cover; border-radius:8px; border:1.5px solid var(--borde); cursor:pointer; flex-shrink:0; }
@@ -42,7 +42,7 @@
     dialog textarea { min-height:72px; resize:vertical; }
     .aviso { margin-top:12px; padding:9px 12px; border-radius:9px; font-size:.8rem; display:none; }
     .aviso.err { background:#fef0ef; color:#c0392b; border:1.5px solid #fad7d5; }
-    .aviso.ok { background:#f0f7e9; color:#3B6D11; border:1.5px solid #cfe4bb; }
+    .aviso.ok { background:var(--vino-light); color:var(--vino); border:1.5px solid #E7CDD1; }
     @media (max-width:640px){ .caso{flex-direction:column;} }
   </style>
 </head>

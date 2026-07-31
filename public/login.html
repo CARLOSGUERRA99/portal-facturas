@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GPN — Portal Facturas</title>
+  <title>Timbra — G&A Servicios Administrativos</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -23,7 +23,7 @@
       min-height: 580px;
       border-radius: 28px;
       overflow: hidden;
-      box-shadow: 0 8px 48px rgba(59,109,17,0.18);
+      box-shadow: 0 8px 48px rgba(123,18,32,0.18);
     }
 
     .login-brand {
@@ -54,15 +54,17 @@
       position: relative;
     }
 
+    /* El PNG del logo trae mucho margen blanco alrededor del monograma; se
+       recorta con object-fit para que las letras llenen el recuadro. */
     .brand-logo-icon {
-      width: 52px;
-      height: 52px;
-      background: rgba(255,255,255,0.18);
+      width: 54px;
+      height: 54px;
+      background: #fff;
       border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 26px;
+      object-fit: cover;
+      object-position: center 42%;
+      padding: 3px;
+      flex-shrink: 0;
     }
 
     .brand-logo-name { font-size: 1.6rem; font-weight: 800; color: white; letter-spacing: -0.02em; line-height: 1; }
@@ -187,10 +189,10 @@
       <div class="brand-deco brand-deco-4"></div>
 
       <div class="brand-logo">
-        <div class="brand-logo-icon">🎨</div>
+        <img src="https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png" alt="G&amp;A" class="brand-logo-icon">
         <div>
-          <div class="brand-logo-name">GPN</div>
-          <div class="brand-logo-sub">Pinturas y Recubrimientos</div>
+          <div class="brand-logo-name">Timbra</div>
+          <div class="brand-logo-sub">G&A Servicios Administrativos</div>
         </div>
       </div>
 
@@ -207,7 +209,7 @@
         </div>
       </div>
 
-      <div class="brand-footer">© 2026 GPN Pinturas y Recubrimientos</div>
+      <div class="brand-footer">© 2026 GPN G&A Servicios Administrativos</div>
     </div>
 
     <!-- RIGHT: Form -->
