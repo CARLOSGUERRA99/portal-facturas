@@ -14,7 +14,7 @@ const { subirArchivoR2, borrarArchivoR2, listarArchivosR2 } = require("./storage
 // Redis y responde de inmediato. El procesamiento vive en worker.js.
 const db = require("./lib/db");
 const { enviarCorreo } = require("./lib/correo");
-const { crearNotificacion, renombrarConUUID } = require("./lib/util");
+const { crearNotificacion, renombrarConUUID, extraerUUIDcfdi } = require("./lib/util");
 const { camposPorPortal } = require("./lib/vision");
 const {
   encolarVision, encolarBot, encolarAgente, encolarOrquestacionManual, agenteQueue,
@@ -408,6 +408,8 @@ app.get("/dashboard", pageAuth, (req, res) => res.sendFile(path.join(__dirname, 
 app.get("/mis-tickets", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-tickets.html")));
 app.get("/mis-facturas", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "mis-facturas.html")));
 app.get("/perfil", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "perfil.html")));
+app.get("/validacion-manual", pageAuth, requireAdmin, (req, res) =>
+  res.sendFile(path.join(__dirname, "public", "validacion-manual.html")));
 app.get("/admin-residentes", pageAuth, requireAdmin, (req, res) =>
   res.sendFile(path.join(__dirname, "public", "admin-residentes.html")));
 
@@ -1022,6 +1024,156 @@ app.delete("/api/tickets/:id", auth, async (req, res) => {
   }
 });
 
+// ── MÓDULO DE VALIDACIÓN MANUAL (solo admin) ───────────────────────────────
+// Bandeja de todo lo que necesita mano humana. La idea: el residente nunca ve
+// un error, ve "en revisión"; el caso aterriza aquí con TODO lo necesario para
+// resolverlo — la foto, los datos que leyó el OCR, la URL del portal y el
+// motivo técnico real — y desde aquí se cierra facturando a mano y subiendo el
+// CFDI, o se descarta.
+app.get("/api/admin/validacion-manual", auth, requireAdmin, async (req, res) => {
+  try {
+    const [rows] = await db.query(`
+      SELECT t.id, t.comercio, t.status, t.error_msg, t.portal_url, t.creado,
+             t.ocr_json, t.residente_id, t.email_contacto,
+             (t.ruta_archivo IS NOT NULL AND t.ruta_archivo <> '') AS tiene_imagen,
+             u.nombre AS subido_por, r.nombre AS residente
+        FROM tickets t
+        LEFT JOIN facturas f  ON f.ticket_id = t.id
+        LEFT JOIN users u     ON u.id = t.user_id
+        LEFT JOIN residentes r ON r.id = t.residente_id
+       WHERE f.id IS NULL
+         AND t.status IN ('error','pendiente_confirmacion')
+       ORDER BY t.creado DESC`);
+
+    const casos = rows.map((t) => {
+      let o = {};
+      try { o = typeof t.ocr_json === 'object' ? (t.ocr_json || {}) : JSON.parse(t.ocr_json || '{}'); } catch {}
+      const err = String(t.error_msg || '');
+      // Clasificación por lo que hay que HACER, no por el estado interno.
+      let accion = 'revisar';
+      if (/duplicad/i.test(err)) accion = 'duplicado';
+      else if (/venci|72 hora|fuera de|plazo/i.test(err)) accion = 'pedir_por_correo';
+      else if (/captcha|bloquea|cloudflare|sin javascript/i.test(err)) accion = 'facturar_a_mano';
+      else if (/ilegible|no se pudo leer|dudos|foto m[aá]s|releer/i.test(err)) accion = 'mejor_foto';
+      else if (t.status === 'pendiente_confirmacion') accion = 'confirmar_datos';
+      else if (/portal nuevo|no reconocido/i.test(err)) accion = 'alta_de_portal';
+
+      return {
+        id: t.id, comercio: t.comercio, estadoReal: t.status, motivo: t.error_msg,
+        portalUrl: t.portal_url || o.portalUrl || null,
+        total: o.total ?? null,
+        folio: o.folio || o.codigoTicket || o.referencia || o.folioFactura || null,
+        fecha: o.fecha || null,
+        datosOcr: o,
+        tieneImagen: !!t.tiene_imagen,
+        subidoPor: t.subido_por, residente: t.residente,
+        creado: t.creado,
+        accion,
+      };
+    });
+
+    const porAccion = casos.reduce((a, c) => { a[c.accion] = (a[c.accion] || 0) + 1; return a; }, {});
+    res.json({ ok: true, total: casos.length, porAccion, casos });
+  } catch (e) {
+    res.status(500).json({ ok: false, msg: e.message });
+  }
+});
+
+// Cierra un caso subiendo el CFDI conseguido a mano (XML obligatorio, PDF
+// opcional). Se verifica el XML ANTES de tocar nada: RFC receptor correcto y
+// total que cuadre con el ticket. Si no cuadra se rechaza con el motivo — es
+// preferible que el caso siga abierto a registrar una factura que no es.
+const uploadCfdi = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+app.post("/api/admin/validacion-manual/:id/cfdi", auth, requireAdmin,
+  uploadCfdi.fields([{ name: 'xml', maxCount: 1 }, { name: 'pdf', maxCount: 1 }]),
+  async (req, res) => {
+    try {
+      const xmlFile = req.files?.xml?.[0];
+      if (!xmlFile) return res.status(400).json({ ok: false, msg: "Falta el XML del CFDI" });
+
+      const [[t]] = await db.query("SELECT id, user_id, comercio, ocr_json FROM tickets WHERE id = ?", [req.params.id]);
+      if (!t) return res.status(404).json({ ok: false, msg: "Ticket no encontrado" });
+      const [ya] = await db.query("SELECT id FROM facturas WHERE ticket_id = ?", [t.id]);
+      if (ya.length) return res.status(409).json({ ok: false, msg: "Este ticket ya tiene una factura registrada" });
+
+      const xml = xmlFile.buffer.toString('utf8');
+      const uuid = (extraerUUIDcfdi(xmlFile.buffer) || '').toLowerCase();
+      const total = (xml.match(/<(?:cfdi:)?Comprobante\b[^>]*\sTotal="([\d.]+)"/i) || [])[1];
+      const rfcRec = (xml.match(/<(?:cfdi:)?Receptor[^>]*\sRfc="([^"]+)"/i) || [])[1];
+      const emisor = (xml.match(/<(?:cfdi:)?Emisor[^>]*\sNombre="([^"]{0,60})"/i) || [])[1] || '';
+
+      if (!uuid) return res.status(400).json({ ok: false, msg: "El XML no tiene UUID (¿está timbrado?)" });
+      const [[usuario]] = await db.query("SELECT rfc FROM users WHERE id = ?", [t.user_id]);
+      if (usuario?.rfc && rfcRec !== usuario.rfc) {
+        return res.status(400).json({ ok: false, msg: `El receptor del CFDI es ${rfcRec}, no ${usuario.rfc}` });
+      }
+
+      let o = {};
+      try { o = typeof t.ocr_json === 'object' ? (t.ocr_json || {}) : JSON.parse(t.ocr_json || '{}'); } catch {}
+      if (o.total && Math.abs(parseFloat(total) - parseFloat(o.total)) > 0.01 && !req.body.forzar) {
+        return res.status(400).json({
+          ok: false, requiereConfirmacion: true,
+          msg: `El total del CFDI ($${total}) no coincide con el del ticket ($${o.total}). Vuelve a enviarlo con "forzar" si aun así es el correcto.`,
+        });
+      }
+
+      const xmlUrl = await subirArchivoR2(xmlFile.buffer, `facturas/${uuid}.xml`, 'application/xml');
+      const pdfFile = req.files?.pdf?.[0];
+      const pdfUrl = pdfFile ? await subirArchivoR2(pdfFile.buffer, `facturas/${uuid}.pdf`, 'application/pdf') : null;
+
+      o.uuid_cfdi = uuid;
+      o._nota = `CFDI cargado a mano desde el módulo de validación manual el ${new Date().toISOString().slice(0, 10)}.`;
+      await db.query("UPDATE tickets SET status='procesado', error_msg=NULL, reintento_programado=NULL, requiere_confirmacion=0, ocr_json=? WHERE id=?", [JSON.stringify(o), t.id]);
+      await db.query("INSERT INTO facturas (user_id, ticket_id, comercio, xml_url, pdf_url, status) VALUES (?,?,?,?,?,'completado')",
+        [t.user_id, t.id, String(t.comercio || emisor || 'Comercio').slice(0, 50), xmlUrl, pdfUrl]);
+
+      console.log(`✅ validación manual: ticket #${t.id} cerrado con UUID ${uuid}`);
+      res.json({ ok: true, uuid, total, emisor, xmlUrl, pdfUrl });
+    } catch (e) {
+      res.status(500).json({ ok: false, msg: e.message });
+    }
+  });
+
+// Anota una resolución sin CFDI (descartado, duplicado, se pidió por correo…).
+app.post("/api/admin/validacion-manual/:id/resolver", auth, requireAdmin, async (req, res) => {
+  try {
+    const { nota, descartar } = req.body || {};
+    if (!nota || !String(nota).trim()) return res.status(400).json({ ok: false, msg: "Escribe una nota explicando la resolución" });
+    await db.query(
+      "UPDATE tickets SET error_msg = ?, requiere_confirmacion = ?, reintento_programado = NULL WHERE id = ?",
+      [String(nota).slice(0, 500), descartar ? 0 : 1, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, msg: e.message });
+  }
+});
+
+// ── VISIBILIDAD POR ROL ────────────────────────────────────────────────────
+// Un residente NO debe ver fallos técnicos: no puede hacer nada con
+// "el portal bloquea con CAPTCHA" o "la sesión de Browserless expiró", y solo
+// genera ruido y llamadas. Para él todo lo que no está facturado está
+// simplemente EN PROCESO; el caso se enruta al módulo de validación manual del
+// admin, que sí ve el error real y decide (facturar a mano, pedir por correo,
+// dar de alta el portal…).
+//
+// El enmascarado se hace SOLO en la respuesta HTTP: en la BD el estado y el
+// mensaje reales se conservan intactos.
+const ESTADOS_OCULTOS_A_RESIDENTE = ['error', 'pendiente_confirmacion'];
+
+function enmascararParaResidente(req) {
+  const esAdmin = req.session.userRol === 'admin';
+  return (t) => {
+    if (esAdmin || !ESTADOS_OCULTOS_A_RESIDENTE.includes(t.status)) return t;
+    return {
+      ...t,
+      status: 'procesando',
+      error_msg: null,
+      _enRevision: true, // la UI lo usa para decir "en revisión" en vez de "procesando"
+    };
+  };
+}
+
 // ── LISTAR TICKETS ──
 app.get("/api/tickets", auth, async (req, res) => {
   try {
@@ -1039,7 +1191,7 @@ app.get("/api/tickets", auth, async (req, res) => {
     }
     query += " ORDER BY creado DESC";
     const [rows] = await db.query(query, params);
-    res.json({ ok: true, tickets: rows });
+    res.json({ ok: true, tickets: rows.map(enmascararParaResidente(req)) });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }
@@ -1062,10 +1214,13 @@ function nombreDescarga(ticket, ext) {
 
 app.get("/api/tickets/:id/imagen", auth, async (req, res) => {
   try {
-    const [[t]] = await db.query(
-      "SELECT id, comercio, ruta_archivo FROM tickets WHERE id = ? AND user_id = ?",
-      [req.params.id, req.session.userId]
-    );
+    // El admin necesita ver la foto de tickets de OTROS usuarios: sin esto el
+    // módulo de validación manual mostraba miniaturas rotas para todo lo que
+    // subieron los residentes, que es justo lo que llega ahí.
+    const esAdmin = req.session.userRol === 'admin';
+    const [[t]] = esAdmin
+      ? await db.query("SELECT id, comercio, ruta_archivo FROM tickets WHERE id = ?", [req.params.id])
+      : await db.query("SELECT id, comercio, ruta_archivo FROM tickets WHERE id = ? AND user_id = ?", [req.params.id, req.session.userId]);
     if (!t) return res.status(404).json({ ok: false, msg: "Ticket no encontrado" });
     if (!t.ruta_archivo) return res.status(404).json({ ok: false, msg: "Este ticket no tiene imagen guardada" });
     if (!/^https?:\/\//i.test(t.ruta_archivo)) {

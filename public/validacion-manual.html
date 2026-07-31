@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Validación manual — GPN Portal Facturas</title>
+  <link rel="stylesheet" href="/estilos.css">
+  <style>
+    :root { --verde:#3B6D11; --texto:#1f2a17; --suave:#6b7861; --borde:#e2e9d9; --bg:#f6f9f2; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--texto); }
+    .barra { background:var(--verde); color:#fff; padding:14px 22px; display:flex; align-items:center; gap:18px; }
+    .barra a { color:#fff; text-decoration:none; opacity:.85; font-size:.87rem; }
+    .barra a:hover, .barra a.act { opacity:1; font-weight:600; }
+    .cont { max-width:1120px; margin:0 auto; padding:26px 20px 60px; }
+    h1 { font-size:1.5rem; margin:0 0 4px; }
+    .sub { color:var(--suave); font-size:.87rem; margin:0 0 22px; }
+    .chips { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px; }
+    .chip { padding:7px 13px; border-radius:999px; border:1.5px solid var(--borde); background:#fff;
+            font-size:.78rem; font-weight:600; cursor:pointer; font-family:inherit; color:var(--suave); }
+    .chip.act { border-color:var(--verde); color:var(--verde); background:#f0f7e9; }
+    .caso { background:#fff; border-radius:13px; padding:16px 18px; margin-bottom:12px;
+            box-shadow:0 1px 3px rgba(0,0,0,.06); display:flex; gap:16px; align-items:flex-start; }
+    .caso img.foto { width:60px; height:78px; object-fit:cover; border-radius:8px; border:1.5px solid var(--borde); cursor:pointer; flex-shrink:0; }
+    .caso .cuerpo { flex:1; min-width:0; }
+    .caso h3 { margin:0 0 3px; font-size:.95rem; }
+    .meta { font-size:.78rem; color:var(--suave); margin-bottom:6px; }
+    .motivo { font-size:.79rem; background:#fff8f0; border-left:3px solid #f0a04b; padding:7px 10px; border-radius:0 7px 7px 0; margin:7px 0; }
+    .etiqueta { display:inline-block; font-size:.68rem; font-weight:700; padding:3px 9px; border-radius:999px; margin-bottom:5px; }
+    .acciones { display:flex; gap:7px; flex-wrap:wrap; margin-top:9px; }
+    .btn { padding:7px 12px; border-radius:8px; border:1.5px solid var(--borde); background:#fff;
+           font-size:.78rem; font-weight:600; cursor:pointer; font-family:inherit; text-decoration:none; color:var(--texto); }
+    .btn.pri { background:var(--verde); color:#fff; border-color:var(--verde); }
+    .btn:hover { filter:brightness(.97); }
+    .vacio { text-align:center; padding:60px 20px; color:var(--suave); }
+    dialog { border:0; border-radius:14px; padding:24px; max-width:480px; width:92%; box-shadow:0 10px 44px rgba(0,0,0,.22); }
+    dialog h2 { margin:0 0 6px; font-size:1.05rem; }
+    dialog p { color:var(--suave); font-size:.83rem; margin:0 0 16px; }
+    dialog label { display:block; font-size:.79rem; font-weight:600; color:var(--suave); margin:11px 0 5px; }
+    dialog input[type=file], dialog textarea { width:100%; font-family:inherit; font-size:.85rem;
+      border:1.5px solid var(--borde); border-radius:9px; padding:8px 10px; background:#fff; color:var(--texto); }
+    dialog textarea { min-height:72px; resize:vertical; }
+    .aviso { margin-top:12px; padding:9px 12px; border-radius:9px; font-size:.8rem; display:none; }
+    .aviso.err { background:#fef0ef; color:#c0392b; border:1.5px solid #fad7d5; }
+    .aviso.ok { background:#f0f7e9; color:#3B6D11; border:1.5px solid #cfe4bb; }
+    @media (max-width:640px){ .caso{flex-direction:column;} }
+  </style>
+</head>
+<body>
+  <nav class="barra">
+    <strong>GPN</strong>
+    <a href="/dashboard">Inicio</a>
+    <a href="/mis-tickets">Mis Tickets</a>
+    <a href="/mis-facturas">Mis Facturas</a>
+    <a href="/validacion-manual" class="act">Validación manual</a>
+  </nav>
+
+  <div class="cont">
+    <h1>Validación manual</h1>
+    <p class="sub">
+      Todo lo que necesita mano humana. Los residentes NO ven estos errores —
+      para ellos el ticket aparece simplemente “en revisión”.
+    </p>
+
+    <div class="chips" id="chips"></div>
+    <div id="lista"><p class="sub">Cargando…</p></div>
+  </div>
+
+  <dialog id="dlg-cfdi">
+    <h2>Cerrar con el CFDI</h2>
+    <p>Sube el XML que conseguiste facturando a mano. Se verifica el RFC receptor y que el total cuadre con el ticket antes de registrarlo.</p>
+    <form id="form-cfdi">
+      <label>XML del CFDI (obligatorio)</label>
+      <input type="file" name="xml" accept=".xml" required>
+      <label>PDF (opcional)</label>
+      <input type="file" name="pdf" accept=".pdf">
+      <div class="aviso" id="aviso-cfdi"></div>
+      <div class="acciones" style="margin-top:16px;justify-content:flex-end;">
+        <button type="button" class="btn" onclick="document.getElementById('dlg-cfdi').close()">Cancelar</button>
+        <button type="submit" class="btn pri">Registrar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-nota">
+    <h2>Anotar resolución</h2>
+    <p>Para casos que se cierran sin CFDI: duplicado, se pidió por correo, se descartó…</p>
+    <form id="form-nota">
+      <label>¿Qué pasó?</label>
+      <textarea name="nota" required placeholder="Ej: se pidió la factura por correo a la estación el 31/07"></textarea>
+      <div class="aviso" id="aviso-nota"></div>
+      <div class="acciones" style="margin-top:16px;justify-content:flex-end;">
+        <button type="button" class="btn" onclick="document.getElementById('dlg-nota').close()">Cancelar</button>
+        <button type="submit" class="btn pri">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+<script>
+  // Cada "acción" describe QUÉ HAY QUE HACER con el caso, no el estado interno
+  // de la BD — que es lo que a quien resuelve le importa.
+  const ACCIONES = {
+    facturar_a_mano:  { txt:'Facturar a mano', bg:'#fef2f2', c:'#c0392b' },
+    pedir_por_correo: { txt:'Pedir por correo', bg:'#fff8f0', c:'#a16207' },
+    mejor_foto:       { txt:'Hace falta mejor foto', bg:'#f5f3ff', c:'#6d28d9' },
+    confirmar_datos:  { txt:'Confirmar datos', bg:'#fffbeb', c:'#a16207' },
+    alta_de_portal:   { txt:'Dar de alta el portal', bg:'#eff8fd', c:'#0369a1' },
+    duplicado:        { txt:'Duplicado', bg:'#f4f4f5', c:'#52525b' },
+    revisar:          { txt:'Revisar', bg:'#f4f4f5', c:'#52525b' },
+  };
+
+  let casos = [], filtro = null, casoActivo = null;
+
+  async function cargar() {
+    const r = await fetch('/api/admin/validacion-manual');
+    if (r.status === 403) { document.getElementById('lista').innerHTML = '<p class="vacio">Este módulo es solo para administradores.</p>'; return; }
+    const d = await r.json();
+    casos = d.casos || [];
+    pintarChips(d.porAccion || {}, d.total || 0);
+    pintar();
+  }
+
+  function pintarChips(porAccion, total) {
+    const chips = [`<button class="chip ${!filtro?'act':''}" onclick="filtrar(null)">Todos · ${total}</button>`];
+    for (const [k, n] of Object.entries(porAccion).sort((a,b)=>b[1]-a[1])) {
+      const a = ACCIONES[k] || ACCIONES.revisar;
+      chips.push(`<button class="chip ${filtro===k?'act':''}" onclick="filtrar('${k}')">${a.txt} · ${n}</button>`);
+    }
+    document.getElementById('chips').innerHTML = chips.join('');
+  }
+
+  function filtrar(k) { filtro = (filtro === k) ? null : k; cargar(); }
+
+  function pintar() {
+    const vis = filtro ? casos.filter(c => c.accion === filtro) : casos;
+    const el = document.getElementById('lista');
+    if (!vis.length) { el.innerHTML = '<p class="vacio">🎉 Nada pendiente de validar.</p>'; return; }
+
+    el.innerHTML = vis.map(c => {
+      const a = ACCIONES[c.accion] || ACCIONES.revisar;
+      const foto = c.tieneImagen
+        ? `<img class="foto" src="/api/tickets/${c.id}/imagen" loading="lazy" onclick="window.open('/api/tickets/${c.id}/imagen','_blank')" title="Abrir la foto">`
+        : '';
+      const datos = [
+        c.total != null ? '$' + c.total : null,
+        c.folio ? 'folio ' + c.folio : null,
+        c.fecha,
+      ].filter(Boolean).join(' · ');
+      return `
+        <div class="caso">
+          ${foto}
+          <div class="cuerpo">
+            <span class="etiqueta" style="background:${a.bg};color:${a.c}">${a.txt}</span>
+            <h3>#${c.id} · ${esc(c.comercio || 'Comercio desconocido')}</h3>
+            <div class="meta">${esc(datos)}${c.residente ? ' · ' + esc(c.residente) : ''}</div>
+            ${c.motivo ? `<div class="motivo">${esc(c.motivo)}</div>` : ''}
+            <div class="acciones">
+              ${c.portalUrl ? `<a class="btn" href="${esc(urlAbs(c.portalUrl))}" target="_blank" rel="noopener">Abrir portal ↗</a>` : ''}
+              ${c.tieneImagen ? `<a class="btn" href="/api/tickets/${c.id}/imagen?descargar=1">⬇ Foto</a>` : ''}
+              <button class="btn pri" onclick="abrirCfdi(${c.id})">Cerrar con CFDI</button>
+              <button class="btn" onclick="abrirNota(${c.id})">Anotar</button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const urlAbs = u => /^https?:\/\//i.test(u) ? u : 'https://' + u;
+
+  function abrirCfdi(id) { casoActivo = id; mostrarAviso('aviso-cfdi', null); document.getElementById('form-cfdi').reset(); document.getElementById('dlg-cfdi').showModal(); }
+  function abrirNota(id) { casoActivo = id; mostrarAviso('aviso-nota', null); document.getElementById('form-nota').reset(); document.getElementById('dlg-nota').showModal(); }
+
+  function mostrarAviso(id, txt, ok) {
+    const el = document.getElementById(id);
+    if (!txt) { el.style.display = 'none'; return; }
+    el.className = 'aviso ' + (ok ? 'ok' : 'err');
+    el.textContent = txt;
+    el.style.display = 'block';
+  }
+
+  document.getElementById('form-cfdi').addEventListener('submit', async e => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const r = await fetch(`/api/admin/validacion-manual/${casoActivo}/cfdi`, { method:'POST', body: fd });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) {
+      mostrarAviso('aviso-cfdi', `✅ Registrado: ${d.emisor} · $${d.total}`, true);
+      setTimeout(() => { document.getElementById('dlg-cfdi').close(); cargar(); }, 1200);
+    } else {
+      mostrarAviso('aviso-cfdi', d.msg || 'No se pudo registrar');
+    }
+  });
+
+  document.getElementById('form-nota').addEventListener('submit', async e => {
+    e.preventDefault();
+    const nota = new FormData(e.target).get('nota');
+    const r = await fetch(`/api/admin/validacion-manual/${casoActivo}/resolver`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ nota })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) { document.getElementById('dlg-nota').close(); cargar(); }
+    else mostrarAviso('aviso-nota', d.msg || 'No se pudo guardar');
+  });
+
+  cargar();
+</script>
+</body>
+</html>
