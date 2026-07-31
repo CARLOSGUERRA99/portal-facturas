@@ -1,42 +1,35 @@
 // OXXO GAS — facturacion.oxxogas.com
 //
 // ══════════════════════════════════════════════════════════════════════════
-// ⛔ BLOQUEADO A NIVEL WAF. Medido el 2026-07-31, no supuesto:
+// ⚠️ ES UNA SPA: HAY QUE ENTRAR SIEMPRE POR LA HOME. Medido el 2026-07-31.
 //
-//   El portal sirve a la IP de Browserless un HTML PELADO: la página trae
-//   CERO etiquetas <script src> (comprobado con page.evaluate sobre
-//   document.querySelectorAll('script[src]') → 0, y ninguna respuesta .js en
-//   el listener de red). En consecuencia jQuery, Chosen y Angular valen
-//   `false` en window: el JavaScript del portal NUNCA se ejecuta.
+//   `https://facturacion.oxxogas.com/` es una single-page app: la URL NUNCA
+//   cambia, ni al entrar a Facturar ni a Mis Facturas. Todas las pantallas se
+//   pintan por JavaScript sobre la misma ruta.
 //
-//   Consecuencias observadas, todas explicadas por lo mismo:
-//     · #rfc sí tiene opciones (vienen renderizadas del servidor), pero
-//       #regimen_fiscal y #usocfdi quedan con 0 opciones para siempre —
-//       los puebla un AJAX que no corre.
-//     · page.select() no lanza error al no encontrar la opción: deja el
-//       <select> vacío EN SILENCIO.
-//     · El clic en "Agregar Ticket" no dispara ninguna petición a
-//       /facturacion/facturar/tickets porque no hay handler JS que la haga.
-//       Ese era el síntoma que durante 4 intentos se atribuyó a
-//       rate-limiting: NO era rate-limiting.
+//   👉 Navegar DIRECTO a /facturacion/facturar devuelve un HTML degradado, sin
+//      una sola etiqueta <script src> (jQuery, Chosen y Angular ausentes).
+//      Eso hace que #regimen_fiscal y #usocfdi nunca se pueblen y que el clic
+//      en "Agregar Ticket" no dispare ninguna petición — el botón no tiene
+//      handler porque no hay JS. Ese falso síntoma se atribuyó por error a un
+//      bloqueo del WAF y a rate-limiting; no era ni lo uno ni lo otro.
 //
-//   Se descartaron una por una las otras hipótesis:
-//     · Rate-limiting → probado con 35 s entre acciones: mismo resultado.
-//     · Sesión expirada → el dashboard saluda "Hola CARLOS DANIEL", la
-//       sesión es válida.
-//     · Widget Chosen sin inicializar por page.select() → no existe ni un
-//       solo .chosen-container en el DOM; la librería no está cargada.
-//     · Timeout de Browserless (60 s exactos, medido) → se rediseñó el flujo
-//       para caber en 45 s y el fallo se produce igual a los 25 s.
+//   Entrando por la home y pulsando el enlace "ACCEDER A FACTURAR", el portal
+//   carga completo y verificado: 29 scripts, jQuery=true, Chosen=true, 5
+//   contenedores .chosen-container en el DOM, #estacion con 584 opciones. Y al
+//   elegir el RFC con page.select() los dependientes se pueblan solos
+//   (#regimen_fiscal 0→9 opciones, #usocfdi 0→4), así que el <select> nativo
+//   SÍ notifica correctamente pese a la decoración de Chosen.
 //
-//   La única facturación que sí cerró (ticket 02, folio 62703067, UUID
-//   d9edf987-788b-4f71-97cb-2ccc55d449af) ocurrió en una ventana en la que
-//   el WAF sí entregó la página completa. No es reproducible a voluntad.
+//   Corolario para cualquier bot futuro de este portal: nunca hacer deep link,
+//   siempre home + clic. Y comprobar que los selects dependientes se poblaron
+//   antes de seguir (page.select() no lanza error si la opción no existe: deja
+//   el campo vacío EN SILENCIO y el fallo aparece mucho después).
 //
-//   👉 Este bot NO debe entrar al gate de la cola (ver lib/util.js). Se
-//      conserva porque el flujo documentado abajo es correcto y sirve el día
-//      que el WAF deje de degradar la página; ahora detecta el shell sin JS
-//      y aborta de inmediato en vez de quemar sesiones de Browserless.
+//   Presupuesto: Browserless corta la sesión a los 60 s exactos en este plan y
+//   rechaza con HTTP 400 cualquier &timeout=. Por eso el flujo se parte en dos:
+//   emitir dentro del navegador, y recuperar el XML/PDF después con fetch()
+//   autenticado por la misma cookie (no hace falta navegador para eso).
 // ══════════════════════════════════════════════════════════════════════════
 //
 // ⚠️ ESTE BOT NO ES AUTÓNOMO. Requiere una cookie de sesión ya
@@ -104,6 +97,50 @@ const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 const { extraerUUIDcfdi } = require("../lib/util");
 
+// Selecciona en un <select> por valor exacto y, si ese valor no existe entre
+// las opciones, por texto. Verifica después: page.select() con un valor que no
+// existe NO lanza — deja el campo vacío y el fallo aparece mucho más tarde.
+async function seleccionarPorTexto(page, selector, valorPreferido, regex) {
+  const elegido = await page.evaluate((sel, val, re) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const opts = Array.from(el.options).filter(o => o.value);
+    const rx = new RegExp(re.source, re.flags);
+    const o = opts.find(x => x.value === String(val))
+           || opts.find(x => rx.test(x.text))
+           || opts.find(x => rx.test(x.value));
+    return o ? o.value : null;
+  }, selector, valorPreferido, { source: regex.source, flags: regex.flags });
+  if (!elegido) throw new Error(`${selector}: no hay opción que case con "${valorPreferido}" ni con ${regex}`);
+  await page.select(selector, elegido);
+
+  // ⚠️ Estos <select> están decorados con jQuery Chosen. page.select() cambia
+  // el value del <select> real, pero la UI de Chosen se queda mostrando
+  // "Seleccione ..." y la app valida contra ESA capa: el ticket nunca entra al
+  // carrito aunque el DOM parezca correcto. Hay que avisarle a Chosen con
+  // 'chosen:updated' y volver a emitir 'change' para los handlers de la app.
+  await page.evaluate((sel, val) => {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    el.value = val;
+    const $ = window.jQuery || window.$;
+    if ($) $(el).val(val).trigger("chosen:updated").trigger("change");
+    else el.dispatchEvent(new Event("change", { bubbles: true }));
+  }, selector, elegido);
+  await page.waitForTimeout(600);
+
+  const estado = await page.evaluate((s) => {
+    const el = document.querySelector(s);
+    const cont = document.querySelector(`#${el.id}_chosen`) || el.closest(".form-group")?.querySelector(".chosen-container");
+    return { value: el.value, visible: cont ? cont.innerText.replace(/\s+/g, " ").trim().slice(0, 60) : null };
+  }, selector);
+  if (!estado.value) throw new Error(`${selector}: se eligió "${elegido}" pero el campo quedó vacío`);
+  if (estado.visible && /^seleccione/i.test(estado.visible)) {
+    throw new Error(`${selector}: el <select> vale "${estado.value}" pero el widget Chosen sigue mostrando "${estado.visible}"`);
+  }
+  return estado.value;
+}
+
 async function seleccionarPagoEnFila(page, folio, regexTexto) {
   const info = await page.evaluate((folio) => {
     const row = Array.from(document.querySelectorAll("tr")).find(tr => tr.textContent.includes(folio));
@@ -138,10 +175,17 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
   await page.setViewport({ width: 1280, height: 1100 });
   page.on("dialog", async d => { await d.accept().catch(() => {}); });
 
+  // Las cookies incap_ses_* de Incapsula cambian de sufijo numérico según el
+  // nodo del WAF que atienda; se aceptan todas las que haya en el entorno.
   const cookies = [{ name: "ci_sessions", value: ciSession, domain: "facturacion.oxxogas.com", path: "/" }];
-  if (incapSes117) cookies.push({ name: "incap_ses_117_3020163", value: incapSes117, domain: ".oxxogas.com", path: "/" });
-  if (incapSes363) cookies.push({ name: "incap_ses_363_3020163", value: incapSes363, domain: ".oxxogas.com", path: "/" });
-  if (visidIncap) cookies.push({ name: "visid_incap_3020163", value: visidIncap, domain: ".oxxogas.com", path: "/" });
+  for (const [nombre, valor] of [
+    ["incap_ses_117_3020163", incapSes117],
+    ["incap_ses_363_3020163", incapSes363],
+    ["incap_ses_396_3020163", process.env.OXXOGAS_INCAP_396],
+    ["incap_ses_397_3020163", process.env.OXXOGAS_INCAP_397],
+    ["incap_ses_92_3020163", process.env.OXXOGAS_INCAP_92],
+    ["visid_incap_3020163", visidIncap],
+  ]) if (valor) cookies.push({ name: nombre, value: valor, domain: ".oxxogas.com", path: "/" });
   await page.setCookie(...cookies);
 
   const ts = ticketId || Date.now();
@@ -177,44 +221,89 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
     await facturarEl.click();
     await page.waitForTimeout(2500);
 
-    // Detección temprana del shell sin JavaScript (ver cabecera). Si el portal
-    // degradó la página, seguir adelante solo desperdicia la sesión: los
-    // selects dependientes jamás se poblarán y el botón no tendrá handler.
-    const sinJs = await page.evaluate(() => ({
+    // Guarda de sanidad: si por lo que sea llegó una página sin JavaScript, los
+    // selects dependientes no se poblarán nunca y el botón no tendrá handler.
+    // Mejor abortar aquí que gastar la sesión entera (ver cabecera).
+    const js = await page.evaluate(() => ({
       scripts: document.querySelectorAll("script[src]").length,
       jquery: !!window.jQuery,
     }));
-    if (sinJs.scripts === 0 || !sinJs.jquery) {
+    if (js.scripts === 0 || !js.jquery) {
       await browser.close();
       return {
         ok: false,
-        error_code: "captcha",
-        msg: `OXXO GAS: el portal entregó la página SIN JavaScript (${sinJs.scripts} scripts, jQuery=${sinJs.jquery}) — su WAF degrada la respuesta para tráfico automatizado. El formulario es inoperable así. Hay que facturar manualmente.`,
+        msg: `OXXO GAS: la página llegó sin JavaScript (${js.scripts} scripts, jQuery=${js.jquery}). Normalmente pasa por entrar con deep link en vez de por la home — este bot ya entra por la home, así que revisar la sesión.`,
       };
     }
 
+    // El RFC se resuelve por TEXTO, no por un id interno hardcodeado: ese id
+    // cambia entre cuentas y un valor inexistente deja el <select> vacío sin
+    // error.
+    const rfcValue = await page.evaluate((buscado) => {
+      const sel = document.querySelector("#rfc");
+      if (!sel) return null;
+      const o = Array.from(sel.options).find(x => x.text.toUpperCase().includes(String(buscado).toUpperCase()));
+      return o ? o.value : null;
+    }, rfcId);
+    if (!rfcValue) throw new Error(`el RFC ${rfcId} no aparece en el selector de RFCs de la cuenta`);
+
+    await page.select("#rfc", rfcValue);
+    await page.evaluate((val) => {
+      const el = document.querySelector("#rfc");
+      el.value = val;
+      const $ = window.jQuery || window.$;
+      if ($) $(el).val(val).trigger("chosen:updated").trigger("change");
+      else el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, rfcValue);
+
+    // ⚠️ #regimen_fiscal y #usocfdi se pueblan por AJAX DESPUÉS de elegir el
+    // RFC. Hay que esperarlos: page.select() sobre un <select> todavía vacío no
+    // falla, simplemente no selecciona nada, y el error aparece mucho más tarde
+    // como "el botón no hace nada".
+    await page.waitForFunction(
+      () => (document.querySelector("#regimen_fiscal")?.options.length || 0) > 0
+         && (document.querySelector("#usocfdi")?.options.length || 0) > 0,
+      { timeout: 15000 }
+    ).catch(() => { throw new Error("los selects de Régimen/Uso CFDI no se poblaron tras elegir el RFC"); });
+
+    await seleccionarPorTexto(page, "#regimen_fiscal", regimenFiscal || "601", /601|general de ley/i);
+    await seleccionarPorTexto(page, "#usocfdi", usoCfdi || "G03", /^G03|gastos en general/i);
+    await seleccionarPorTexto(page, "#estacion", estacionId, new RegExp(String(estacionId), "i"));
+
+    const ticketInput = await page.$("#ticket");
+    await ticketInput.click({ clickCount: 3 });
+    await page.keyboard.type(String(folio), { delay: 30 });
+    const montoInput = await page.$("#monto");
+    await montoInput.click({ clickCount: 3 });
+    await page.keyboard.type(Number(monto).toFixed(2), { delay: 30 });
+    await page.waitForTimeout(300);
+
+    // Comprobación explícita ANTES de pulsar: si algún campo requerido quedó
+    // vacío, Angular aborta el submit en silencio.
+    const form = await page.evaluate(() => ({
+      rfc: document.querySelector("#rfc")?.value,
+      regimen: document.querySelector("#regimen_fiscal")?.value,
+      uso: document.querySelector("#usocfdi")?.value,
+      estacion: document.querySelector("#estacion")?.value,
+      ticket: document.querySelector("#ticket")?.value,
+      monto: document.querySelector("#monto")?.value,
+    }));
+    const vacios = Object.entries(form).filter(([, v]) => !v).map(([k]) => k);
+    if (vacios.length) throw new Error(`campos sin valor antes de Agregar Ticket: ${vacios.join(", ")} (form=${JSON.stringify(form)})`);
+    console.log(`   formulario listo: ${JSON.stringify(form)}`);
+
+    await page.click("#agregar_tickets");
+    // Espera condicional en vez de sleep fijo: cada segundo cuenta contra el
+    // límite de 60 s de la sesión.
     let enCarrito = false;
-    for (let intento = 1; intento <= 2 && !enCarrito; intento++) {
-      await page.select("#rfc", String(rfcId));
-      await page.waitForTimeout(1200);
-      await page.select("#regimen_fiscal", String(regimenFiscal || "601"));
-      await page.waitForTimeout(500);
-      await page.select("#usocfdi", String(usoCfdi || "G03"));
-      await page.waitForTimeout(500);
-      await page.select("#estacion", String(estacionId));
-      await page.waitForTimeout(500);
-      const ticketInput = await page.$("#ticket");
-      await ticketInput.click({ clickCount: 3 });
-      await page.keyboard.type(String(folio), { delay: 30 });
-      const montoInput = await page.$("#monto");
-      await montoInput.click({ clickCount: 3 });
-      await page.keyboard.type(Number(monto).toFixed(2), { delay: 30 });
-      await page.waitForTimeout(300);
-      await page.click("#agregar_tickets");
-      await page.waitForTimeout(3500);
-      enCarrito = await page.evaluate((folio) => document.body.innerText.includes(String(folio)), folio);
+    for (let i = 0; i < 15 && !enCarrito; i++) {
+      await page.waitForTimeout(1000);
+      enCarrito = await page.evaluate((f) => document.body.innerText.includes(String(f)), folio).catch(() => false);
     }
-    if (!enCarrito) throw new Error("no se pudo agregar el ticket al carrito tras 2 intentos");
+    if (!enCarrito) {
+      const visible = await page.evaluate(() => document.body.innerText.replace(/\s+/g, " ").slice(0, 400)).catch(() => "");
+      throw new Error(`el folio ${folio} no entró al carrito. Pantalla: ${visible}`);
+    }
 
     const pago = await seleccionarPagoEnFila(page, String(folio), "tarjeta de d[eé]bito");
     if (!pago.ok) throw new Error(`no se pudo seleccionar la forma de pago: ${JSON.stringify(pago)}`);
