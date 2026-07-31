@@ -37,6 +37,18 @@
 //      app.facturagas.net ni desde el portal legado sumeca.ddns.net/
 //      controlgasfe (que además pide un "Código Cliente" propio que no es
 //      ninguno de los datos impresos en el ticket).
+//
+// ⚠️ OJO — NO todas las estaciones "ControlGasFE" están en app.facturagas.net.
+// Varias corren su PROPIA instancia en un DDNS del negocio y no aparecen en el
+// autocomplete de estaciones del portal central. Comprobado con la estación
+// P22904 "LA SUERTE" (Inmobiliaria Hemajo de Atlacomulco), que factura en
+// http://hemajolasuerte.ddns.net:8087/ControlGasFE/ — ese portal pide los
+// mismos tres datos (Estación / Folio / Web ID) pero es otro sitio.
+//
+// Y lo más importante para el negocio: esas instancias propias avisan
+// "Solo se pueden facturar notas máximo 72 HORAS posteriores a haber sido
+// realizadas". Es una ventana mucho más corta que los 30 días habituales, así
+// que un ticket de este tipo hay que subirlo y facturarlo el mismo día.
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
