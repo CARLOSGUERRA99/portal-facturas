@@ -53,7 +53,22 @@ const parseJson = (v) => {
     user: process.env.IMAP_USER, password: process.env.IMAP_PASS,
     host: process.env.IMAP_HOST, port: parseInt(process.env.IMAP_PORT) || 993,
     tls: true, tlsOptions: { rejectUnauthorized: false },
+    // ⚠️ Sin timeouts, node-imap se queda esperando PARA SIEMPRE si el servidor
+    // no responde: este script se quedó colgado 70 minutos sin fallar ni
+    // terminar. Con esto revienta rápido y se puede reintentar.
+    connTimeout: 20000,
+    authTimeout: 20000,
+    keepalive: false,
   });
+
+  // Cinturón y tirantes: si por lo que sea el flujo se atasca a medio fetch,
+  // se corta el proceso en vez de dejar un zombi consumiendo recursos.
+  const guillotina = setTimeout(() => {
+    console.error('⏱️ tiempo máximo excedido (5 min) — se aborta');
+    try { imap.end(); } catch {}
+    process.exit(3);
+  }, 5 * 60 * 1000);
+  guillotina.unref?.();
 
   imap.once('ready', () => {
     imap.openBox('INBOX', false, (err) => {
