@@ -21,6 +21,7 @@ const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarRAMCAL } = require('./ramcal');
 const { facturarCaffenio } = require('./caffenio');
 const { facturarCapufe } = require('./capufe');
+const { facturarIGasFac } = require('./igasfac');
 const { facturarOxxoGas } = require('./oxxogas');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
@@ -324,15 +325,21 @@ async function detectarYFacturar(datosCrudos, db = null) {
     return await facturarPetrofigues(datos);
   }
 
+  // ⚠️ facturacionestacion.com da un SUBDOMINIO POR ESTACIÓN
+  // (valerogdl., lasconchas., …). Aquí solo se reconocía "valerogdl." a pelo,
+  // así que cualquier otra estación de la misma plataforma caía en "portal no
+  // reconocido" y disparaba al agente de altas para un portal que YA tiene bot
+  // — pasó con el ticket #182 (lasconchas.facturacionestacion.com). Se
+  // reconoce el dominio entero, venga del subdominio que venga.
   if (
     portal === 'gashr' ||
     comercio.includes('gashr') ||
     portalUrl.includes('grupogashr') ||
-    portalUrl.includes('valerogdl.facturacionestacion.com') ||
+    portalUrl.includes('facturacionestacion.com') ||
     texto.includes('grupogashr.com.mx') ||
     texto.includes('gashr')
   ) {
-    console.log('🎯 Portal detectado: Grupo GASHR');
+    console.log('🎯 Portal detectado: Grupo GASHR / facturacionestacion');
     return await facturarGASHR(datos);
   }
 
