@@ -13,8 +13,28 @@ require("dotenv").config();
 const { Queue } = require("bullmq");
 const IORedis = require("ioredis");
 
-if (!process.env.REDIS_URL) {
+// El Redis de Railway vive en la red privada (*.railway.internal) y no es
+// alcanzable desde una máquina local, así que importar este módulo reventaba
+// cualquier script de depuración local que tocara lib/facturacion.js. Con
+// SIN_REDIS=1 se permite arrancar sin colas: encolar pasa a ser un no-op y el
+// script llama a los bots directamente. Es una salida EXPLÍCITA y solo local —
+// en producción, sin la variable, sigue siendo un error fatal como antes.
+const SIN_REDIS = process.env.SIN_REDIS === "1";
+if (!process.env.REDIS_URL && !SIN_REDIS) {
   throw new Error("REDIS_URL no configurada — la arquitectura de colas la requiere (Railway → servicio Redis → variable REDIS_URL)");
+}
+if (SIN_REDIS) {
+  console.warn("⚠️ SIN_REDIS=1 — colas deshabilitadas (modo depuración local, NO usar en producción)");
+  const noop = async () => ({ id: null, sinRedis: true });
+  const colaFalsa = { add: noop, getJob: async () => null, getJobCounts: async () => ({}), getFailed: async () => [], close: async () => {} };
+  module.exports = {
+    connection: null, nuevaConexion: () => null,
+    visionQueue: colaFalsa, botsQueue: colaFalsa, agenteQueue: colaFalsa,
+    encolarVision: noop, encolarBot: noop, encolarAgente: noop, encolarOrquestacionManual: noop,
+    tomarSlotPortal: async () => true, soltarSlotPortal: async () => {}, LIMITE_POR_PORTAL: 1,
+    listarColaMuerta: async () => [], reintentarJobMuerto: async () => false, borrarJobMuerto: async () => false,
+  };
+  return;
 }
 
 // maxRetriesPerRequest: null es requisito de BullMQ para conexiones de Workers.

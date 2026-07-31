@@ -43,13 +43,30 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
-async function facturarRAMCAL({
-  urlEstacion, rfc, razonSocial, codigo, cuentaPagoUlt4,
-  calle, noExterior, noInterior, colonia, municipio, estado, codigoPostal,
-  ticketId,
-}) {
+async function facturarRAMCAL(datos = {}) {
+  const {
+    rfc, razonSocial, cuentaPagoUlt4,
+    calle, noExterior, noInterior, colonia, municipio, estado, codigoPostal,
+    ticketId,
+  } = datos;
+
+  // El OCR entrega nombres genéricos (folio, portalUrl) mientras que este bot
+  // se escribió con los nombres del portal (codigo, urlEstacion). Sin estos
+  // alias el bot recibía undefined y reventaba en urlEstacion.replace().
+  const codigo = datos.codigo || datos.folio || datos.codigoTicket || datos.referencia;
+  let urlEstacion = datos.urlEstacion || datos.portalUrl || datos.portal_url;
+  if (urlEstacion && !/^https?:\/\//i.test(urlEstacion)) urlEstacion = `https://${urlEstacion}`;
+
   console.log("🤖 Iniciando bot RAMCAL...");
   console.log(`   Estación: ${urlEstacion} | Código: ${codigo} | RFC: ${rfc}`);
+
+  if (!urlEstacion || !codigo) {
+    return {
+      ok: false,
+      error_code: "datos_invalidos",
+      msg: `RAMCAL: faltan datos obligatorios (urlEstacion=${urlEstacion}, codigo=${codigo}) — el ticket debe traer la URL de la estación y el código de facturación`,
+    };
+  }
 
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
@@ -96,38 +113,85 @@ async function facturarRAMCAL({
     });
     await page.waitForTimeout(2000);
 
-    console.log("📋 Corrigiendo domicilio fiscal (siempre, para no confiar en datos guardados desactualizados)...");
-    await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll("input,button,a")).find(x => /editar datos/i.test((x.value || x.textContent || "").trim()));
-      if (b) b.click();
-    });
-    await page.waitForTimeout(2000);
+    // ⚠️ El paso de "Editar datos" NO siempre aparece: según la estación (y si
+    // el cliente ya tiene domicilio completo) el portal salta directo a la
+    // pantalla "Introduzca el número de codigo". Antes esto se ejecutaba
+    // incondicionalmente y el bot reventaba con
+    // "No element found for selector: #btn_cli_actualizar" (ticket #164).
+    // Ahora se comprueba que el control exista antes de tomar esa rama.
+    const hayEditar = await page.evaluate(() =>
+      !!Array.from(document.querySelectorAll("input,button,a")).find(x => /editar datos/i.test((x.value || x.textContent || "").trim()))
+    );
+    if (hayEditar) {
+      console.log("📋 Corrigiendo domicilio fiscal (para no confiar en datos guardados desactualizados)...");
+      await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("input,button,a")).find(x => /editar datos/i.test((x.value || x.textContent || "").trim()));
+        if (b) b.click();
+      });
+      await page.waitForTimeout(2000);
 
-    async function setVal(name, valor) {
-      if (!valor) return;
-      const el = await page.$(`input[name="${name}"]`);
-      if (!el) return;
-      await el.click({ clickCount: 3 });
-      await page.keyboard.type(String(valor), { delay: 12 });
+      async function setVal(name, valor) {
+        if (!valor) return;
+        const el = await page.$(`input[name="${name}"]`);
+        if (!el) return;
+        await el.click({ clickCount: 3 });
+        await page.keyboard.type(String(valor), { delay: 12 });
+      }
+      await setVal("calle", calle);
+      await setVal("noexterior", noExterior);
+      await setVal("nointerior", noInterior);
+      await setVal("colonia", colonia);
+      await setVal("municipio", municipio);
+      await setVal("estado", estado);
+      await setVal("cp", codigoPostal);
+      await page.waitForTimeout(300);
+      await screenshot("p1_datos_editados");
+
+      const btnAct = await page.$("#btn_cli_actualizar");
+      if (btnAct) { await btnAct.click(); await page.waitForTimeout(2500); }
+      else console.log("   (sin botón de actualizar — el portal ya avanzó de pantalla)");
+    } else {
+      console.log("📋 El portal saltó la edición de domicilio — va directo a capturar el código");
     }
-    await setVal("calle", calle);
-    await setVal("noexterior", noExterior);
-    await setVal("nointerior", noInterior);
-    await setVal("colonia", colonia);
-    await setVal("municipio", municipio);
-    await setVal("estado", estado);
-    await setVal("cp", codigoPostal);
-    await page.waitForTimeout(300);
-    await screenshot("p1_datos_editados");
-    await page.click("#btn_cli_actualizar");
-    await page.waitForTimeout(2500);
 
     console.log(`🔢 Código del ticket: ${codigo}...`);
+    await page.waitForSelector('input[name="codigo[]"]', { timeout: 15000 });
     const codigoInput = await page.$('input[name="codigo[]"]');
     await codigoInput.click();
     await page.keyboard.type(String(codigo), { delay: 25 });
-    await page.waitForTimeout(300);
-    await page.click('input[name="btn_submit_nf"]');
+    // ⚠️ El portal resuelve el código al SALIR del campo (evento blur/change):
+    // hasta entonces el importe de la fila sigue en "$ 0.00" y pulsar Aceptar
+    // no hace nada. Escribir con el teclado no dispara el blur por sí solo.
+    await page.keyboard.press("Tab");
+    await page.waitForTimeout(2500);
+    const importeFila = await page.evaluate(() => {
+      const m = document.body.innerText.match(/\$\s*([\d,]+\.\d{2})/g) || [];
+      return m.slice(0, 2).join(' / ');
+    });
+    console.log(`   importe resuelto por el portal: ${importeFila}`);
+    if (/^\$?\s*0\.00/.test(importeFila.split('/')[0].trim())) {
+      await screenshot("p2_codigo_sin_importe");
+      await browser.close();
+      return {
+        ok: false,
+        error_code: "datos_invalidos",
+        msg: `RAMCAL: el código "${codigo}" no devolvió importe en la estación ${urlEstacion} (sigue en $0.00) — o el código no pertenece a esta estación o ya fue facturado. Usar scripts/ramcal-buscar-estacion.js para confirmar la estación correcta.`,
+      };
+    }
+    // El botón de esta pantalla no siempre se llama btn_submit_nf; en la
+    // estación 7932 es un submit con value "Aceptar". Se busca por nombre y se
+    // cae al submit visible del propio formulario del código.
+    const btnCod = await page.$('input[name="btn_submit_nf"]');
+    if (btnCod) await btnCod.click();
+    else {
+      const h = await page.evaluateHandle(() =>
+        Array.from(document.querySelectorAll('input[type=submit],button'))
+          .find(b => /aceptar/i.test(b.value || b.textContent || '')) || null
+      );
+      const el = h.asElement();
+      if (!el) throw new Error('no se encontró el botón para enviar el código');
+      await el.click();
+    }
     await page.waitForTimeout(2500);
     await screenshot("p2_consumo");
 
