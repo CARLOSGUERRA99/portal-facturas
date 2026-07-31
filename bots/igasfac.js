@@ -94,13 +94,29 @@ async function facturarIGasFac(datos = {}) {
     }
     console.log("✅ Sesión iniciada");
 
-    // ── Agregar el ticket ──────────────────────────────────────────────────
+    // ── Nueva Factura → Agregar → modal del folio ──────────────────────────
+    // Tras el login se cae en "Consulta de facturas", que NO tiene el botón
+    // "Agregar": primero hay que entrar a "Nueva Factura". Saltarse este paso
+    // hacía que el bot esperara 12 s por un #Input_Folio que no existía.
+    await page.waitForTimeout(1500);
+    const irNueva = await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button, a")).find((x) => /nueva factura/i.test(x.textContent || ""));
+      if (b) { b.click(); return true; }
+      return false;
+    });
+    if (!irNueva) {
+      await shot("sin_nueva_factura");
+      await browser.close();
+      return { ok: false, msg: "IGasFac: no apareció el botón 'Nueva Factura' tras el login" };
+    }
+    await page.waitForTimeout(3000);
+
     await page.evaluate(() => {
       const b = Array.from(document.querySelectorAll("button")).find((x) => x.textContent.trim() === "Agregar");
       if (b) b.click();
     });
-    await page.waitForTimeout(1200);
-    await page.waitForSelector("#Input_Folio", { visible: true, timeout: 12000 });
+    await page.waitForTimeout(1500);
+    await page.waitForSelector("#Input_Folio", { visible: true, timeout: 15000 });
 
     const campo = await page.$("#Input_Folio");
     await campo.click({ clickCount: 3 });
@@ -181,9 +197,12 @@ async function facturarIGasFac(datos = {}) {
     // mandar a nadie a "revisar los datos" cuando no hay nada que revisar.
     if (/CFDI40147/i.test(final)) {
       await browser.close();
+      // `reintentar_despues` y no `datos_invalidos`: el dato está bien y el
+      // rechazo se cura solo, así que lo correcto es que el sistema lo
+      // reagende, no que mande al usuario a corregir algo que no está mal.
       return {
-        ok: false, error_code: "datos_invalidos",
-        msg: "IGasFac: rechazo CFDI40147 — es un desfase entre el PAC (SmartWeb) y la lista masiva del SAT, no un dato mal capturado. Se resuelve solo: reintentar en 2-3 días con el mismo folio.",
+        ok: false, error_code: "reintentar_despues",
+        msg: "IGasFac: rechazo CFDI40147 del PAC (SmartWeb) — dice que el DomicilioFiscalReceptor no aparece en la lista de RFC del SAT. NO es un dato mal capturado: el CP 80140 está verificado contra la Constancia oficial. Es un desfase entre el PAC y la lista masiva del SAT, que se resuelve solo en 2-3 días. Reintentar entonces con el mismo folio.",
       };
     }
     if (/error|no fue posible|falló/i.test(final) && !/enviad|correo|solicitud recibida/i.test(final)) {

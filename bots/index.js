@@ -417,6 +417,18 @@ async function detectarYFacturar(datosCrudos, db = null) {
     return await facturarCapufe(datos);
   }
 
+  // IGasFac — www.igasfac.com.mx. El OCR confunde el "1" inicial de la URL
+  // impresa con una "l" minúscula (leyó "lgasfac.com.mx"), así que se aceptan
+  // las tres grafías.
+  if (
+    portal === 'igasfac' ||
+    portalUrl.includes('1gasfac') || portalUrl.includes('lgasfac') || portalUrl.includes('igasfac') ||
+    texto.includes('1gasfac') || texto.includes('igasfac')
+  ) {
+    console.log('🎯 Portal detectado: IGasFac');
+    return await facturarIGasFac(datos);
+  }
+
   // Buscar bot dinámico generado por el sistema de agentes
   const slugify = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').slice(0, 30);
   const portalVal = (portal && portal !== 'desconocido') ? portal : comercio;
