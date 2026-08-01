@@ -237,19 +237,40 @@ async function run({ datos, config, selectors, flow, hooksPath, telemetry }) {
           if (attempt > 0) log.info(`[waitForAny] retry ${attempt}/${retries}`);
           try {
             // Cada selector corre en paralelo. El primero que aparezca gana.
-            // Los perdedores rechazan silenciosamente al hacer timeout — no dejan
-            // listeners colgados porque waitForSelector usa MutationObserver interno
-            // de Puppeteer que se limpia cuando la promise se resuelve o rechaza.
-            categoria = await Promise.race(
-              Object.entries(selectorMap).map(([cat, sel]) =>
-                page.waitForSelector(sel, { visible: true, timeout })
-                  .then(() => {
-                    log.info(`[waitForAny] matched: ${cat} → "${sel}"`);
-                    return cat;
-                  })
-                  .catch(() => new Promise(() => {})) // silenciar perdedores — no rechazan la race
-              )
-            );
+            //
+            // ⚠️ Los perdedores se silencian con una promesa que NUNCA resuelve,
+            // para que un selector que no aparece no haga perder la carrera al
+            // que sí va a aparecer. Eso está bien mientras ALGUNO gane — pero si
+            // NINGUNO aparece, todas las ramas quedan colgadas y Promise.race no
+            // se resuelve nunca: el proceso se congela para siempre, sin error,
+            // sin log y sin dejar rastro. Pasó de verdad con el ticket #181
+            // (Estación Fundadores): el bot pulsó Facturar, ni la descarga ni el
+            // error aparecieron, y el worker se quedó clavado ahí.
+            //
+            // Por eso la carrera lleva su PROPIO temporizador: cuando vence,
+            // rechaza y el flujo continúa por el camino de error, como debe.
+            let cortar;
+            const reloj = new Promise((_, rechazar) => {
+              cortar = setTimeout(
+                () => rechazar(new Error(`[waitForAny] ninguna opción apareció en ${timeout}ms`)),
+                timeout + 1000, // un segundo de gracia sobre el de waitForSelector
+              );
+            });
+            try {
+              categoria = await Promise.race([
+                ...Object.entries(selectorMap).map(([cat, sel]) =>
+                  page.waitForSelector(sel, { visible: true, timeout })
+                    .then(() => {
+                      log.info(`[waitForAny] matched: ${cat} → "${sel}"`);
+                      return cat;
+                    })
+                    .catch(() => new Promise(() => {})) // silenciar perdedores
+                ),
+                reloj,
+              ]);
+            } finally {
+              clearTimeout(cortar);
+            }
             break;
           } catch (err) {
             log.warn(`[waitForAny] timeout en intento ${attempt}`);
