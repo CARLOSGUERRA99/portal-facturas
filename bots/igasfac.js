@@ -148,6 +148,18 @@ async function facturarIGasFac(datos = {}) {
     await page.waitForTimeout(2500);
 
     const trasAgregar = await texto();
+    // El portal avisa "Ticket ya se encuentra facturado" en un modal de
+    // Información (no de Error) justo al validar el folio web, antes de llegar
+    // a la forma de pago. Hay que cazarlo aquí: si no, el bot sigue adelante y
+    // muere después con "No element found for selector: #ClaveFormaPago", que
+    // no dice nada de lo que realmente pasó.
+    if (/ya se encuentra facturad|ya (fue|ha sido) facturad|previamente facturad/i.test(trasAgregar)) {
+      await browser.close();
+      return {
+        ok: false, error_code: "ya_facturado",
+        msg: `IGasFac: el portal dice que el folio web ${folio} YA ESTÁ FACTURADO. El CFDI existe pero no lo tenemos: hay que pedírselo a la estación o buscarlo en el buzón del SAT.`,
+      };
+    }
     if (/no (se encontr|existe)|inv[aá]lid|incorrect/i.test(trasAgregar)) {
       await shot("folio_rechazado");
       await browser.close();
