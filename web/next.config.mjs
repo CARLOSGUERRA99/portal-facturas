@@ -36,25 +36,29 @@ const nextConfig = {
   experimental: {
     proxyClientMaxBodySize: "20mb",
   },
+  // ⚠️ `fallback`, NO una lista de rutas enumeradas a mano.
+  //
+  // La primera versión listaba ruta por ruta (/dashboard, /mis-tickets, /api/*…)
+  // y las páginas cargaban con status 200 — pero SIN ESTILOS. El HTML llegaba de
+  // Railway y dentro pedía /style.css y /notificaciones.js, que no estaban en la
+  // lista: Vercel respondía 404 y el dashboard se veía como el logo gigante sin
+  // maquetar. Verificar el status del documento no basta; hay que verificar que
+  // sus archivos carguen.
+  //
+  // `fallback` se evalúa DESPUÉS de que Next sirve lo suyo (la carátula, sus
+  // assets, /_next/*) y justo antes de devolver un 404. Así:
+  //   ·  /            → la carátula que vive en Vercel
+  //   ·  todo lo demás → Railway, tal cual, sin tener que enumerar nada
+  // Y cualquier archivo o página que se añada al backend en el futuro funciona
+  // sin tocar esta configuración.
   async rewrites() {
-    return [
-      // Cubre las ~50 rutas /api/* (incluye anidadas como /api/admin/agente/portales/:id)
-      { source: "/api/:path*", destination: `${BACKEND_ORIGIN}/api/:path*` },
-      { source: "/login", destination: `${BACKEND_ORIGIN}/login` },
-      { source: "/register", destination: `${BACKEND_ORIGIN}/register` },
-      { source: "/logout", destination: `${BACKEND_ORIGIN}/logout` },
-      { source: "/upload-ticket", destination: `${BACKEND_ORIGIN}/upload-ticket` },
-      // Subida en lote (hasta 25 tickets). Necesita el proxyClientMaxBodySize de
-      // arriba: 25 fotos pueden pasar de largo los 10 MB por defecto.
-      { source: "/upload-tickets", destination: `${BACKEND_ORIGIN}/upload-tickets` },
-      // Páginas del portal que siguen sirviéndose desde Railway mientras se
-      // migran. Solo la carátula (/) vive en Vercel por ahora.
-      { source: "/dashboard", destination: `${BACKEND_ORIGIN}/dashboard` },
-      { source: "/mis-tickets", destination: `${BACKEND_ORIGIN}/mis-tickets` },
-      { source: "/mis-facturas", destination: `${BACKEND_ORIGIN}/mis-facturas` },
-      { source: "/perfil", destination: `${BACKEND_ORIGIN}/perfil` },
-      { source: "/admin-residentes", destination: `${BACKEND_ORIGIN}/admin-residentes` },
-    ];
+    return {
+      beforeFiles: [],
+      afterFiles: [],
+      fallback: [
+        { source: "/:path*", destination: `${BACKEND_ORIGIN}/:path*` },
+      ],
+    };
   },
 };
 
