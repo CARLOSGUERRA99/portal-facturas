@@ -30,13 +30,24 @@ const parseJson = (v) => {
 
 (async () => {
   // 1) Tickets que esperan CFDI por correo y todavía no tienen factura.
+  // ⚠️ Se consideran TODOS los tickets sin factura, no solo los que están
+  // esperando correo. El filtro anterior exigía
+  // `procesando_correo_desde IS NOT NULL`, y eso dejaba fuera a los tickets que
+  // nunca pasaron por un bot (los que fueron al agente, o los que el usuario
+  // pidió a mano al comercio). Pasó de verdad: los CFDI de PETROLIFEROS LA
+  // TERRITORIAL ($724.98) y SERVICIO EFIGAS ($477.38) llevaban días en el buzón
+  // sin que nadie los reclamara, porque sus tickets no tenían esa marca.
+  //
+  // Abrir el criterio es seguro porque más abajo se verifica, antes de escribir
+  // nada: que el CFDI no esté ya registrado en otro ticket, que el RFC receptor
+  // sea el nuestro, que el total cuadre al céntimo, y que el nombre del emisor
+  // se parezca al comercio del ticket.
   const [pendientes] = await db.query(`
     SELECT t.id, t.comercio, t.ocr_json, t.user_id, t.status
       FROM tickets t
       LEFT JOIN facturas f ON f.ticket_id = t.id
      WHERE f.id IS NULL
-       AND t.procesando_correo_desde IS NOT NULL
-       AND t.status IN ('error','procesando_correo','procesando')
+       AND t.status <> 'procesado'
      ORDER BY t.id`);
 
   const objetivos = pendientes.map((t) => {
