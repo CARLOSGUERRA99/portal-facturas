@@ -14,6 +14,10 @@ const db = require('../lib/db');
 const { ejecutarFacturacion } = require('../lib/facturacion');
 
 const INTENTOS = parseInt(process.env.INTENTOS || '2', 10);
+// Techo por ticket. Browserless corta la sesión a los 60 s, así que un flujo
+// sano nunca pasa de un par de minutos; 8 da margen para portales lentos sin
+// dejar que uno solo se coma la corrida entera.
+const MINUTOS_MAX = parseInt(process.env.MINUTOS_MAX || '8', 10);
 const ESPERA_ENTRE_INTENTOS = parseInt(process.env.ESPERA || '20000', 10);
 const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -55,9 +59,27 @@ const DEFINITIVOS = /captcha|ya (fue )?facturad|duplicad|vencid|no est[aá] dado
       );
       console.log(`  · intento ${intento}/${INTENTOS}`);
       try {
-        await ejecutarFacturacion(t.id, t.user_id);
+        // ⚠️ Guardia de tiempo POR TICKET. Sin esto, un portal que se queda
+        // colgado (p.ej. esperando la descarga del CFDI tras pulsar Facturar)
+        // bloquea el lote entero y el ticket se queda en 'procesando' para
+        // siempre, sin error y sin factura — imposible de diagnosticar después.
+        // Pasó con el #181: el engine pulsó Facturar y el proceso murió ahí.
+        await Promise.race([
+          ejecutarFacturacion(t.id, t.user_id),
+          new Promise((_, rechazar) =>
+            setTimeout(() => rechazar(new Error(`el portal no respondió en ${MINUTOS_MAX} min`)), MINUTOS_MAX * 60000)),
+        ]);
       } catch (e) {
         console.log(`    excepción: ${e.message.slice(0, 120)}`);
+        // Nunca dejar el ticket en 'procesando': si no, queda invisible para
+        // los siguientes reintentos y para el módulo de validación manual.
+        const [[st]] = await db.query('SELECT status FROM tickets WHERE id=?', [t.id]);
+        if (st && st.status === 'procesando') {
+          await db.query(
+            "UPDATE tickets SET status='error', error_msg=? WHERE id=?",
+            [`El intento se corto a medias: ${e.message.slice(0, 180)}. Puede que la factura SI se haya generado en el portal — conviene reintentar, el bot detecta el "ya facturado".`, t.id]
+          );
+        }
       }
 
       const [[d]] = await db.query('SELECT status, error_msg FROM tickets WHERE id=?', [t.id]);
