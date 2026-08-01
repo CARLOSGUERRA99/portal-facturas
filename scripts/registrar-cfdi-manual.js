@@ -66,6 +66,44 @@ const atrib = (xml, re) => (xml.match(re) || [])[1];
     const cand = objetivos.find((t) => !usados.has(t.id) && Math.abs(t.total - parseFloat(total)) <= 0.01);
     if (!cand) { console.log(`⚠️ ${nombre}: $${total} (${emisor.slice(0, 34)}) no casa con ningún ticket pendiente`); sinTicket++; continue; }
 
+    // ⚠️ EL IMPORTE SOLO NO BASTA. Con decenas de CFDI y decenas de tickets,
+    // que dos coincidan al céntimo es habitual y el emparejamiento se equivoca.
+    // Pasó de verdad en esta misma corrida: a un ticket de café de $72 se le
+    // asignó un CFDI de HSBC por "impuestos estatales", y a uno de Gasolineras
+    // PABA uno de Auto Servicio Cava. Se exige una segunda señal:
+    //   · que el FOLIO del ticket aparezca en el CFDI (NoIdentificacion o
+    //     descripción) — es la prueba fuerte; o
+    //   · que el nombre del emisor se parezca al comercio del ticket.
+    const folioT = String(cand.ocr.folio || cand.ocr.codigoTicket || cand.ocr.referencia || '').replace(/\D/g, '');
+    const noIdent = (xml.match(/NoIdentificacion="([^"]{0,60})"/i) || [])[1] || '';
+    const descrip = (xml.match(/Descripcion="([^"]{0,80})"/i) || [])[1] || '';
+    const porFolio = folioT.length >= 5 && (noIdent.includes(folioT) || descrip.includes(folioT));
+
+    // Palabras que NO identifican a nadie: ciudades, estados y genéricos del
+    // giro. Sin esta lista, "SERVICIO INSURGENTES DE MAZATLAN" y "GASOLINERA Y
+    // SERVICIOS MAZATLAN" —dos empresas distintas, con RFC distinto— pasaban
+    // por parecidas solo porque compartían el nombre de la ciudad. Pasó de
+    // verdad con el ticket #168.
+    const PALABRAS_VACIAS = new Set([
+      'MAZATLAN', 'CULIACAN', 'GUAMUCHIL', 'NAVOJOA', 'OBREGON', 'HERMOSILLO',
+      'GUADALAJARA', 'MONTERREY', 'MEXICO', 'SINALOA', 'SONORA', 'JALISCO',
+      'SERVICIO', 'SERVICIOS', 'GASOLINERA', 'GASOLINERAS', 'ESTACION',
+      'COMBUSTIBLES', 'COMBUSTIBLE', 'PETROLIFEROS', 'ENERGETICOS', 'GRUPO',
+      'OPERADORA', 'CORPORATIVO', 'AUTOSERVICIO', 'PEMEX', 'SUCURSAL',
+    ]);
+    const palabras = String(cand.comercio || '').toUpperCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .split(/[^A-Z0-9]+/)
+      .filter((p) => p.length > 4 && !PALABRAS_VACIAS.has(p));
+    const emisorUp = emisor.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const porNombre = palabras.length > 0 && palabras.some((p) => emisorUp.includes(p));
+
+    if (!porFolio && !porNombre) {
+      console.log(`⚠️ ${nombre}: $${total} cuadra con el ticket #${cand.id} pero el emisor "${emisor.slice(0, 30)}" no se parece a "${String(cand.comercio).slice(0, 30)}" y el folio no aparece en el CFDI — se omite por seguridad`);
+      sinTicket++;
+      continue;
+    }
+
     // El PDF hermano, si viene al lado con el mismo nombre base.
     let pdfUrl = null;
     for (const cand2 of [ruta.replace(/\.xml$/i, '.pdf'), ruta + '.pdf']) {
