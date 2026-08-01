@@ -1,5 +1,23 @@
 /** @type {import('next').NextConfig} */
 
+// ── Dominio ────────────────────────────────────────────────────────────────
+// Producción: https://timbra.serviciosga.site (Vercel).
+//
+// ⚠️ Railway NO se apaga. Vercel solo sirve la carátula (/); TODO lo demás —la
+// API entera, el login y las pantallas internas— son los rewrites de abajo, que
+// reenvían a Railway. Apagar el backend deja una pantalla de login que no puede
+// loguear a nadie.
+//
+// ⚠️ Y el DNS de serviciosga.site lleva los MX de Hostinger, que son el buzón
+// buzonfacturas@serviciosga.site por donde entran TODOS los CFDI. Al apuntar el
+// subdominio a Vercel hay que tocar SOLO su CNAME: nunca los MX ni los TXT.
+//
+// Por qué funciona la sesión desde otro dominio: el navegador solo habla con
+// timbra.serviciosga.site. Los rewrites son un proxy de servidor, así que la
+// cookie que pone Railway (sin atributo Domain) queda asociada al host por el
+// que se entró. Por eso TODAS las llamadas van por ruta relativa: un fetch
+// directo a la URL de Railway rompería esa garantía.
+
 // BACKEND_ORIGIN: la API de Railway (server.js). En local, ponerla en .env.local
 // apuntando a producción o a un server.js local. En Vercel, variable de entorno
 // del proyecto.
