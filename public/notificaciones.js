@@ -125,3 +125,61 @@ async function aplicarMarca() {
 }
 
 document.addEventListener('DOMContentLoaded', aplicarMarca);
+
+// ── QUITAFONDOS DE LOGOS ─────────────────────────────────────────────────────
+//
+// Recorta el fondo de un logo EN EL NAVEGADOR y devuelve un PNG transparente.
+//
+// Se hace aquí y no en el servidor a propósito: procesar imágenes en Node obliga
+// a instalar sharp o similar —binario nativo, más peso y más RAM en Railway,
+// justo lo que estamos bajando— y el navegador ya trae un decodificador gratis.
+//
+// Cómo decide qué es fondo: mira las CUATRO ESQUINAS y toma su color medio como
+// referencia. Es más fiable que asumir "el fondo es blanco", porque muchos
+// logos vienen sobre gris muy claro o crema y con el umbral fijo quedaba un
+// marco sucio alrededor.
+//
+// El borde se suaviza con alfa progresivo en vez de recortar en seco: si no, el
+// contorno queda serrado y se nota sobre el guinda de la barra.
+async function quitarFondoLogo(archivo, tolerancia = 40) {
+  const img = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = () => rej(new Error('No se pudo leer la imagen'));
+    i.src = URL.createObjectURL(archivo);
+  });
+
+  // 512px de lado basta para un logo de barra y evita PNG de varios MB.
+  const lado = Math.min(512, Math.max(img.width, img.height));
+  const escala = lado / Math.max(img.width, img.height);
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * escala);
+  c.height = Math.round(img.height * escala);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+
+  const d = ctx.getImageData(0, 0, c.width, c.height);
+  const p = d.data;
+  const px = (x, y) => { const i = (y * c.width + x) * 4; return [p[i], p[i + 1], p[i + 2]]; };
+  const esquinas = [px(0, 0), px(c.width - 1, 0), px(0, c.height - 1), px(c.width - 1, c.height - 1)];
+  const fondo = [0, 1, 2].map(k => esquinas.reduce((a, e) => a + e[k], 0) / esquinas.length);
+
+  for (let i = 0; i < p.length; i += 4) {
+    const dist = Math.sqrt((p[i] - fondo[0]) ** 2 + (p[i + 1] - fondo[1]) ** 2 + (p[i + 2] - fondo[2]) ** 2);
+    if (dist < tolerancia) p[i + 3] = 0;                       // fondo → transparente
+    else if (dist < tolerancia * 2) p[i + 3] = Math.round(255 * (dist - tolerancia) / tolerancia); // borde suave
+  }
+  ctx.putImageData(d, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+// Sube el logo ya recortado. Devuelve la URL pública en R2.
+async function subirLogoCliente(clienteId, archivo, tolerancia) {
+  const pngBase64 = await quitarFondoLogo(archivo, tolerancia);
+  const r = await fetch(`/api/admin/clientes/${clienteId}/logo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pngBase64 }),
+  });
+  return r.json();
+}

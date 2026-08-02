@@ -59,7 +59,10 @@ app.get('/api/diag-mail', async (req, res) => {
   res.json(out);
 });
 
-app.use(express.json());
+// 4mb: el logo del cliente llega como PNG en base64 dentro del JSON, y base64
+// infla ~33%. Con el límite de 100kb por defecto de Express, subir un logo
+// fallaba con "request entity too large" sin explicar nada.
+app.use(express.json({ limit: "4mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 if (!process.env.SESSION_SECRET) {
@@ -1574,6 +1577,56 @@ app.get("/api/marca", auth, async (req, res) => {
     });
   } catch (e) {
     res.json({ ok: true, marca: POR_DEFECTO });
+  }
+});
+
+// ── LOGO DEL CLIENTE ─────────────────────────────────────────────────────────
+//
+// El recorte del fondo se hace en el NAVEGADOR con canvas, no aquí. Motivo
+// concreto: procesar imágenes en el servidor obliga a meter sharp o similar —
+// binario nativo, más peso en Railway y más RAM, justo lo que estamos
+// intentando bajar. El navegador ya trae un decodificador de imágenes gratis.
+//
+// Aquí solo llega el PNG ya recortado, se guarda en R2 y se apunta en el
+// cliente. Con 30 clientes esto se usa 30 veces, así que vale la pena que sea
+// un botón y no un favor que hay que pedir.
+app.post("/api/admin/clientes/:id/logo", auth, requireAdmin, async (req, res) => {
+  try {
+    const clienteId = Number(req.params.id);
+    // Un admin solo toca la marca de SU cliente; el dueño, la de cualquiera.
+    if (!esPlataforma(req) && req.session.clienteId !== clienteId)
+      return res.status(403).json({ ok: false, msg: "Ese cliente no es tuyo" });
+
+    const { pngBase64 } = req.body || {};
+    if (!pngBase64 || !/^data:image\/png;base64,/.test(pngBase64))
+      return res.json({ ok: false, msg: "Se esperaba un PNG en base64" });
+
+    const buf = Buffer.from(pngBase64.replace(/^data:image\/png;base64,/, ""), "base64");
+    if (buf.length > 2 * 1024 * 1024) return res.json({ ok: false, msg: "El logo pesa más de 2MB" });
+
+    const url = await subirArchivoR2(buf, `marca/cliente-${clienteId}-${Date.now()}.png`, "image/png");
+    await db.query("UPDATE clientes SET marca_logo = ? WHERE id = ?", [url, clienteId]);
+    res.json({ ok: true, url });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// Lista de clientes — solo para el dueño de la plataforma, que es quien
+// gestiona la cartera.
+app.get("/api/admin/clientes", auth, requireAdmin, async (req, res) => {
+  try {
+    if (!esPlataforma(req)) {
+      const [[c]] = await db.query("SELECT * FROM clientes WHERE id = ?", [req.session.clienteId || 0]);
+      return res.json({ ok: true, clientes: c ? [c] : [] });
+    }
+    const [rows] = await db.query(`
+      SELECT c.*, (SELECT COUNT(*) FROM users u WHERE u.cliente_id = c.id) AS usuarios,
+             (SELECT COUNT(*) FROM tickets t JOIN users u2 ON u2.id = t.user_id WHERE u2.cliente_id = c.id) AS tickets
+        FROM clientes c ORDER BY c.id`);
+    res.json({ ok: true, clientes: rows });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
   }
 });
 
