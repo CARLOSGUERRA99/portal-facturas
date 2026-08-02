@@ -509,15 +509,75 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
   .grid-2 { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
   .navbar { width: calc(100% - 24px); padding: 10px 14px; border-radius: 20px; }
-  .nav-links { display: none; }
   .nav-name { display: none; }
-  .container { padding: 84px 16px 32px; }
   .stats-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
   .page-title { font-size: 1.25rem; }
+
+  /* ⚠️ ANTES AQUÍ HABÍA `.nav-links { display: none }` Y NADA QUE LO
+     SUSTITUYERA. Comprobado en un viewport de 375px: desde un teléfono se podía
+     entrar, pero NO llegar a Mis Tickets, Mis Facturas ni Mi Perfil — la barra
+     solo dejaba el logo y "Salir". No era un problema de estética: la mitad del
+     portal era inalcanzable justo en el aparato con el que la gente fotografía
+     los tickets.
+
+     La solución es la barra inferior de siempre en móvil. Se reutilizan los
+     MISMOS enlaces del escritorio, así que añadir una sección al menú aparece
+     automáticamente en el teléfono, sin markup duplicado que se desincronice. */
+  .nav-links {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 60;
+    justify-content: space-around;
+    align-items: stretch;
+    gap: 0;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    background: var(--card, #fff);
+    border-top: 1px solid var(--border, #e6e6e6);
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, .08);
+  }
+  .nav-links .nav-link {
+    flex: 1;
+    text-align: center;
+    font-size: .72rem;
+    line-height: 1.15;
+    padding: 8px 2px;
+    border-radius: 10px;
+    /* Objetivo táctil mínimo cómodo: se pulsa con el pulgar, no con un ratón. */
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .nav-links .nav-link.active {
+    background: var(--vino-suave, rgba(123, 18, 32, .10));
+    color: var(--vino, #7B1220);
+    font-weight: 600;
+  }
+
+  /* Hueco arriba para la barra flotante y abajo para la barra inferior, para
+     que el último botón de cada página no quede tapado. */
+  .container { padding: 84px 16px calc(84px + env(safe-area-inset-bottom)); }
+
+  /* El botón flotante de WhatsApp se pisaba con la barra inferior. */
+  .wa-float, .whatsapp-float { bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
+
+  /* Las tablas anchas se desplazan dentro de su caja en vez de romper el ancho
+     de la página, que es lo que provoca el zoom-out horizontal en móvil. */
+  .table-wrap, .tabla-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 520px; }
+
+  /* iOS hace zoom automático al enfocar un input de menos de 16px. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Los modales ocupaban ancho fijo y se salían de la pantalla. */
+  .modal, .modal-card, .modal-content { width: calc(100vw - 32px); max-width: 100%; max-height: 88vh; overflow-y: auto; }
 }
 
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr; }
+  .nav-links .nav-link { font-size: .68rem; }
+  .nav-brand-sub { display: none; }
 }
 
 /* ── NOTIFICACIONES ── */
