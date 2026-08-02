@@ -1052,24 +1052,35 @@ D) La entrada completa para portales/portales.json`;
 
       lista.innerHTML = allEmpleados.map(u => {
         const initials = u.nombre.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
-        const rolBadge = u.rol === 'admin'
-          ? '<span class="badge badge-success">Admin</span>'
-          : '<span class="badge badge-processing">Residente</span>';
-        const tagsHtml = u.residentes.length
-          ? u.residentes.map(r => `
-              <span class="residente-tag">${r.nombre}
-                <button class="tag-remove" onclick="quitarResidente(${r.id}, ${u.id}, this)" title="Quitar">×</button>
-              </span>`).join('')
-          : '<span class="no-asignados">Sin residentes asignados</span>';
+        // La etiqueta viene del servidor y refleja la JERARQUÍA (Dueño / Admin /
+        // Capturista / Cliente), no el enum `rol` de la base — que dice
+        // "residente" por herencia de cuando esto era para conjuntos
+        // residenciales. Un cliente de la cartera no es residente de nadie.
+        const etiqueta = u.etiqueta || (u.rol === 'admin' ? 'Admin' : 'Usuario');
+        const claseBadge = { 'Dueño': 'badge-success', 'Admin': 'badge-success', 'Cliente': 'badge-info' }[etiqueta] || 'badge-processing';
+        const rolBadge = `<span class="badge ${claseBadge}">${etiqueta}</span>`;
+
+        // A un CLIENTE independiente no se le asignan residentes: los
+        // residentes son la gente de un cliente que sí los usa (GPN).
+        const tagsHtml = !u.usaResidentes
+          ? ''
+          : u.residentes.length
+            ? u.residentes.map(r => `
+                <span class="residente-tag">${r.nombre}
+                  <button class="tag-remove" onclick="quitarResidente(${r.id}, ${u.id}, this)" title="Quitar">×</button>
+                </span>`).join('')
+            : '<span class="no-asignados">Sin residentes asignados</span>';
         const asignadosIds  = new Set(u.residentes.map(r => r.id));
         const disponibles   = allResidentes.filter(r => r.disponible && !asignadosIds.has(r.id));
-        const selectHtml    = disponibles.length
-          ? `<select id="sel-${u.id}" class="input" style="font-size:0.82rem;padding:8px 12px;">
-               <option value="">Seleccionar residente...</option>
-               ${disponibles.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('')}
-             </select>
-             <button class="btn btn-primary btn-sm" onclick="asignarResidente(${u.id})">Asignar</button>`
-          : `<span style="font-size:0.8rem;color:var(--text-muted);">Sin residentes disponibles</span>`;
+        const selectHtml    = !u.usaResidentes
+          ? ''
+          : disponibles.length
+            ? `<select id="sel-${u.id}" class="input" style="font-size:0.82rem;padding:8px 12px;">
+                 <option value="">Seleccionar residente...</option>
+                 ${disponibles.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('')}
+               </select>
+               <button class="btn btn-primary btn-sm" onclick="asignarResidente(${u.id})">Asignar</button>`
+            : `<span style="font-size:0.8rem;color:var(--text-muted);">Sin residentes disponibles</span>`;
         return `
           <div class="empleado-card" id="card-usuario-${u.id}">
             <div class="empleado-header">
@@ -1080,11 +1091,12 @@ D) La entrada completa para portales/portales.json`;
               </div>
               ${rolBadge}
             </div>
+            ${u.usaResidentes ? `
             <div class="empleado-body">
               <div class="empleado-residentes-title">Residentes asignados</div>
               <div class="residentes-asignados" id="tags-${u.id}">${tagsHtml}</div>
               <div class="assign-row">${selectHtml}</div>
-            </div>
+            </div>` : ''}
           </div>`;
       }).join('');
     }

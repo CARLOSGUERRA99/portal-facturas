@@ -742,7 +742,29 @@ app.get("/api/admin/usuarios", auth, requireAdmin, async (req, res) => {
       `SELECT id, nombre, email, rol, creado, cliente_id FROM users WHERE ${alcance.sql} ORDER BY creado DESC`,
       alcance.params
     );
+    // ⚠️ La etiqueta que se enseña NO es el `rol` de la base.
+    //
+    // El enum de `rol` es ('admin','residente') y viene de cuando esto era un
+    // portal para conjuntos residenciales. Enseñarlo tal cual hacía que Daniel
+    // Ávila —que es un CLIENTE de la cartera, con su propio RFC— apareciera
+    // marcado como "Residente". Ni es residente ni es empleado de nadie.
+    //
+    // La etiqueta correcta sale de la jerarquía real, no del enum:
+    //   sin cliente + admin      → Dueño (G&A)
+    //   con cliente + admin      → Admin del cliente
+    //   con cliente que NO admite subusuarios → es el propio Cliente
+    //   con cliente que SÍ los admite         → Capturista
     for (const u of usuarios) {
+      if (!u.cliente_id) u.etiqueta = u.rol === 'admin' ? 'Dueño' : 'Sin cliente';
+      else if (u.rol === 'admin') u.etiqueta = 'Admin';
+      else {
+        const [[c]] = await db.query('SELECT permite_subusuarios FROM clientes WHERE id = ?', [u.cliente_id]);
+        u.etiqueta = c && c.permite_subusuarios ? 'Capturista' : 'Cliente';
+      }
+      // Solo tiene sentido asignar residentes a quien trabaja PARA un cliente
+      // que los usa. A un cliente independiente no se le asigna nada.
+      u.usaResidentes = !!u.cliente_id && u.etiqueta !== 'Cliente';
+
       const [asignados] = await db.query(`
         SELECT r.id, r.nombre, r.disponible
         FROM residentes r
