@@ -85,3 +85,43 @@ function formatTime(ts) {
   const days = Math.floor(hrs / 24);
   return `Hace ${days} día${days !== 1 ? 's' : ''}`;
 }
+
+// ── MARCA POR CLIENTE ────────────────────────────────────────────────────────
+//
+// El portal es de G&A pero lo usan ~30 clientes distintos, y cada uno tiene que
+// ver el suyo. Esto vive aquí, en el JS que ya cargan TODAS las páginas, en vez
+// de duplicar markup en los ocho .html: así una página nueva hereda la marca
+// sola y no hay ocho sitios que se desincronicen.
+//
+// El subtítulo pasa a ser el nombre del cliente. No es cosmético: una
+// capturista de GPN ve "GPN PINTURAS Y RECUBRIMIENTOS" y sabe de un vistazo con
+// qué RFC está trabajando, que es justo lo que evita facturar con el RFC
+// equivocado cuando alguien lleve dos clientes.
+async function aplicarMarca() {
+  try {
+    const res = await fetch('/api/marca');
+    const data = await res.json();
+    if (!data.ok || !data.marca) return;
+    const m = data.marca;
+
+    const nombre = document.querySelector('.nav-brand-name');
+    if (nombre) nombre.textContent = m.nombre;
+
+    const sub = document.querySelector('.nav-brand-sub');
+    if (sub) sub.textContent = m.esPlataforma ? 'G&A · todos los clientes' : m.sub;
+
+    const logo = document.querySelector('.nav-brand-logo');
+    if (logo && m.logo) logo.src = m.logo;
+
+    // El color solo se toca si el cliente puso uno propio: si no, se respeta
+    // la hoja de estilos y no se pisa el guinda de la marca.
+    if (m.color) {
+      document.documentElement.style.setProperty('--vino', m.color);
+      document.documentElement.style.setProperty('--green', m.color);
+    }
+
+    if (m.nombre) document.title = document.title.replace(/^[^—]+/, m.nombre + ' ');
+  } catch { /* si falla, se queda la marca por defecto: nunca una pantalla rota */ }
+}
+
+document.addEventListener('DOMContentLoaded', aplicarMarca);

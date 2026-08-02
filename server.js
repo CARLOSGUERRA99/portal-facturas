@@ -416,6 +416,35 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ── ALCANCE: qué tickets/facturas puede ver quien está en sesión ─────────────
+//
+// Desde que el portal es de G&A y no de un solo RFC hay TRES ámbitos, y
+// filtrar siempre por `user_id = <yo>` se queda corto en dos de ellos:
+//
+//   1. DUEÑO DE LA PLATAFORMA (G&A): rol admin y SIN cliente. Ve todo — es
+//      quien da soporte a los ~30 clientes.
+//   2. GENTE DE UN CLIENTE: ve lo de TODO su cliente, no solo lo suyo. Si una
+//      capturista de GPN sube un ticket, su compañera y su jefa tienen que
+//      verlo: es la misma empresa y el mismo RFC. Con el filtro por usuario,
+//      cada una veía únicamente lo suyo y el trabajo quedaba invisible.
+//   3. LOGIN SUELTO sin cliente: solo lo suyo. Es el caso de seguridad por
+//      defecto — si algo no encaja, se enseña de menos, nunca de más.
+//
+// Devuelve un fragmento de SQL con sus parámetros, para concatenar al WHERE.
+function filtroAlcance(req, columna = "user_id") {
+  const esPlataforma = req.session.userRol === "admin" && !req.session.clienteId;
+  if (esPlataforma) return { sql: "1=1", params: [] };
+  if (req.session.clienteId) {
+    return {
+      sql: `${columna} IN (SELECT id FROM users WHERE cliente_id = ?)`,
+      params: [req.session.clienteId],
+    };
+  }
+  return { sql: `${columna} = ?`, params: [req.session.userId] };
+}
+
+const esPlataforma = (req) => req.session.userRol === "admin" && !req.session.clienteId;
+
 // ── RUTAS WEB ──
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "login.html")));
 app.get("/dashboard", pageAuth, (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
@@ -461,6 +490,9 @@ app.post("/login", async (req, res) => {
       req.session.userName = rows[0].nombre;
       req.session.userRfc  = rows[0].rfc || "";
       req.session.userRol  = rows[0].rol || "residente";
+      // A qué cliente pertenece este login. NULL + rol admin = dueño de la
+      // plataforma (G&A), que ve a todos los clientes. Ver filtroAlcance().
+      req.session.clienteId = rows[0].cliente_id || null;
       req.session.save((err2) => {
         if (err2) return res.json({ ok: false, msg: "Error de sesión" });
         res.json({ ok: true });
@@ -1195,8 +1227,11 @@ app.get("/api/tickets", auth, async (req, res) => {
     // `ruta_archivo` se incluye para que la UI pueda saber si hay foto que ver;
     // la imagen NO se sirve por esa URL directa sino por /api/tickets/:id/imagen,
     // que comprueba que el ticket sea del usuario en sesión.
-    let query = "SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id, error_msg, email_contacto, solicitud_correo_enviada, solicitud_correo_fecha, solicitud_correo_error, (ruta_archivo IS NOT NULL AND ruta_archivo <> '') AS tiene_imagen FROM tickets WHERE user_id = ?";
-    const params = [req.session.userId];
+    // El alcance ya no es "mis tickets" sino "los tickets que me tocan": todo
+    // el cliente si pertenezco a uno, y absolutamente todo si soy G&A.
+    const alcance = filtroAlcance(req);
+    let query = `SELECT id, nombre_archivo, comercio, status, creado, ocr_json, residente_id, error_msg, email_contacto, solicitud_correo_enviada, solicitud_correo_fecha, solicitud_correo_error, (ruta_archivo IS NOT NULL AND ruta_archivo <> '') AS tiene_imagen FROM tickets WHERE ${alcance.sql}`;
+    const params = [...alcance.params];
     if (residente_id === 'sin_asignar') {
       query += " AND residente_id IS NULL";
     } else if (residente_id) {
@@ -1445,19 +1480,66 @@ async function enviarSolicitudPorCorreo(ticket) {
   }
 }
 
+// ── MARCA DEL CLIENTE ────────────────────────────────────────────────────────
+//
+// Cada cliente ve SU portal, no el de otro. G&A vende el mismo motor a ~30
+// clientes, pero lo que aparece en pantalla tiene que sentirse propio: es la
+// diferencia entre "uso el software de un tercero" y "este es mi portal".
+//
+// Si el cliente no ha subido marca, hereda la de G&A. Nadie ve una pantalla
+// rota por no tener logo. Y el dueño de la plataforma ve siempre la de G&A,
+// porque no está dentro de ningún cliente.
+app.get("/api/marca", auth, async (req, res) => {
+  const POR_DEFECTO = {
+    nombre: "Timbra",
+    sub: "G&A Servicios Administrativos",
+    color: "#7B1220",
+    logo: "https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png",
+    esPlataforma: esPlataforma(req),
+    cliente: null,
+  };
+  try {
+    if (!req.session.clienteId) return res.json({ ok: true, marca: POR_DEFECTO });
+    const [[c]] = await db.query(
+      "SELECT id, nombre, marca_nombre, marca_logo, marca_color FROM clientes WHERE id = ?",
+      [req.session.clienteId]
+    );
+    if (!c) return res.json({ ok: true, marca: POR_DEFECTO });
+    res.json({
+      ok: true,
+      marca: {
+        nombre: c.marca_nombre || POR_DEFECTO.nombre,
+        // El subtítulo es el nombre del cliente: así la capturista de GPN ve
+        // "GPN PINTURAS" y sabe de un vistazo con qué RFC está trabajando.
+        sub: c.nombre,
+        color: c.marca_color || POR_DEFECTO.color,
+        logo: c.marca_logo || POR_DEFECTO.logo,
+        esPlataforma: false,
+        cliente: { id: c.id, nombre: c.nombre },
+      },
+    });
+  } catch (e) {
+    res.json({ ok: true, marca: POR_DEFECTO });
+  }
+});
+
 // ── LISTAR FACTURAS ──
 app.get("/api/facturas", auth, async (req, res) => {
   try {
     const { residente_id } = req.query;
+    // Mismo alcance que los tickets: una factura es del CLIENTE, no del login
+    // que dio al botón. Si no, la jefa de GPN no vería las que sacó su
+    // capturista — y son del mismo RFC.
+    const alcance = filtroAlcance(req, "f.user_id");
     let query = "SELECT f.id, f.comercio, f.status, f.xml_url, f.pdf_url, f.creado, t.ocr_json, t.id AS ticket_id, t.residente_id FROM facturas f LEFT JOIN tickets t ON f.ticket_id = t.id";
-    const params = [req.session.userId];
+    const params = [...alcance.params];
     if (residente_id === 'sin_asignar') {
-      query += " WHERE f.user_id = ? AND (t.residente_id IS NULL OR t.id IS NULL)";
+      query += ` WHERE ${alcance.sql} AND (t.residente_id IS NULL OR t.id IS NULL)`;
     } else if (residente_id) {
-      query += " WHERE f.user_id = ? AND t.residente_id = ?";
+      query += ` WHERE ${alcance.sql} AND t.residente_id = ?`;
       params.push(residente_id);
     } else {
-      query += " WHERE f.user_id = ?";
+      query += ` WHERE ${alcance.sql}`;
     }
     query += " ORDER BY f.creado DESC";
     const [rows] = await db.query(query, params);
