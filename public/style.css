@@ -508,7 +508,21 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
 @media (max-width: 700px) {
   .grid-2 { grid-template-columns: 1fr; }
   .form-row { grid-template-columns: 1fr; }
-  .navbar { width: calc(100% - 24px); padding: 10px 14px; border-radius: 20px; }
+  /* ⚠️ SIN `transform` EN MÓVIL, Y ES IMPRESCINDIBLE.
+     En escritorio la barra se centra con `left:50%` + `translateX(-50%)`. Pero
+     un ancestro con transform crea un bloque contenedor, así que el
+     `position:fixed` de la barra inferior deja de anclarse a la pantalla y se
+     ancla a la navbar: comprobado en vivo, la barra salía arriba (top 15px)
+     pese a tener `bottom:0`. En móvil se centra con left/right, que no crea
+     contexto. */
+  .navbar {
+    width: auto;
+    left: 12px;
+    right: 12px;
+    transform: none;
+    padding: 10px 14px;
+    border-radius: 20px;
+  }
   .nav-name { display: none; }
   .stats-grid { grid-template-columns: 1fr 1fr; gap: 12px; }
   .page-title { font-size: 1.25rem; }
