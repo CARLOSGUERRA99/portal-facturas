@@ -1,6 +1,8 @@
 const puppeteer = require('puppeteer');
 const Anthropic = require('@anthropic-ai/sdk');
 const { subirArchivoR2 } = require('../storage/r2');
+// Reconocer el CAPTCHA antes de gastar el alta (ver lib/captcha.js).
+const { detectarCaptcha } = require('../lib/captcha');
 
 // El modelo del agente se elige por variable de entorno, sin tocar código.
 //
@@ -144,6 +146,35 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
       console.log(`🔍 [Analizador] Cargando portal: ${urlFinal}`);
       await page.goto(urlFinal, { waitUntil: 'networkidle2', timeout: 30000 });
       await page.waitForTimeout(2000);
+
+      // ⚠️ Comprobar el CAPTCHA ANTES de gastar nada.
+      //
+      // Dar de alta un portal es la operación más cara del sistema: analizador
+      // (6k tokens) + generador (20k) + hasta dos correcciones (20k cada una),
+      // del orden de un dólar por intento. Si el portal está detrás de un
+      // CAPTCHA, ese dólar se gasta para acabar generando un bot que NUNCA va a
+      // poder facturar — y encima se reintenta cada noche.
+      //
+      // Aquí se corta en los primeros segundos y con un motivo legible, que es
+      // lo que necesita quien lo va a facturar a mano. No se intenta resolver
+      // ni esquivar: se reconoce y se manda a Validación Manual.
+      const bloqueo = await detectarCaptcha(page);
+      if (bloqueo.hay) {
+        await browser.close().catch(() => {});
+        const comoSeLlama = {
+          recaptcha: 'reCAPTCHA de Google', turnstile: 'Cloudflare Turnstile',
+          hcaptcha: 'hCaptcha', radcaptcha: 'RadCaptcha de Telerik',
+          imagen: 'CAPTCHA de imagen', muro: 'muro anti-bot de Cloudflare',
+        }[bloqueo.tipo] || bloqueo.tipo;
+        console.log(`🛑 [Analizador] ${comoSeLlama} en ${urlFinal} — no se gasta el alta`);
+        return {
+          ok: false,
+          etapa: 'captcha',
+          captcha: true,
+          captcha_tipo: bloqueo.tipo,
+          msg: `${comercioNombre || 'El portal'} está protegido con ${comoSeLlama}. No se puede automatizar: hay que facturarlo a mano o pedirlo por correo.`,
+        };
+      }
 
       // ── Seguir el iframe del formulario real si el form está embebido ──
       try {
