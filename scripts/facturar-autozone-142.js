@@ -22,7 +22,8 @@ const TICKET = {
 
 (async () => {
   const [[u]] = await db.query(
-    `SELECT rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi, email
+    `SELECT rfc, razon_social, codigo_postal, regimen_fiscal, uso_cfdi, email,
+            calle, num_ext, num_int, colonia, municipio, estado
        FROM users WHERE id = 1`
   );
   if (!u?.rfc) throw new Error('sin perfil fiscal en la BD');
@@ -42,6 +43,8 @@ const TICKET = {
     codigoPostal: u.codigo_postal,
     regimenFiscal: u.regimen_fiscal,
     usoCfdi: u.uso_cfdi || 'G03',
+    calle: u.calle, ext: u.num_ext, int: u.num_int,
+    colonia: u.colonia, municipio: u.municipio, estado: u.estado,
     ticketId: 142,
   });
 

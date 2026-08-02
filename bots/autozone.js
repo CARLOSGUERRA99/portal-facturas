@@ -32,6 +32,7 @@ async function fillAngular(page, selector, value) {
 async function facturarAutoZone({
   barcode, referencia, folio, fecha, total, formaPago: formaPagoTicket,
   rfc, razonSocial, regimenFiscal, usoCfdi, codigoPostal,
+  calle, ext, int: numInt, colonia, municipio, estado,
   ticketId, portalUrl,
 }) {
   const barcodeVal = String(barcode || referencia || folio || '').trim();
@@ -61,7 +62,13 @@ async function facturarAutoZone({
   await page.setExtraHTTPHeaders({ 'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8' });
 
   const ts = ticketId || Date.now();
+  // ⚠️ Cada captura es un viaje al navegador y cuesta ~1s, y el flujo completo
+  // no cabe en el tope de sesión de Browserless: 5 capturas de la ruta feliz
+  // eran la diferencia entre terminar y morir a mitad de los datos fiscales.
+  // Las de ERROR siempre se toman — son las que sirven para diagnosticar.
+  // Para ver todas: AUTOZONE_DEBUG=1.
   const snap = async (label) => {
+    if (!label.startsWith('error') && process.env.AUTOZONE_DEBUG !== '1') return;
     try {
       const buf = await page.screenshot({ fullPage: false });
       const u = await subirArchivoR2(buf, `debug/autozone_${ts}_${label}_${Date.now()}.png`, 'image/png');
@@ -88,8 +95,15 @@ async function facturarAutoZone({
   try {
     const url = portalUrl || 'https://autozone.cdc.origon.cloud/facturacion/autozone';
     console.log('🌐 Cargando portal AutoZone:', url);
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
-    await page.waitForTimeout(1800);
+    // 'networkidle2' esperaba a que callaran las peticiones de fondo de una
+    // página Angular con imagen grande: 6-8s tirados. Basta con que exista el
+    // enlace que se va a pulsar. Esos segundos hacen falta al final, donde el
+    // asistente todavía pide domicilio y la sesión de Browserless se acaba.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll('a')).some(a => /facturaci[oó]n\s+r[aá]pida/i.test(a.textContent)),
+      { timeout: 20000 }
+    ).catch(() => {});
     await snap('p0_inicio');
 
     // ── Navegar a Facturación Rápida (sin login) ────────────────────────────
@@ -98,7 +112,10 @@ async function facturarAutoZone({
       const link = links.find(a => /facturaci[oó]n\s+r[aá]pida/i.test(a.textContent));
       if (link) link.click();
     });
-    await page.waitForTimeout(900);
+    // 900ms se quedaba corto: la SPA no había pintado el botón "Iniciar" y el
+    // bot abortaba con "no se encontró el botón Iniciar". Recortar esperas para
+    // caber en el tope de sesión tiene un suelo.
+    await page.waitForTimeout(1600);
 
     // ── Click en Iniciar (DIV.navigation-container animated) ─────────────────
     const iniciarOk = await clickNavBtn('Iniciar');
@@ -322,174 +339,145 @@ async function facturarAutoZone({
       }
     }
 
-    // ── PASO 4: Datos de Facturación ──────────────────────────────────────────
-    console.log('✅ Ticket válido — llenando datos fiscales...');
-    await page.waitForTimeout(900);
-
-    // RFC — buscar por formcontrolname o aria-label
-    const rfcFilled = await page.evaluate((rfcVal) => {
-      const sels = [
-        'input[formcontrolname="rfc"]',
-        'input[formcontrolname="RFC"]',
-        'input[aria-label*="RFC" i]',
-        'input[aria-label*="rfc" i]',
-        'input[placeholder*="RFC" i]',
-        'input[placeholder*="rfc" i]',
-      ];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el && el.offsetParent) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if (setter) setter.call(el, rfcVal); else el.value = rfcVal;
-          el.dispatchEvent(new Event('input',  { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          el.dispatchEvent(new Event('blur',   { bubbles: true }));
-          return s;
-        }
-      }
-      // Fallback: primer input visible de tipo text
-      const inputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
-      const vis = inputs.find(el => el.offsetParent);
-      if (vis) {
-        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-        if (setter) setter.call(vis, rfcVal); else vis.value = rfcVal;
-        vis.dispatchEvent(new Event('input', { bubbles: true }));
-        return 'fallback:' + vis.id;
-      }
-      return null;
-    }, rfc);
-    console.log(`📋 RFC (${rfc}) llenado en: ${rfcFilled}`);
-    await page.waitForTimeout(900);
-
-    // Razón social (si existe campo separado)
-    await page.evaluate((val) => {
-      const sels = [
-        'input[formcontrolname="razonSocial"]',
-        'input[formcontrolname="nombre"]',
-        'input[formcontrolname="name"]',
-        'input[aria-label*="raz" i]',
-        'input[aria-label*="nombre" i]',
-      ];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el && el.offsetParent) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if (setter) setter.call(el, val); else el.value = val;
-          el.dispatchEvent(new Event('input',  { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          return;
-        }
-      }
-    }, razonSocial || '');
-    await page.waitForTimeout(500);
-
-    // CP
-    if (codigoPostal) {
-      await page.evaluate((val) => {
-        const sels = [
-          'input[formcontrolname="codigoPostal"]',
-          'input[formcontrolname="cp"]',
-          'input[formcontrolname="zipCode"]',
-          'input[aria-label*="postal" i]',
-          'input[aria-label*="C.P" i]',
-        ];
-        for (const s of sels) {
-          const el = document.querySelector(s);
-          if (el && el.offsetParent) {
-            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-            if (setter) setter.call(el, val); else el.value = val;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            return;
-          }
-        }
-      }, String(codigoPostal));
-    }
-    await page.waitForTimeout(500);
-
-    // Régimen Fiscal — mat-select (Angular Material dropdown)
-    if (regimenFiscal) {
-      await page.evaluate(async (regimen) => {
-        const sels = [
-          'mat-select[formcontrolname="regimen"]',
-          'mat-select[formcontrolname="regimenFiscal"]',
-          'mat-select[formcontrolname="fiscal"]',
-          'mat-select[aria-label*="egimen" i]',
-        ];
-        for (const s of sels) {
-          const sel = document.querySelector(s);
-          if (sel) { sel.click(); break; }
-        }
-        await new Promise(r => setTimeout(r, 600));
-        // Buscar opción correcta en el panel
-        const options = Array.from(document.querySelectorAll('mat-option, [class*=mat-option]'));
-        const opt = options.find(o => o.textContent.includes(regimen) || o.textContent.includes('Personas Morales') || o.textContent.includes('601'));
-        if (opt) opt.click();
-      }, String(regimenFiscal));
-      await page.waitForTimeout(600);
-    }
-
-    // Uso CFDI — mat-select
-    await page.evaluate(async (usoCfdiVal) => {
-      const sels = [
-        'mat-select[formcontrolname="usoCfdi"]',
-        'mat-select[formcontrolname="uso"]',
-        'mat-select[formcontrolname="cfdi"]',
-        'mat-select[aria-label*="uso" i]',
-        'mat-select[aria-label*="cfdi" i]',
-      ];
-      for (const s of sels) {
-        const sel = document.querySelector(s);
-        if (sel) { sel.click(); break; }
-      }
-      await new Promise(r => setTimeout(r, 600));
-      const options = Array.from(document.querySelectorAll('mat-option, [class*=mat-option]'));
-      const opt = options.find(o =>
-        o.textContent.includes(usoCfdiVal) ||
-        o.textContent.includes('Gastos en general') ||
-        o.textContent.includes('G03')
-      );
-      if (opt) opt.click();
-    }, usoCfdi || 'G03');
-    await page.waitForTimeout(600);
-
-    // Correo — buzón de captura
-    const emailFilled = await page.evaluate(() => {
-      const sels = [
-        'input[type="email"]',
-        'input[formcontrolname="email"]',
-        'input[formcontrolname="correo"]',
-        'input[aria-label*="correo" i]',
-        'input[aria-label*="email" i]',
-      ];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el && el.offsetParent) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if (setter) setter.call(el, 'buzonfacturas@serviciosga.site'); else el.value = 'buzonfacturas@serviciosga.site';
-          el.dispatchEvent(new Event('input',  { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          return s;
-        }
-      }
-      return null;
-    });
-    console.log(`📧 Correo llenado en: ${emailFilled}`);
-    await page.waitForTimeout(500);
-    await snap('p5_fiscal_llenado');
-
-    // ── PASO 5: "Confirmanos la forma de pago usada" ─────────────────────────
+    // ── PASO 4: Datos de Facturación — UNA PREGUNTA POR PANTALLA ─────────────
     //
-    // Otro paso que el bot no conocía. Sin resolverlo, el portal se queda al 40%
-    // con el modal "Elige la forma de pago de tu compra" y NO factura nada — y
-    // el bot devolvía ok:true igualmente (ver más abajo).
+    // ⚠️ Aquí estaba el error de diseño del bot. Esta parte del asistente NO es
+    // un formulario con todos los campos a la vez: es una secuencia de
+    // pantallas, cada una con UNA pregunta y UN control ("¿Cuál es tu RFC?",
+    // "Confirmanos la forma de pago usada", …). El bot intentaba llenar RFC,
+    // razón social, CP, régimen, uso de CFDI y correo de golpe, contra la
+    // pantalla que hubiera en ese momento. Consecuencias medidas el 02/08/2026
+    // con el ticket #142:
+    //   · El RFC acabó escrito en #mat-input-4, que es "Selecciona la forma de
+    //     pago" — por un fallback de "escribe en el primer input visible".
+    //   · Los demás campos no se escribían en ninguna parte (todos "null").
+    //   · El asistente se quedaba clavado y la sesión de Browserless moría.
     //
-    // El dato sale del ticket: el #142 dice "VISADEBITO/VISADEBITO" y
-    // "XXXXXXXXXXXX9913 VISA", así que débito. Si el ticket no lo dice, efectivo.
-    const esTarjeta = /debito|débito|credito|crédito|visa|master|amex|tarjeta|chip/i
-      .test(String(formaPagoTicket || ''));
+    // Ahora se LEE la pregunta de cada pantalla y se responde solo esa. Los
+    // controles son de dos tipos:
+    //   · input normal  → se teclea el valor.
+    //   · autocompletar → placeholder "Selecciona …"; hay que TECLEAR para que
+    //     filtre y luego pulsar la opción, que se busca POR TEXTO (no son
+    //     <mat-option> pese a ser Angular Material).
+    const correoCaptura = 'buzonfacturas@serviciosga.site';
+
+    // La forma de pago sale del ticket: el #142 dice "VISADEBITO/VISADEBITO" y
+    // "XXXXXXXXXXXX9913 VISA". El portal la ofrece con clave SAT ("28 - Tarjeta
+    // de débito"), así que basta con filtrar por la palabra.
+    const esTarjeta = /debito|débito|credito|crédito|visa|master|amex|tarjeta|chip/i.test(String(formaPagoTicket || ''));
     const esCredito = /credito|crédito/i.test(String(formaPagoTicket || ''));
     const buscado = esTarjeta ? (esCredito ? 'crédito' : 'débito') : 'efectivo';
 
+    const RESPUESTAS = [
+      // ⚠️ EL ORDEN IMPORTA: gana el primer patrón que case. "La razón social
+      // asociada al RFC" contiene "RFC", así que si la regla del RFC fuera
+      // antes, el RFC acabaría escrito en el campo de la razón social — pasó.
+      { pregunta: /forma de pago/i,                       buscar: [buscado] },
+      { pregunta: /raz[oó]n social|nombre.*fiscal|nombre del receptor/i, texto: razonSocial },
+      { pregunta: /r\.?f\.?c|registro federal/i,          texto: rfc },
+      { pregunta: /c[oó]digo postal|c\.?p\.?\b/i,         texto: codigoPostal },
+      // El desplegable puede listar la clave, la descripción o ambas: se
+      // prueban varias formas de nombrar lo mismo antes de rendirse.
+      { pregunta: /r[eé]gimen/i,                          buscar: [String(regimenFiscal || '601'), 'General de Ley Personas Morales', 'Personas Morales'] },
+      { pregunta: /uso.*(cfdi|factura)|para qu[eé]/i,     buscar: [String(usoCfdi || 'G03'), 'Gastos en general'] },
+      { pregunta: /correo|e-?mail/i,                      texto: correoCaptura },
+      // Domicilio fiscal: el asistente lo pide al final (68-84%), en pantallas
+      // aparte. Sin estas reglas el bot llegaba hasta ahí y se quedaba mirando
+      // campos que no sabía contestar ("No. Exterior", "Delegación o municipio").
+      { pregunta: /delegaci[oó]n|municipio/i,             texto: municipio },
+      { pregunta: /no\.?\s*exterior|n[uú]mero exterior/i, texto: ext || 'S/N' },
+      { pregunta: /no\.?\s*interior|n[uú]mero interior/i, texto: numInt || 'S/N' },
+      { pregunta: /colonia/i,                             texto: colonia },
+      { pregunta: /calle/i,                               texto: calle },
+      { pregunta: /estado|entidad/i,                      texto: estado },
+    ];
+
+    // Devuelve las líneas candidatas a ser el enunciado, sin la barra lateral ni
+    // la navegación. Ojo: entre ellas también caen las OPCIONES del
+    // autocompletar ("28 - Tarjeta de débito"), así que quedarse con la última
+    // línea larga no vale — hay que dejar que el llamador busque un patrón.
+    const lineasPantalla = () => page.evaluate(() => {
+      const ignorar = /^(iniciar sesi|receipt|facturaci|help|ayuda|view_list|anterior|siguiente|\d+%|datos de|bienvenido|iniciar|keyboard|ver ticket|\d{2}\s*-\s)/i;
+      return document.body.innerText.split('\n').map(l => l.trim())
+        .filter(l => l.length > 12 && !ignorar.test(l));
+    });
+
+    // ⚠️ Devuelve TODOS los campos visibles, no solo el primero.
+    //
+    // Los pasos 1-3 son de una pregunta por pantalla, pero el de datos fiscales
+    // apila varios campos con su rótulo encima: correo, RFC, régimen y uso de
+    // CFDI, todos a la vez. Con la versión de "un solo control" el bot rellenaba
+    // el correo una y otra vez y el asistente se quedaba clavado en el 45%.
+    //
+    // El rótulo se asocia por POSICIÓN: es el texto visible que queda justo
+    // encima del campo y alineado con él. No hay <label for> utilizable.
+    const controlesVisibles = () => page.evaluate(() => {
+      const textos = Array.from(document.querySelectorAll('div, span, p, h1, h2, h3'))
+        .filter(e => e.offsetParent !== null && e.children.length === 0 && (e.textContent || '').trim().length > 8)
+        .map(e => ({ txt: e.textContent.trim(), r: e.getBoundingClientRect() }));
+      // Hay TRES tipos de control en este asistente y hace falta distinguirlos:
+      //   · input normal      → se teclea el valor
+      //   · input autocompletar (placeholder "Selecciona …") → teclear filtra
+      //   · <mat-select>      → NO es un <input>; se abre con clic y se elige
+      // Buscar solo 'input' dejaba fuera el régimen fiscal, que se quedaba en
+      // rojo con "Campo Obligatorio" y bloqueaba el asistente en el 45%.
+      const nodos = Array.from(document.querySelectorAll('input, mat-select, .mat-select'));
+      return nodos
+        .filter(i => i.offsetParent !== null && i.type !== 'hidden' && i.getBoundingClientRect().width > 40)
+        .map((i, idx) => {
+          const r = i.getBoundingClientRect();
+          const arriba = textos
+            .filter(t => t.r.bottom <= r.top + 4 && r.top - t.r.bottom < 70 && Math.abs(t.r.left - r.left) < 120)
+            .sort((a, b) => b.r.bottom - a.r.bottom)[0];
+          const esSelect = i.tagName.toLowerCase() !== 'input';
+          return {
+            idx,
+            x: r.x + r.width / 2,
+            y: r.y + r.height / 2,
+            esSelect,
+            placeholder: i.placeholder || i.getAttribute('data-placeholder') || '',
+            etiqueta: arriba ? arriba.txt : '',
+            valor: esSelect ? (i.textContent || '').trim() : (i.value || '').trim(),
+          };
+        });
+    });
+
+    // `candidatos` son varias formas de nombrar la MISMA opción: el portal a
+    // veces lista "601", a veces "General de Ley Personas Morales". Se prueban
+    // en orden y se elige la primera que aparezca de verdad en la lista.
+    const opcionesEnPantalla = () => page.evaluate(() =>
+      Array.from(document.querySelectorAll('mat-option, .mat-option, li, div, span'))
+        .filter(o => o.offsetParent !== null && o.children.length === 0 && o.getBoundingClientRect().width > 20)
+        .map(o => (o.textContent || '').trim())
+        .filter(t => t.length > 2 && t.length < 80));
+
+    const elegirDeLista = async (candidatos, teclear = true) => {
+      const lista = [].concat(candidatos).filter(Boolean);
+      for (const filtro of lista) {
+        if (teclear && filtro) {
+          await page.keyboard.down('Control'); await page.keyboard.press('KeyA'); await page.keyboard.up('Control');
+          await page.keyboard.type(filtro, { delay: 55 });
+        }
+        await page.waitForTimeout(600);
+        const rect = await page.evaluate((f) => {
+          const o = Array.from(document.querySelectorAll('mat-option, .mat-option, li, div, span'))
+            .filter(o => o.offsetParent !== null && o.children.length === 0 && o.getBoundingClientRect().width > 20)
+            .find(o => (o.textContent || '').toLowerCase().includes(f.toLowerCase()));
+          if (!o) return null;
+          const r = o.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2, txt: o.textContent.trim() };
+        }, filtro);
+        if (rect) {
+          await page.mouse.click(rect.x, rect.y);
+          await page.waitForTimeout(600);
+          return rect.txt;
+        }
+      }
+      return null;
+    };
+
+    // El modal "Elige la forma de pago…" / "Ingresa…" bloquea todo hasta que se
+    // acepta. Aparece cuando se pulsa Siguiente sin haber respondido.
     const cerrarModal = async () => {
       const r = await page.evaluate(() => {
         const b = Array.from(document.querySelectorAll('button, div'))
@@ -498,60 +486,141 @@ async function facturarAutoZone({
         const q = b.getBoundingClientRect();
         return { x: q.x + q.width / 2, y: q.y + q.height / 2 };
       });
-      if (r) { await page.mouse.click(r.x, r.y); await page.waitForTimeout(600); return true; }
-      return false;
+      if (!r) return false;
+      await page.mouse.click(r.x, r.y);
+      await page.waitForTimeout(500);
+      return true;
     };
 
-    const necesitaFormaPago = await page.evaluate(() =>
-      /forma de pago/i.test(document.body.innerText));
-    if (necesitaFormaPago) {
+    // Bucle acotado: cada vuelta responde una pantalla. El límite existe para no
+    // girar en vacío si el asistente deja de avanzar — y para no comerse el tope
+    // de sesión de Browserless, que es lo que mataba al bot a mitad de camino.
+    let progresoPrevio = '';
+    let vueltasAlCien = 0;
+    for (let vuelta = 0; vuelta < 12; vuelta++) {
       await cerrarModal();
-      console.log(`💳 Forma de pago del ticket → se buscará "${buscado}"`);
-      // El desplegable es un mat-select: se abre con clic sintético y las
-      // opciones salen en un overlay (.mat-option), fuera del propio select.
-      const sel = await page.evaluate(() => {
-        const cands = Array.from(document.querySelectorAll(
-          'mat-select, .mat-select, select, [role="combobox"], [role="listbox"], .mat-form-field, input[readonly]'
-        )).filter(s => s.offsetParent !== null && s.getBoundingClientRect().width > 40);
-        const inventario = cands.map(c => `${c.tagName.toLowerCase()}.${(typeof c.className === 'string' ? c.className : '').split(' ')[0]}="${(c.textContent || c.value || '').trim().slice(0, 25)}"`);
-        // El de la forma de pago es el ÚLTIMO: arriba va el RFC.
-        const s = cands[cands.length - 1];
-        if (!s) return { inventario, rect: null };
-        const r = s.getBoundingClientRect();
-        return { inventario, rect: { x: r.x + r.width / 2, y: r.y + r.height / 2 } };
-      });
-      console.log(`   controles en pantalla: ${sel.inventario.join(' | ') || '(ninguno)'}`);
-      const rectSel = sel.rect;
-      if (rectSel) {
-        await page.mouse.click(rectSel.x, rectSel.y);
-        await page.waitForTimeout(1200);
-        const opciones = await page.evaluate(() =>
-          Array.from(document.querySelectorAll('mat-option, .mat-option'))
-            .filter(o => o.offsetParent !== null).map(o => o.textContent.trim()));
-        console.log(`   opciones: ${opciones.join(' | ') || '(ninguna)'}`);
-        const rectOpt = await page.evaluate((txt) => {
-          const o = Array.from(document.querySelectorAll('mat-option, .mat-option'))
-            .filter(o => o.offsetParent !== null)
-            .find(o => o.textContent.toLowerCase().includes(txt));
-          if (!o) return null;
-          const r = o.getBoundingClientRect();
-          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-        }, buscado);
-        if (rectOpt) {
-          await page.mouse.click(rectOpt.x, rectOpt.y);
-          await page.waitForTimeout(1000);
-          console.log(`   ✅ forma de pago seleccionada: ${buscado}`);
-        } else {
-          await snap('error_forma_pago_sin_opcion');
-          await browser.close();
-          return { ok: false, msg: `AutoZone: no había opción de forma de pago "${buscado}" (opciones: ${opciones.join(', ')})` };
-        }
-      }
-      await clickNavBtn('Siguiente');
-      await page.waitForTimeout(2500);
-      await snap('p5b_post_forma_pago');
-    }
+      const lineas = await lineasPantalla();
+      const progreso = await page.evaluate(() => (document.body.innerText.match(/(\d{1,3})%/) || [])[0] || '');
 
+      // ¿Ya terminó? El asistente muestra la confirmación del CFDI al final.
+      const terminado = await page.evaluate(() =>
+        /factura.*(generad|emitid|exitos)|cfdi.*(generad|list)|descargar/i.test(document.body.innerText));
+      if (terminado) { console.log(`🎉 El asistente llegó al final (${progreso})`); break; }
+
+      const controles = await controlesVisibles();
+      if (!controles.length) {
+        // Pantalla sin campo: solo hay que avanzar.
+        if (!await clickNavBtn('Siguiente')) break;
+        await page.waitForTimeout(1200);
+        continue;
+      }
+
+      // Se rellena TODO lo que haya en esta pantalla antes de pulsar Siguiente.
+      let algoLlenado = false;
+      for (const ctrl of controles) {
+        const pista = `${ctrl.etiqueta} ${ctrl.placeholder}`.trim();
+        const r = RESPUESTAS.find(x => x.pregunta.test(pista));
+        if (!r) {
+          console.log(`   ⤳ campo sin respuesta conocida: "${pista}"`);
+          continue;
+        }
+        // Ya contestado: no se vuelve a tocar (reescribirlo reabría el
+        // autocompletar y el asistente se quedaba dando vueltas).
+        const esperado = String(r.texto || r.buscar || '').toLowerCase();
+        if (ctrl.valor && ctrl.valor.toLowerCase().includes(esperado.slice(0, 6))) continue;
+
+        if (ctrl.esSelect) {
+          // Un mat-select no acepta escritura: se abre y se elige la opción.
+          await page.mouse.click(ctrl.x, ctrl.y);
+          await page.waitForTimeout(800);
+          const elegido = await elegirDeLista(r.buscar || r.texto, false);
+          if (!elegido) {
+            const disponibles = (await opcionesEnPantalla()).slice(0, 12).join(' | ');
+            console.log(`   opciones disponibles: ${disponibles}`);
+            await snap('error_sin_opcion_select');
+            await browser.close();
+            return { ok: false, msg: `AutoZone: sin opción ${JSON.stringify(r.buscar || r.texto)} en "${pista}" (había: ${disponibles})` };
+          }
+          console.log(`   ${progreso} ${pista} → ${elegido}`);
+          algoLlenado = true;
+          continue;
+        }
+
+        // Los campos de texto se escriben de golpe con el setter nativo de
+        // Angular (instantáneo) en vez de tecla a tecla: son ~100 caracteres
+        // entre correo, RFC, razón social y domicilio, y a 35ms cada uno eran
+        // varios segundos que no sobran contra el tope de sesión. Los de
+        // autocompletar SÍ necesitan tecleo real, porque es lo que dispara el
+        // filtrado de la lista.
+        if (!r.buscar) {
+          // Por ÍNDICE, no por elementFromPoint: en las pantallas con varios
+          // campos ese punto podía caer sobre un contenedor y el valor no se
+          // escribía nunca — el bot lo daba por puesto, volvía a encontrarlo
+          // vacío en la siguiente vuelta y se quedaba en bucle al 100%.
+          await page.evaluate((idx, val) => {
+            const el = Array.from(document.querySelectorAll('input, mat-select, .mat-select'))
+              .filter(i => i.offsetParent !== null && i.type !== 'hidden' && i.getBoundingClientRect().width > 40)[idx];
+            if (!el || el.tagName !== 'INPUT') return;
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            if (setter) setter.call(el, val); else el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('blur', { bubbles: true }));
+          }, ctrl.idx, String(r.texto || ''));
+          console.log(`   ${progreso} ${pista} → ${r.texto}`);
+          algoLlenado = true;
+          continue;
+        }
+
+        await page.mouse.click(ctrl.x, ctrl.y, { clickCount: 3 });
+        await page.keyboard.press('Backspace');
+        await page.waitForTimeout(200);
+
+        if (r.buscar) {
+          const elegido = await elegirDeLista(r.buscar);
+          if (!elegido) {
+            await snap('error_sin_opcion');
+            await browser.close();
+            return { ok: false, msg: `AutoZone: sin opción "${r.buscar}" para "${pista}"` };
+          }
+          console.log(`   ${progreso} ${pista} → ${elegido}`);
+        } else {
+          await page.keyboard.type(String(r.texto || ''), { delay: 35 });
+          await page.waitForTimeout(200);
+          console.log(`   ${progreso} ${pista} → ${r.texto}`);
+        }
+        algoLlenado = true;
+      }
+      if (!algoLlenado && controles.every(c => !c.valor)) {
+        console.log(`❓ Pantalla no reconocida (${progreso}) — campos: ${controles.map(c => `"${c.etiqueta}|${c.placeholder}"`).join(', ')}`);
+        await snap('error_pantalla_desconocida');
+        await browser.close();
+        return { ok: false, msg: `AutoZone: pantalla no reconocida en ${progreso}` };
+      }
+
+      await clickNavBtn('Siguiente');
+      await page.waitForTimeout(1100);
+
+      // Si el progreso no se mueve dos veces seguidas, algo se atascó.
+      const nuevo = await page.evaluate(() => (document.body.innerText.match(/(\d{1,3})%/) || [])[0] || '');
+
+      // Al 100% ya no queda nada que responder: el asistente deja de tener
+      // "Siguiente" y lo que toca es pulsar el botón de generar la factura, que
+      // se maneja fuera del bucle. Sin esta salida el bot seguía dándole a
+      // Siguiente y se declaraba a sí mismo atascado teniendo todo relleno.
+      if (progreso === '100%' && (!algoLlenado || vueltasAlCien++ >= 1)) {
+        console.log('✅ Todos los datos capturados — el asistente está al 100%');
+        break;
+      }
+
+      if (nuevo === progreso && progreso === progresoPrevio) {
+        await snap('error_asistente_atascado');
+        await browser.close();
+        return { ok: false, msg: `AutoZone: el asistente se quedó atascado en ${progreso}` };
+      }
+      progresoPrevio = progreso;
+    }
+    await snap('p5_fiscal_llenado');
     // Click Siguiente / Generar / Facturar
     const generarOk = await clickNavBtn('Siguiente');
     if (!generarOk) {
@@ -602,7 +671,12 @@ async function facturarAutoZone({
     //
     // El progreso del asistente es la prueba: si sigue en "Datos de Compra" o
     // por debajo del tramo final, no hay factura.
-    const seFacturo = /factura.*(generad|emitid|exitos)|cfdi.*(generad|list)|descarga|comprobante.*generad/i.test(bodyFinal);
+    // ⚠️ El texto exacto de AutoZone al terminar es
+    //   "Se generó y envió correctamente el documento."
+    // — dice "documento", no "factura", así que una regex que solo buscara
+    // "factura generada" daba el trabajo por fallido cuando el CFDI YA existía.
+    // Pasó con el #142: folio 995272 emitido y el bot devolviendo error.
+    const seFacturo = /se gener[oó].*(correctamente|documento)|factura.*(generad|emitid|exitos)|cfdi.*(generad|list)|comprobante.*generad|descarga/i.test(bodyFinal);
     const sigueEnElAsistente = /cu[aá]l fue|confirmanos|elige la forma|ingresa (la fecha|el monto)/i.test(bodyFinal);
     if (!seFacturo || sigueEnElAsistente) {
       const paso = (bodyFinal.match(/\d{1,3}%/) || ['?'])[0];
