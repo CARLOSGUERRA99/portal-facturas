@@ -793,17 +793,21 @@
       "tecnologia": "SoftRestaurant / mefacturo.mx — misma plataforma que SushiO",
       "stealth": true,
       "comercios": [
-        "El Caporal (restaurante)"
+        "El Caporal (restaurante)",
+        "El Caporal Restaurante Campestre"
       ],
       "deteccion": {
         "por_portal_field": "elcaporal",
         "por_texto_ocr": [
           "el caporal",
-          "caporal"
+          "caporal",
+          "elcaporalrestaurantecampestre",
+          "el caporal restaurante campestre"
         ],
         "por_comercio": [
           "el caporal",
-          "caporal"
+          "caporal",
+          "elcaporalrestaurantecampestre"
         ],
         "por_url_qr": [
           "mefacturo.mx/elcaporal"
@@ -833,17 +837,21 @@
       "stealth": true,
       "comercios": [
         "Allegro Caffe",
-        "Txutxu Food"
+        "Txutxu Food",
+        "Allegro Caffe Zona Dorada / Txutxu Food"
       ],
       "deteccion": {
         "por_portal_field": "allegro",
         "por_texto_ocr": [
           "allegro",
-          "txutxu"
+          "txutxu",
+          "allegrocaffezonadoradatxutxufo",
+          "allegro caffe zona dorada / txutxu food"
         ],
         "por_comercio": [
           "allegro",
-          "txutxu"
+          "txutxu",
+          "allegrocaffezonadoradatxutxufo"
         ],
         "por_url_qr": [
           "mefacturo.mx/allegre"
@@ -866,21 +874,25 @@
     },
     "autozone": {
       "nombre": "AutoZone de México",
-      "bot": null,
-      "estado": "pendiente",
+      "bot": "autozone.js",
+      "estado": "activo",
       "url_base": "https://autozone.cdc.origon.cloud/facturacion/autozone",
       "tecnologia": "Origon Cloud — plataforma SaaS de facturación",
       "stealth": true,
       "comercios": [
-        "AutoZone (cualquier sucursal México)"
+        "AutoZone (cualquier sucursal México)",
+        "AutoZone de Mexico"
       ],
       "deteccion": {
         "por_portal_field": "autozone",
         "por_texto_ocr": [
-          "autozone"
+          "autozone",
+          "autozonedemexico",
+          "autozone de mexico"
         ],
         "por_comercio": [
-          "autozone"
+          "autozone",
+          "autozonedemexico"
         ],
         "por_url_qr": [
           "autozone.cdc.origon.cloud",
@@ -889,38 +901,10 @@
       },
       "notas_desarrollo": "Bot pendiente de crear. Plataforma Origon Cloud. Campos esperados: folio, fecha, total, barcode, RFC, razón social, CP, correo."
     },
-    "littlecaesars": {
-      "nombre": "Little Caesars Navojoa",
-      "bot": null,
-      "estado": "pendiente",
-      "url_base": "https://cfdi.analytix360.cloud/cafrena/lc/crear-cvo/",
-      "tecnologia": "Analytix360 Cloud — plataforma SaaS de facturación",
-      "stealth": true,
-      "comercios": [
-        "Little Caesars Navojoa",
-        "CAFRENA"
-      ],
-      "deteccion": {
-        "por_portal_field": "littlecaesars",
-        "por_texto_ocr": [
-          "little caesars",
-          "little caesar"
-        ],
-        "por_comercio": [
-          "little caesars",
-          "little caesar"
-        ],
-        "por_url_qr": [
-          "cfdi.analytix360.cloud",
-          "analytix360"
-        ]
-      },
-      "notas_desarrollo": "Bot pendiente. Plataforma Analytix360. Verificar campos del formulario."
-    },
     "tufesa": {
       "nombre": "TUFESA",
-      "bot": null,
-      "estado": "pendiente",
+      "bot": "tufesa.js",
+      "estado": "activo",
       "url_base": "https://www.tufesa.com.mx/facturacion",
       "tecnologia": "Por determinar",
       "stealth": true,
@@ -965,87 +949,6 @@
       },
       "notas_desarrollo": "Bot pendiente. Analizar portal de facturación."
     },
-    "allegrocaffezonadoradatxutxufo": {
-      "nombre": "Allegro Caffe Zona Dorada / Txutxu Food",
-      "bot": "bots/allegrocaffezonadoradatxutxufo.js",
-      "estado": "produccion",
-      "url_base": "https://mefacturo.mx/allegrezonadorada",
-      "tecnologia": "Desconocida",
-      "stealth": false,
-      "comercios": [
-        "Allegro Caffe Zona Dorada / Txutxu Food"
-      ],
-      "deteccion": {
-        "por_portal_field": "allegrocaffezonadoradatxutxufo",
-        "por_texto_ocr": [
-          "allegrocaffezonadoradatxutxufo",
-          "allegro caffe zona dorada / txutxu food"
-        ],
-        "por_comercio": [
-          "allegrocaffezonadoradatxutxufo"
-        ],
-        "por_url_qr": []
-      },
-      "campos_ticket": [],
-      "datos_fijos": {
-        "usoCfdi": "G03 — Gastos en general",
-        "email_captura": "buzonfacturas@serviciosga.site"
-      }
-    },
-    "elcaporalrestaurantecampestre": {
-      "nombre": "El Caporal Restaurante Campestre",
-      "bot": "bots/elcaporalrestaurantecampestre.js",
-      "estado": "produccion",
-      "url_base": "https://mefacturo.mx/elcaporalrestaurante",
-      "tecnologia": "Desconocida",
-      "stealth": false,
-      "comercios": [
-        "El Caporal Restaurante Campestre"
-      ],
-      "deteccion": {
-        "por_portal_field": "elcaporalrestaurantecampestre",
-        "por_texto_ocr": [
-          "elcaporalrestaurantecampestre",
-          "el caporal restaurante campestre"
-        ],
-        "por_comercio": [
-          "elcaporalrestaurantecampestre"
-        ],
-        "por_url_qr": []
-      },
-      "campos_ticket": [],
-      "datos_fijos": {
-        "usoCfdi": "G03 — Gastos en general",
-        "email_captura": "buzonfacturas@serviciosga.site"
-      }
-    },
-    "autozonedemexico": {
-      "nombre": "AutoZone de Mexico",
-      "bot": "bots/autozonedemexico.js",
-      "estado": "produccion",
-      "url_base": "https://autozone.cdc.origon.cloud/facturacion/autozone",
-      "tecnologia": "Desconocida",
-      "stealth": false,
-      "comercios": [
-        "AutoZone de Mexico"
-      ],
-      "deteccion": {
-        "por_portal_field": "autozonedemexico",
-        "por_texto_ocr": [
-          "autozonedemexico",
-          "autozone de mexico"
-        ],
-        "por_comercio": [
-          "autozonedemexico"
-        ],
-        "por_url_qr": []
-      },
-      "campos_ticket": [],
-      "datos_fijos": {
-        "usoCfdi": "G03 — Gastos en general",
-        "email_captura": "buzonfacturas@serviciosga.site"
-      }
-    },
     "littlecaesarsnavojoa": {
       "nombre": "Little Caesars Navojoa",
       "bot": "bots/littlecaesarsnavojoa.js",
@@ -1054,18 +957,26 @@
       "tecnologia": "Desconocida",
       "stealth": false,
       "comercios": [
-        "Little Caesars Navojoa"
+        "Little Caesars Navojoa",
+        "CAFRENA"
       ],
       "deteccion": {
         "por_portal_field": "littlecaesarsnavojoa",
         "por_texto_ocr": [
           "littlecaesarsnavojoa",
-          "little caesars navojoa"
+          "little caesars navojoa",
+          "little caesars",
+          "little caesar"
         ],
         "por_comercio": [
-          "littlecaesarsnavojoa"
+          "littlecaesarsnavojoa",
+          "little caesars",
+          "little caesar"
         ],
-        "por_url_qr": []
+        "por_url_qr": [
+          "cfdi.analytix360.cloud",
+          "analytix360"
+        ]
       },
       "campos_ticket": [],
       "datos_fijos": {
@@ -1289,6 +1200,174 @@
         "nota_deteccion": "El bot pide DOS datos: folio = el número de \"Ticket:\", referencia = la \"Referencia para facturar\" (que coincide con el número de \"Estación:\"). No confundirlos."
       },
       "notas_desarrollo": "Otro tenant NexusFuel. Cada tenant guarda su propio registro de cliente aunque el RFC sea el mismo."
+    },
+    "capufe": {
+      "nombre": "CAPUFE — Caminos y Puentes Federales",
+      "bot": "capufe.js",
+      "estado": "activo",
+      "url_base": "https://facturacioncapufe.com.mx/Capufe/facturacionrapida",
+      "tecnologia": "SPA React + PrimeReact, backend REST",
+      "stealth": true,
+      "comercios": [
+        "CAPUFE",
+        "casetas de cuota federales",
+        "plazas de cobro"
+      ],
+      "deteccion": {
+        "por_portal_field": "capufe",
+        "por_texto_ocr": [
+          "capufe",
+          "caminos y puentes",
+          "plaza de cobro",
+          "facturacioncapufe"
+        ],
+        "por_comercio": [
+          "capufe",
+          "caminos y puentes federales"
+        ],
+        "por_url_qr": [
+          "facturacioncapufe.com.mx",
+          "capufe.gob.mx"
+        ],
+        "nota_deteccion": "El dato que pide el portal es el código \"FACTURACION\" de 18 caracteres, NO el folio."
+      },
+      "notas_desarrollo": "Consultar el código lo RESERVA: si se valida y no se llega a \"Facturar conceptos\", queda tomado. Régimen y Uso CFDI son p-dropdown de PrimeReact, no <select>."
+    },
+    "dana": {
+      "nombre": "Dana Comida Mexicana",
+      "bot": "dana.js",
+      "estado": "activo",
+      "url_base": "https://autofactura.softrestaurant.com",
+      "tecnologia": "SoftRestaurant / AutoFactura",
+      "stealth": true,
+      "comercios": [
+        "Dana Comida Mexicana"
+      ],
+      "deteccion": {
+        "por_portal_field": "dana",
+        "por_texto_ocr": [
+          "dana comida",
+          "autofactura"
+        ],
+        "por_comercio": [
+          "dana"
+        ],
+        "por_url_qr": [
+          "autofactura"
+        ],
+        "nota_deteccion": "Misma familia que SushiO pero con selectores propios (#unicCode/#folio/#RFC)."
+      },
+      "notas_desarrollo": "referencia = código de facturación, distinto del folio."
+    },
+    "erfc": {
+      "nombre": "eRFC (plataforma compartida)",
+      "bot": "erfc.js",
+      "estado": "activo",
+      "url_base": "https://erfc.com.mx",
+      "tecnologia": "PHP + Select2 con catálogos por AJAX",
+      "stealth": true,
+      "comercios": [
+        "gasolineras y comercios chicos que facturan en erfc.com.mx"
+      ],
+      "deteccion": {
+        "por_portal_field": "erfc",
+        "por_texto_ocr": [
+          "erfc.com.mx",
+          "erfc",
+          "idw"
+        ],
+        "por_comercio": [],
+        "por_url_qr": [
+          "erfc.com.mx"
+        ],
+        "nota_deteccion": "El dato de facturación es el código IDW impreso en el ticket."
+      },
+      "notas_desarrollo": "El checkbox de términos está DISABLED hasta pulsar \"Oprima para Leer Términos y Condiciones\"."
+    },
+    "facturagas": {
+      "nombre": "FacturaGAS / ControlGAS (ATIO Group)",
+      "bot": "facturagas.js",
+      "estado": "activo",
+      "url_base": "https://app.facturagas.net",
+      "tecnologia": "ASP.NET — \"Facturación sin Usuario\"",
+      "stealth": true,
+      "comercios": [
+        "gasolineras que facturan con ControlGAS",
+        "Suministros Energéticos de Calidad"
+      ],
+      "deteccion": {
+        "por_portal_field": "facturagas",
+        "por_texto_ocr": [
+          "facturagas",
+          "controlgas",
+          "controlgasfe",
+          "webid"
+        ],
+        "por_comercio": [],
+        "por_url_qr": [
+          "facturagas.net",
+          "controlgasfe"
+        ],
+        "nota_deteccion": "NO navegar a la URL DDNS impresa en el ticket: suele venir mal transcrita. Usar SIEMPRE app.facturagas.net."
+      },
+      "notas_desarrollo": "El ticket imprime una URL propia del negocio (ej. sumeca.ddns.net:83) que a menudo no resuelve. El WebID es el dato clave."
+    },
+    "orler": {
+      "nombre": "Casetas de Sinaloa (Orler)",
+      "bot": "orler.js",
+      "estado": "activo",
+      "url_base": "https://facturacion.sinaloa.gob.mx",
+      "tecnologia": "Portal estatal con login de cuenta",
+      "stealth": true,
+      "comercios": [
+        "Autopistas de cuota de Sinaloa",
+        "Caseta El Pisal",
+        "Caseta Las Brisas"
+      ],
+      "deteccion": {
+        "por_portal_field": "orler",
+        "por_texto_ocr": [
+          "sinaloa.gob.mx",
+          "caseta",
+          "autopista de cuota"
+        ],
+        "por_comercio": [
+          "caseta",
+          "autopista de cuota"
+        ],
+        "por_url_qr": [
+          "facturacion.sinaloa.gob.mx",
+          "sinaloa.gob.mx"
+        ],
+        "nota_deteccion": "Requiere login: credenciales SOLO por ORLER_SINALOA_USER / ORLER_SINALOA_PASS, nunca en código."
+      },
+      "notas_desarrollo": "Las casetas tardan 5-6 días hábiles desde el pago en aparecer: error_code reintentar_despues, no ticket inválido."
+    },
+    "ramcal": {
+      "nombre": "RAMCAL",
+      "bot": "ramcal.js",
+      "estado": "activo",
+      "url_base": "https://corporativoramcal.mx",
+      "tecnologia": "portal propio con registro de cliente",
+      "stealth": true,
+      "comercios": [
+        "gasolineras RAMCAL (Manzanillo / Guadalajara)"
+      ],
+      "deteccion": {
+        "por_portal_field": "ramcal",
+        "por_texto_ocr": [
+          "ramcal",
+          "corporativoramcal"
+        ],
+        "por_comercio": [
+          "ramcal"
+        ],
+        "por_url_qr": [
+          "corporativoramcal.mx",
+          "ramcal.no-ip"
+        ]
+      },
+      "notas_desarrollo": "GPN ya tiene perfil guardado. Ojo con el Total: el ticket muestra SubTotal y Total, y el bueno es el Total."
     }
   }
 }

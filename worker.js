@@ -152,6 +152,17 @@ const botsWorker = new Worker("bots", async (job, token) => {
 }, {
   connection: nuevaConexion(),
   concurrency: 4,
+  // ⚠️ SIN ESTO EL SISTEMA PUEDE EMITIR LA MISMA FACTURA DOS VECES.
+  //
+  // El lock por defecto de BullMQ es 30s, pero un bot tarda bastante más:
+  // medido en ticket_intentos, hasta 253s, y OXXO ronda los 58s. Pasados los
+  // 30s BullMQ da el job por "stalled" y lo entrega a otro worker MIENTRAS EL
+  // PRIMERO SIGUE FACTURANDO. De ahí salían los reintentos fantasma del 31/07:
+  // 7 tickets encolados 4 veces cada uno al agente a lo largo de 5 horas.
+  //
+  // 10 minutos cubre con margen al bot más lento (7-Eleven, ~279s) sin dejar un
+  // job zombi bloqueado media hora si el proceso muere de verdad.
+  lockDuration: 10 * 60 * 1000,
 });
 
 // ── Worker AGENTE (concurrencia 1 — nunca bloquea la facturación normal) ─────

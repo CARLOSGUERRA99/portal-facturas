@@ -3,6 +3,14 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
+// El modelo del agente se elige por variable de entorno, sin tocar código.
+//
+// Aquí la calidad importa MÁS que en el OCR: si el bot generado sale mal, se
+// pierde el portal entero y cada corrección son otros 20.000 tokens. Subirlo a
+// Opus es MODELO_AGENTE=claude-opus-5 en Railway y nada más.
+const MODELO_AGENTE = process.env.MODELO_AGENTE || "claude-sonnet-4-6";
+
+
 function nombreFuncionDesde(nombrePortal) {
   const limpio = nombrePortal
     .normalize("NFD")
@@ -84,7 +92,7 @@ REGLAS OBLIGATORIAS (NO las incumplas):
 Responde SOLO con el código JavaScript completo. Sin texto adicional, sin bloques markdown.`;
 
   const response = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
+    model: MODELO_AGENTE,
     max_tokens: 20000,
     messages: [{ role: "user", content: prompt }],
   });

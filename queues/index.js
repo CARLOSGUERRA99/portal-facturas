@@ -76,9 +76,23 @@ async function encolarBot(ticketId, userId, portalKey = "desconocido") {
   return botsQueue.add("facturar", { ticketId, userId, portalKey }, { jobId: `bot-${ticketId}-${Date.now()}` });
 }
 
+// ⚠️ El agente SÍ lleva jobId determinístico, y aquí está el motivo.
+//
+// El comentario de arriba dice que el jobId por ticket evita el doble
+// procesamiento… pero el `Date.now()` que llevaban los tres helpers hacía cada
+// id único, así que la protección de BullMQ NUNCA se activaba.
+//
+// En vision y bots eso da igual —o incluso conviene, porque un reintento manual
+// es legítimo—, pero el agente es la operación MÁS CARA del sistema: cada alta
+// son ~66.000 tokens de salida en Sonnet (generador 20k + corrector 20k×2), del
+// orden de un dólar. Medido el 31/07: 7 tickets encolados 4 veces cada uno = 23
+// altas de más pedidas para portales que además ya tenían bot.
+//
+// Sin `Date.now()`, encolar dos veces el mismo ticket mientras el primero sigue
+// en cola es un no-op. Dar de alta un portal para un ticket se hace UNA vez.
 async function encolarAgente(ticketId, userId, comercioNombre, portalUrl) {
   return agenteQueue.add("alta-portal", { ticketId, userId, comercioNombre, portalUrl },
-    { jobId: `agente-${ticketId}-${Date.now()}` });
+    { jobId: `agente-${ticketId}` });
 }
 
 // FASE 5: variante para el botón "Orquestar" del panel admin (sin ticket, con

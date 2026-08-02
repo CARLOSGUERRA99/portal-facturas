@@ -2,6 +2,14 @@ const puppeteer = require('puppeteer');
 const Anthropic = require('@anthropic-ai/sdk');
 const { subirArchivoR2 } = require('../storage/r2');
 
+// El modelo del agente se elige por variable de entorno, sin tocar código.
+//
+// Aquí la calidad importa MÁS que en el OCR: si el bot generado sale mal, se
+// pierde el portal entero y cada corrección son otros 20.000 tokens. Subirlo a
+// Opus es MODELO_AGENTE=claude-opus-5 en Railway y nada más.
+const MODELO_AGENTE = process.env.MODELO_AGENTE || "claude-sonnet-4-6";
+
+
 // Selectores de elementos interactivos. INCLUYE <a> (enlaces estilizados como
 // botón — p.ej. SushiO #btn_facturar, Carl's Jr #btn_denviarpet) que la versión
 // anterior ignoraba, causando bots que no encontraban el botón real.
@@ -246,7 +254,7 @@ Responde SOLO con este JSON (sin markdown):
   content.push({ type: 'text', text: prompt });
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: MODELO_AGENTE,
     max_tokens: 6000,
     messages: [{ role: 'user', content }],
   });

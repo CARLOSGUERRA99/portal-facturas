@@ -1,5 +1,13 @@
 const Anthropic = require('@anthropic-ai/sdk');
 
+// El modelo del agente se elige por variable de entorno, sin tocar código.
+//
+// Aquí la calidad importa MÁS que en el OCR: si el bot generado sale mal, se
+// pierde el portal entero y cada corrección son otros 20.000 tokens. Subirlo a
+// Opus es MODELO_AGENTE=claude-opus-5 en Railway y nada más.
+const MODELO_AGENTE = process.env.MODELO_AGENTE || "claude-sonnet-4-6";
+
+
 // Recibe el bot con errores + screenshots del fallo + análisis original
 // Devuelve { codigo } con el código corregido
 async function corregirBot({ codigoBot, errores = [], advertencias = [], testLive = null, analisisJson, nombrePortal }) {
@@ -53,7 +61,7 @@ Responde SOLO con el código JavaScript completo corregido, sin markdown, sin ex
   content.push({ type: 'text', text: prompt });
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: MODELO_AGENTE,
     max_tokens: 20000,
     messages: [{ role: 'user', content }],
   });

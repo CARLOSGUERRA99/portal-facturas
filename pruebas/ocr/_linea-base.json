@@ -1,7 +1,7 @@
 {
  "fecha": "2026-08-02",
- "pct": "98.5",
- "perfectos": 23,
+ "pct": "95.6",
+ "perfectos": 21,
  "total": 24,
  "detalle": [
   {
@@ -30,9 +30,11 @@
   },
   {
    "caso": "0151_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
-   "aciertos": 3,
+   "aciertos": 2,
    "total": 3,
-   "fallos": []
+   "fallos": [
+    "folio: esperaba \"7540670\" y salió \"7540070\""
+   ]
   },
   {
    "caso": "0166_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
@@ -126,9 +128,11 @@
   },
   {
    "caso": "0150_Analizando.jpeg",
-   "aciertos": 4,
+   "aciertos": 3,
    "total": 4,
-   "fallos": []
+   "fallos": [
+    "referencia: esperaba \"0498471292208AE\" y salió \"049847129220BAE\""
+   ]
   },
   {
    "caso": "0163_GRUPO-INNO-SA-DE-CV.jpeg",
