@@ -1,0 +1,154 @@
+{
+ "fecha": "2026-08-02",
+ "pct": "98.5",
+ "perfectos": 23,
+ "total": 24,
+ "detalle": [
+  {
+   "caso": "0157_Gasolineras-PABA-S-A-de-C-V.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0176_Combustibles-y-Servicios-Nainari-S-A-d.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0197_Combustibles-y-Servicios-Nainari-S-A-d.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0181_Estacion-Fundadores.jpeg",
+   "aciertos": 4,
+   "total": 4,
+   "fallos": []
+  },
+  {
+   "caso": "0151_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0166_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0182_Sibilina-Pantoja-Reyes-Servicio-Las-Co.jpeg",
+   "aciertos": 2,
+   "total": 2,
+   "fallos": []
+  },
+  {
+   "caso": "0142_AutoZone-de-Mexico.jpg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0168_SERVICIO-INSURGENTES-DE-MAZATLAN.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0169_ARCO-GRUPO-CASTILLO-FELIX.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0186_GRUPO-ENERMAR.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0188_GRUPO-ENERMAR.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0179_SERVICIO-EL-VIGIA.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0189_ESTACION-DE-SERVICIOS-EL-CAPITAN.jpeg",
+   "aciertos": 2,
+   "total": 2,
+   "fallos": []
+  },
+  {
+   "caso": "0130_Farmacias-Guadalajara.jpg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0158_Farmacias-Guadalajara.jpg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0146_PROMOTORA-DE-CAFE-RIO-MAYO.jpg",
+   "aciertos": 2,
+   "total": 2,
+   "fallos": []
+  },
+  {
+   "caso": "0155_Petroliferos-La-Territorial-Gasolinera.jpeg",
+   "aciertos": 3,
+   "total": 3,
+   "fallos": []
+  },
+  {
+   "caso": "0194_Mariscos-El-Mazateno-GAXFER-SA-DE-CV.jpeg",
+   "aciertos": 2,
+   "total": 2,
+   "fallos": []
+  },
+  {
+   "caso": "0196_MIGASOLINA-E11574-LA-POLKA-Energia-y-S.jpeg",
+   "aciertos": 2,
+   "total": 2,
+   "fallos": []
+  },
+  {
+   "caso": "0150_Analizando.jpeg",
+   "aciertos": 4,
+   "total": 4,
+   "fallos": []
+  },
+  {
+   "caso": "0163_GRUPO-INNO-SA-DE-CV.jpeg",
+   "aciertos": 3,
+   "total": 4,
+   "fallos": [
+    "referencia: esperaba \"0498471292208AE\" y salió \"049847129220BAE\""
+   ]
+  },
+  {
+   "caso": "0187_Tesoro-Gasolineras-Estacion-El-Naranjo.jpeg",
+   "aciertos": 2,
+   "total": 2,
+   "fallos": []
+  },
+  {
+   "caso": "0192_Grupo-Petro-Fe-Gasolineras-Gasolinera-.jpeg",
+   "aciertos": 2,
+   "total": 2,
+   "fallos": []
+  }
+ ]
+}

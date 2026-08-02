@@ -1,0 +1,221 @@
+[
+  {
+    "archivo": "0157_Gasolineras-PABA-S-A-de-C-V.jpeg",
+    "portalEsperado": "igasfac",
+    "porQueFallaba": "el OCR tomaba el 'Folio: 0823049' de arriba en vez del Folioweb largo de abajo; el portal rechaza el corto con 'Folio web es incorrecto'",
+    "esperado": {
+      "portal": "igasfac",
+      "folio": "0310-00823049-00759353",
+      "total": 1500
+    }
+  },
+  {
+    "archivo": "0176_Combustibles-y-Servicios-Nainari-S-A-d.jpeg",
+    "portalEsperado": "igasfac",
+    "porQueFallaba": "mismo caso: tomaba 'Folio: 1757037' en vez del Folioweb",
+    "esperado": {
+      "portal": "igasfac",
+      "folio": "0628-01757037-00263473",
+      "total": 597.61
+    }
+  },
+  {
+    "archivo": "0197_Combustibles-y-Servicios-Nainari-S-A-d.jpeg",
+    "portalEsperado": "igasfac",
+    "porQueFallaba": "tomaba el folio corto, y ademas leia la URL como 'lgasfac.com.mx' (confundia el 1 con una l)",
+    "esperado": {
+      "portal": "igasfac",
+      "folio": "0628-01763658-00365831",
+      "total": 524.34
+    }
+  },
+  {
+    "archivo": "0181_Estacion-Fundadores.jpeg",
+    "portalEsperado": "gasmaz",
+    "porQueFallaba": "leia el subdominio como 'escoios.efundadoresfactura' comiendose letras de 'Colosio'; ese host no resuelve en DNS",
+    "esperado": {
+      "portal": "gasmaz",
+      "portalUrl": "*",
+      "folio": "7634595",
+      "total": 885.63
+    }
+  },
+  {
+    "archivo": "0151_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
+    "portalEsperado": "oxxogas",
+    "porQueFallaba": "no extraia NINGUN dato: ni folio ni total, pese a estar legibles en la foto",
+    "esperado": {
+      "portal": "oxxogas",
+      "folio": "7540670",
+      "total": 800
+    }
+  },
+  {
+    "archivo": "0166_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
+    "portalEsperado": "oxxogas",
+    "porQueFallaba": "misma foto que el 0151, mismo fallo",
+    "esperado": {
+      "portal": "oxxogas",
+      "folio": "7540670",
+      "total": 800
+    }
+  },
+  {
+    "archivo": "0182_Sibilina-Pantoja-Reyes-Servicio-Las-Co.jpeg",
+    "portalEsperado": "gashr",
+    "porQueFallaba": "el portal es un subdominio de facturacionestacion.com y quedaba como 'desconocido', disparando al agente para un portal que ya tenia bot",
+    "esperado": {
+      "folio": "72272",
+      "total": 786.31
+    }
+  },
+  {
+    "archivo": "0142_AutoZone-de-Mexico.jpg",
+    "portalEsperado": "autozone",
+    "esperado": {
+      "portal": "autozone",
+      "folio": "07047995272072726",
+      "total": 648
+    }
+  },
+  {
+    "archivo": "0168_SERVICIO-INSURGENTES-DE-MAZATLAN.jpeg",
+    "portalEsperado": "arco",
+    "esperado": {
+      "portal": "arco",
+      "codigoTicket": "23630826354",
+      "total": 2000
+    }
+  },
+  {
+    "archivo": "0169_ARCO-GRUPO-CASTILLO-FELIX.jpeg",
+    "portalEsperado": "arco",
+    "esperado": {
+      "portal": "arco",
+      "codigoTicket": "550656C81E8",
+      "total": 1500
+    }
+  },
+  {
+    "archivo": "0186_GRUPO-ENERMAR.jpeg",
+    "portalEsperado": "arco",
+    "esperado": {
+      "portal": "arco",
+      "codigoTicket": "50009D42F29",
+      "total": 471.28
+    }
+  },
+  {
+    "archivo": "0188_GRUPO-ENERMAR.jpeg",
+    "portalEsperado": "arco",
+    "esperado": {
+      "portal": "arco",
+      "codigoTicket": "500090F01BA",
+      "total": 717.03
+    }
+  },
+  {
+    "archivo": "0179_SERVICIO-EL-VIGIA.jpeg",
+    "portalEsperado": "arco",
+    "esperado": {
+      "portal": "arco",
+      "codigoTicket": "16004D00689",
+      "total": 798.1
+    }
+  },
+  {
+    "archivo": "0189_ESTACION-DE-SERVICIOS-EL-CAPITAN.jpeg",
+    "portalEsperado": "arco",
+    "esperado": {
+      "codigoTicket": "07133E71DAF",
+      "total": 1371.29
+    }
+  },
+  {
+    "archivo": "0130_Farmacias-Guadalajara.jpg",
+    "portalEsperado": "farmaciaguadalajara",
+    "esperado": {
+      "portal": "farmaciaguadalajara",
+      "folioFactura": "518193-591439-180417",
+      "total": 69
+    }
+  },
+  {
+    "archivo": "0158_Farmacias-Guadalajara.jpg",
+    "portalEsperado": "farmaciaguadalajara",
+    "esperado": {
+      "portal": "farmaciaguadalajara",
+      "folioFactura": "508141-091336-518404",
+      "total": 193.96
+    }
+  },
+  {
+    "archivo": "0146_PROMOTORA-DE-CAFE-RIO-MAYO.jpg",
+    "esperado": {
+      "folio": "PES64527",
+      "total": 72
+    }
+  },
+  {
+    "archivo": "0155_Petroliferos-La-Territorial-Gasolinera.jpeg",
+    "portalEsperado": "enerser",
+    "porQueFallaba": "VERDAD DE CAMPO CORREGIDA el 01/08: yo habia anotado como folio el 'Folio: 06922-25102-071-260729135651' de la terminal NetPay. Releyendo la foto, el dato que pide el portal es la 'Referencia:' del pie, bajo 'PAGINA(S) PARA FACTURAR / http://facturacion.enerser.com.mx/'. Estructura: estacion 06922 + ticket 1322663 + verificador 34FC. Por eso este ticket nunca facturo: se mandaba el numero equivocado.",
+    "esperado": {
+      "portal": "enerser",
+      "referencia": "06922132266334FC",
+      "total": 1000
+    }
+  },
+  {
+    "archivo": "0194_Mariscos-El-Mazateno-GAXFER-SA-DE-CV.jpeg",
+    "esperado": {
+      "folio": "694540",
+      "total": 440
+    }
+  },
+  {
+    "archivo": "0196_MIGASOLINA-E11574-LA-POLKA-Energia-y-S.jpeg",
+    "esperado": {
+      "folio": "2166116",
+      "total": 850.16
+    }
+  },
+  {
+    "archivo": "0150_Analizando.jpeg",
+    "portalEsperado": "enerfueltech",
+    "porQueFallaba": "es la MISMA foto que el 0163, subida dos veces. Trae DOS tickets de Grupo Inmo lado a lado y el OCR no extraia NADA: el modelo se ponia a explicar en prosa que habia dos y el JSON.parse reventaba. Ahora se lee el de la IZQUIERDA (Ticket 712922) y se marca ticketsEnFoto=2 para que nadie pierda el segundo.",
+    "esperado": {
+      "portal": "enerfueltech",
+      "referencia": "0498471292208AE",
+      "total": 1000,
+      "ticketsEnFoto": 2
+    }
+  },
+  {
+    "archivo": "0163_GRUPO-INNO-SA-DE-CV.jpeg",
+    "portalEsperado": "enerfueltech",
+    "porQueFallaba": "misma foto que el 0150: dos tickets Grupo Inmo (712922 a la izquierda, 715245 a la derecha). Ademas la verdad de campo era 'lo que sea': ahora se exige la Referencia real del pie del ticket.",
+    "esperado": {
+      "portal": "enerfueltech",
+      "referencia": "0498471292208AE",
+      "total": 1000,
+      "ticketsEnFoto": 2
+    }
+  },
+  {
+    "archivo": "0187_Tesoro-Gasolineras-Estacion-El-Naranjo.jpeg",
+    "porQueFallaba": "el OCR no extrajo ningun dato de la foto",
+    "esperado": {
+      "comercio": "*",
+      "total": "*"
+    }
+  },
+  {
+    "archivo": "0192_Grupo-Petro-Fe-Gasolineras-Gasolinera-.jpeg",
+    "porQueFallaba": "el OCR no extrajo ningun dato de la foto",
+    "esperado": {
+      "comercio": "*",
+      "total": "*"
+    }
+  }
+]

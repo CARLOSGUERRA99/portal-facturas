@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-05-28",
+  "actualizado": "2026-08-02",
   "portales": {
     "bodegaaurrera": {
       "nombre": "Walmart de México (Bodega Aurrera / Mi Bodega Aurrera / Walmart / Sam's Club / Superama)",
@@ -9,17 +9,42 @@
       "url_base": "https://facturacion.walmartmexico.com.mx/frmDatos.aspx",
       "tecnologia": "ASP.NET WebForms",
       "comercios": [
-        "Bodega Aurrera", "Mi Bodega Aurrera", "Walmart", "Sam's Club", "Superama",
+        "Bodega Aurrera",
+        "Mi Bodega Aurrera",
+        "Walmart",
+        "Sam's Club",
+        "Superama",
         "NUEVA WAL MART DE MEXICO S DE RL DE CV"
       ],
       "deteccion": {
         "por_portal_field": "bodegaaurrera",
-        "por_texto_ocr": ["bodega aurrera", "bodegaaurrera", "wal mart", "walmart", "sam's club", "superama"],
-        "por_comercio": ["bodega aurrera", "walmart", "wal mart", "sam's club", "superama"],
+        "por_texto_ocr": [
+          "bodega aurrera",
+          "bodegaaurrera",
+          "wal mart",
+          "walmart",
+          "sam's club",
+          "superama"
+        ],
+        "por_comercio": [
+          "bodega aurrera",
+          "walmart",
+          "wal mart",
+          "sam's club",
+          "superama"
+        ],
         "por_url_qr": []
       },
-      "campos_ticket": ["tc", "tr", "fecha", "total"],
-      "campos_fiscales": ["rfc", "codigoPostal"],
+      "campos_ticket": [
+        "tc",
+        "tr",
+        "fecha",
+        "total"
+      ],
+      "campos_fiscales": [
+        "rfc",
+        "codigoPostal"
+      ],
       "datos_fijos": {
         "regimenFiscal": "601 — General de Ley Personas Morales",
         "usoCfdi": "G03 — Gastos en general",
@@ -45,7 +70,8 @@
         "por_comercio": [
           "oxxo"
         ],
-        "por_url_qr": []
+        "por_url_qr": [],
+        "nota_deteccion": "SOLO la tienda de conveniencia. Si el ticket menciona OXXO GAS, litros, bomba o precio por litro, es \"oxxogas\", NO este."
       },
       "campos_ticket": [
         "fecha",
@@ -1046,6 +1072,223 @@
         "usoCfdi": "G03 — Gastos en general",
         "email_captura": "buzonfacturas@serviciosga.site"
       }
+    },
+    "igasfac": {
+      "nombre": "IGasFac (gasolineras)",
+      "bot": "igasfac.js",
+      "estado": "activo",
+      "url_base": "https://www.igasfac.com.mx",
+      "tecnologia": "ASP.NET Core con login de cuenta",
+      "stealth": true,
+      "comercios": [
+        "Gasolineras PABA",
+        "Combustibles y Servicios Nainari",
+        "gasolineras que facturan en igasfac.com.mx"
+      ],
+      "deteccion": {
+        "por_portal_field": "igasfac",
+        "por_texto_ocr": [
+          "igasfac.com.mx",
+          "igasfac",
+          "folioweb",
+          "facture en linea"
+        ],
+        "por_comercio": [],
+        "por_url_qr": [
+          "igasfac.com.mx",
+          "1gasfac.com.mx",
+          "lgasfac.com.mx"
+        ]
+      },
+      "notas_desarrollo": "El folio que pide el portal es el FOLIOWEB largo (formato 4-8-8 con guiones) impreso DEBAJO de \"Facturacion en: www.igasfac.com.mx\", NO el \"Folio:\" corto de arriba. Ventana: hasta el ultimo dia del mes."
+    },
+    "oxxogas": {
+      "nombre": "OXXO GAS",
+      "bot": "oxxogas.js",
+      "estado": "manual",
+      "url_base": "https://facturacion.oxxogas.com",
+      "tecnologia": "SPA con jQuery Chosen; login con reCAPTCHA v2",
+      "stealth": true,
+      "comercios": [
+        "OXXO GAS (estaciones de servicio)"
+      ],
+      "deteccion": {
+        "por_portal_field": "oxxogas",
+        "por_texto_ocr": [
+          "oxxo gas",
+          "oxxogas.com",
+          "estacion galerias",
+          "spin premia"
+        ],
+        "por_comercio": [
+          "oxxo gas"
+        ],
+        "por_url_qr": [
+          "oxxogas.com"
+        ],
+        "nota_deteccion": "la gasolinera. Tiene prioridad sobre \"oxxo\" siempre que aparezca la palabra GAS o haya carga de combustible."
+      },
+      "notas_desarrollo": "NO es la tienda OXXO. El ticket trae \"Folio:\" de 7 digitos y \"Bomba:\". Requiere cookies de sesion inyectadas a mano: el login tiene reCAPTCHA v2 que no se resuelve. Entrar SIEMPRE por la home, nunca por deep link."
+    },
+    "caffenio": {
+      "nombre": "CAFFENIO",
+      "bot": "caffenio.js",
+      "estado": "activo",
+      "url_base": "https://facturaciondrive.caffenio.com/ticket",
+      "tecnologia": "SPA con autocomplete de drives",
+      "stealth": true,
+      "comercios": [
+        "CAFFENIO (cafeterias drive)"
+      ],
+      "deteccion": {
+        "por_portal_field": "caffenio",
+        "por_texto_ocr": [
+          "caffenio",
+          "facturaciondrive"
+        ],
+        "por_comercio": [
+          "caffenio"
+        ],
+        "por_url_qr": [
+          "facturaciondrive.caffenio.com"
+        ]
+      },
+      "notas_desarrollo": "Exige folio + codigo de facturacion + nombre del drive, y los valida en conjunto. Ventana de 30 dias naturales. Sin CAPTCHA."
+    },
+    "7eleven": {
+      "nombre": "7-Eleven México",
+      "bot": "7elevenmexicosadecv.js",
+      "estado": "activo",
+      "url_base": "https://www.e7-eleven.com.mx/facturacion/KPortalExterno/",
+      "tecnologia": "AngularJS con CAPTCHA de imagen (CapSolver)",
+      "stealth": true,
+      "comercios": [
+        "7 Eleven Mexico SA de CV"
+      ],
+      "deteccion": {
+        "por_portal_field": "7eleven",
+        "por_texto_ocr": [
+          "7-eleven",
+          "7 eleven",
+          "e7-eleven.com.mx"
+        ],
+        "por_comercio": [
+          "7 eleven",
+          "7-eleven"
+        ],
+        "por_url_qr": [
+          "e7-eleven.com.mx"
+        ]
+      },
+      "notas_desarrollo": "El folio es el codigo de barras de EXACTAMENTE 35 digitos; el portal rechaza si faltan."
+    },
+    "enerfueltech": {
+      "nombre": "Enerfuel Tech",
+      "bot": "enerfueltech.js",
+      "estado": "activo",
+      "url_base": "https://factura.enerfueltech.com/",
+      "tecnologia": "Blazor/MudBlazor — \"Facturar sin registro\" con un único campo Referencia",
+      "stealth": true,
+      "comercios": [
+        "Grupo Inmo SA de CV",
+        "gasolineras que facturan en factura.enerfueltech.com"
+      ],
+      "deteccion": {
+        "por_portal_field": "enerfueltech",
+        "por_texto_ocr": [
+          "pagina(s) para facturar",
+          "enerfueltech.com",
+          "netpay"
+        ],
+        "por_comercio": [
+          "grupo inmo"
+        ],
+        "por_url_qr": [
+          "enerfueltech.com"
+        ],
+        "nota_deteccion": "El dato de facturación es la \"Referencia:\" del PIE del ticket (15-16 caracteres sin guiones), NO el \"Folio:\" con guiones de la terminal bancaria."
+      },
+      "notas_desarrollo": "Ticket impreso por terminal NetPay. El portal pide SOLO la Referencia. La ventana real NO es fija: hay que consultar y confiar en la respuesta del portal."
+    },
+    "enerser": {
+      "nombre": "Enerser",
+      "bot": null,
+      "estado": "pendiente",
+      "url_base": "http://facturacion.enerser.com.mx/",
+      "tecnologia": "misma plataforma que Enerfuel Tech, otro dominio",
+      "stealth": true,
+      "comercios": [
+        "Petroliferos La Territorial S de RL de CV",
+        "gasolineras que facturan en facturacion.enerser.com.mx"
+      ],
+      "deteccion": {
+        "por_portal_field": "enerser",
+        "por_texto_ocr": [
+          "pagina(s) para facturar",
+          "enerser.com.mx",
+          "netpay"
+        ],
+        "por_comercio": [
+          "petroliferos la territorial"
+        ],
+        "por_url_qr": [
+          "enerser.com.mx"
+        ],
+        "nota_deteccion": "El dato de facturación es la \"Referencia:\" del PIE del ticket (15-16 caracteres sin guiones), NO el \"Folio:\" con guiones de la terminal bancaria."
+      },
+      "notas_desarrollo": "Mismo formato de ticket y mismo campo Referencia que enerfueltech, pero OTRO dominio: falta confirmar en vivo que bots/enerfueltech.js sirva tal cual antes de marcarlo activo."
+    },
+    "gashr": {
+      "nombre": "NexusFuel / facturacionestacion.com (Grupo GASHR y estaciones asociadas)",
+      "bot": "gashr.js",
+      "estado": "activo",
+      "url_base": "https://valerogdl.facturacionestacion.com",
+      "tecnologia": "NexusFuel multi-tenant — un subdominio por estación",
+      "stealth": true,
+      "comercios": [
+        "Autoservicio Gashr / Valero GDL",
+        "Sibilina Pantoja Reyes - Servicio Las Conchas",
+        "estaciones con portal en *.facturacionestacion.com"
+      ],
+      "deteccion": {
+        "por_portal_field": "gashr",
+        "por_texto_ocr": [
+          "facturacionestacion.com",
+          "referencia para facturar",
+          "facturacion en linea"
+        ],
+        "por_comercio": [],
+        "por_url_qr": [
+          "facturacionestacion.com"
+        ],
+        "nota_deteccion": "El bot pide DOS datos: folio = el número de \"Ticket:\", referencia = la \"Referencia para facturar\" (que coincide con el número de \"Estación:\"). No confundirlos."
+      },
+      "notas_desarrollo": "El subdominio cambia por estación (valerogdl., lasconchas., …): reconocer el DOMINIO, no el subdominio. Ventana corta: el ticket avisa 24 hrs."
+    },
+    "petrofigues": {
+      "nombre": "Petrofigues",
+      "bot": "petrofigues.js",
+      "estado": "activo",
+      "url_base": "https://facturacion.petrofigues.com",
+      "tecnologia": "NexusFuel — misma plataforma y mismos campos que gashr",
+      "stealth": true,
+      "comercios": [
+        "Petrofigues"
+      ],
+      "deteccion": {
+        "por_portal_field": "petrofigues",
+        "por_texto_ocr": [
+          "petrofigues"
+        ],
+        "por_comercio": [
+          "petrofigues"
+        ],
+        "por_url_qr": [
+          "petrofigues"
+        ],
+        "nota_deteccion": "El bot pide DOS datos: folio = el número de \"Ticket:\", referencia = la \"Referencia para facturar\" (que coincide con el número de \"Estación:\"). No confundirlos."
+      },
+      "notas_desarrollo": "Otro tenant NexusFuel. Cada tenant guarda su propio registro de cliente aunque el RFC sea el mismo."
     }
   }
 }
