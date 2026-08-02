@@ -116,14 +116,52 @@ scripts/                   — herramientas de prueba/sondeo local (test-*, prob
 
 ---
 
-## OCR — notas por portal (promptsPorPortal en server.js)
+## OCR — 3 pasadas, en `lib/vision.js` (ya NO en server.js)
 
-- **OXXO:** folio + idVenta (formato 2díg+3LETRAS+2díg+3alfanum+1díg) + corrección de año.
-- **AutoZone:** el folio es el **NÚMERO LARGO BAJO EL CÓDIGO DE BARRAS**, no el folio corto.
-- **7-Eleven:** el folio es el código de barras de **EXACTAMENTE 35 dígitos** (el portal rechaza si son menos).
-- **SoftRestaurant (SushiO/Dana):** `referencia` = código de facturación (distinto del folio).
-- **TUFESA:** captura `origen` (ciudad de origen del boleto).
-- Año mal leído se corrige con `corregirAnioReciente` en Pasada 2.
+Medido con `node scripts/evaluar-ocr.js`: **98.5% de campos, 23/24 tickets**.
+El banco corre el pipeline real sobre 24 fotos que fallaron en producción y
+avisa si un cambio empeora. `GUARDAR=1` fija una nueva línea base. **Antes de
+tocar un prompt, correr el banco; después, volver a correrlo.**
+
+- **Pasada 1** — detecta el portal. Su prompt se ARMA SOLO desde
+  `portales/portales.json`. Un portal que no esté ahí **nunca** usa su prompt
+  especializado, por muy bien escrito que esté: sale `desconocido` y corre el
+  genérico. Para desambiguar pistas que se solapan (OXXO vs OXXO GAS) está
+  `deteccion.nota_deteccion`.
+- **Pasada 2** — extrae con `promptsPorPortal[portal]`.
+- **Pasada 3** — `releerCamposDudosos()`: relee la misma foto preguntando SOLO
+  por los campos obligatorios que quedaron nulos o dudosos, obligando a
+  deletrearlos. Solo se dispara si la Pasada 2 admitió duda.
+
+⚠️ `extraerJson()` en vez de `JSON.parse()` en las tres. Un `JSON.parse` directo
+revienta si el modelo escribe una palabra antes del JSON y tira TODOS los datos
+del ticket. Era la causa real de los tickets que "no extraían nada".
+
+**Cuando dos números parecen "el folio", casi siempre vale el otro:**
+- **NetPay (Enerser / Enerfueltech):** la `Referencia:` del PIE, no el `Folio:`
+  con guiones de la terminal bancaria. La Referencia es
+  estación(5)+nºticket+verificador(4), así que `repararReferenciaNetPay()` la
+  reconstruye cruzándola con el `Ticket:` impreso aparte.
+- **NexusFuel (gasmaz / gashr / petrofigues):** folio = el `Ticket:`; la
+  `Referencia para facturar` es el número de estación.
+- **IGasFac:** el Folioweb largo (4-8-8 con guiones) de abajo, no el `Folio:`
+  corto de arriba.
+- **AutoZone:** el número largo bajo el código de barras.
+- **7-Eleven:** código de barras de **exactamente 35 dígitos**.
+- **OXXO GAS** no es OXXO: otro portal, otro prompt.
+- **SoftRestaurant (SushiO/Dana):** `referencia` = código de facturación.
+- **TUFESA:** captura `origen`.
+
+`ticketsEnFoto > 1` fuerza `requiereConfirmacion`: la foto trae varias compras y
+solo se registra la primera, así que alguien tiene que subir el resto. El
+voucher del banco o la "COPIA CLIENTE" de la MISMA venta no cuentan.
+
+Año mal leído: `corregirAnioReciente`, aplicado tras la Pasada 2 **y** tras la 3.
+
+### Dar de alta un portal: hay que tocar CUATRO sitios
+`bots/`, el routing de `bots/index.js`, el gate de `procesarCola` **y
+`portales/portales.json`**. Olvidar el cuarto no rompe nada al arrancar — el bot
+simplemente nunca recibe los datos bien leídos.
 
 ---
 
