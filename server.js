@@ -583,17 +583,25 @@ app.get("/api/residentes", auth, async (req, res) => {
 });
 
 // ── CATÁLOGO COMPLETO DE RESIDENTES (admin) ──
+// El catálogo de residentes es del CLIENTE. Los de GPN son gente de GPN; el
+// admin de otro cliente no tiene por qué ver esos nombres, y con 30 clientes
+// eso deja de ser un detalle y pasa a ser una fuga de datos entre empresas.
+// El dueño de la plataforma los ve todos, que para eso da soporte.
 app.get("/api/admin/todos-residentes", auth, requireAdmin, async (req, res) => {
   try {
+    const alcance = esPlataforma(req)
+      ? { sql: "1=1", params: [] }
+      : { sql: "r.cliente_id = ?", params: [req.session.clienteId || 0] };
     const [rows] = await db.query(`
       SELECT r.*,
         GROUP_CONCAT(u.nombre ORDER BY u.nombre SEPARATOR ', ') AS asignados_a
       FROM residentes r
       LEFT JOIN user_residentes ur ON r.id = ur.residente_id
       LEFT JOIN users u ON ur.user_id = u.id
+      WHERE ${alcance.sql}
       GROUP BY r.id
       ORDER BY r.nombre
-    `);
+    `, alcance.params);
     res.json({ ok: true, residentes: rows });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
@@ -715,10 +723,24 @@ app.get('/api/admin/tickets', auth, requireAdmin, async (req, res) => {
   }
 });
 
+// ⚠️ "Empleados" son los del PROPIO cliente, no todos los del sistema.
+//
+// Antes esto listaba la tabla `users` entera. Consecuencia real, visible en el
+// panel: el admin de GPN veía a Servicios G&A y a Daniel Ávila (Traslados DGA)
+// dentro de "EMPLEADOS REGISTRADOS", y hasta podía asignarles residentes de
+// GPN. Y no son sus empleados: son el dueño de la plataforma y OTRO cliente.
+//
+// Jerarquía real:
+//   facturas@serviciosga.site  → G&A, dueño. Ve a todos los clientes.
+//   carlosguerra@grupogpn.com  → admin del cliente GPN. Solo lo de GPN.
+//   (las capturistas @grupogpn.com colgarán de este cliente)
+//   trasladosdga@gmail.com     → cliente DGA, independiente de GPN.
 app.get("/api/admin/usuarios", auth, requireAdmin, async (req, res) => {
   try {
+    const alcance = filtroAlcance(req, "id");
     const [usuarios] = await db.query(
-      "SELECT id, nombre, email, rol, creado FROM users ORDER BY creado DESC"
+      `SELECT id, nombre, email, rol, creado, cliente_id FROM users WHERE ${alcance.sql} ORDER BY creado DESC`,
+      alcance.params
     );
     for (const u of usuarios) {
       const [asignados] = await db.query(`
@@ -1076,20 +1098,30 @@ app.delete("/api/tickets/:id", auth, async (req, res) => {
 // resolverlo — la foto, los datos que leyó el OCR, la URL del portal y el
 // motivo técnico real — y desde aquí se cierra facturando a mano y subiendo el
 // CFDI, o se descarta.
+// Mismo módulo para los dos, distinto alcance:
+//   · el admin de GPN ve SOLO los errores de GPN;
+//   · el dueño de la plataforma ve los de TODOS los clientes, porque es quien
+//     arregla lo de todos. Por eso la consulta trae también el nombre del
+//     cliente: sin él, G&A vería una lista de tickets rotos sin saber de quién
+//     es cada uno.
 app.get("/api/admin/validacion-manual", auth, requireAdmin, async (req, res) => {
   try {
+    const alcanceVM = filtroAlcance(req, "t.user_id");
     const [rows] = await db.query(`
       SELECT t.id, t.comercio, t.status, t.error_msg, t.portal_url, t.creado,
              t.ocr_json, t.residente_id, t.email_contacto,
              (t.ruta_archivo IS NOT NULL AND t.ruta_archivo <> '') AS tiene_imagen,
-             u.nombre AS subido_por, r.nombre AS residente
+             u.nombre AS subido_por, r.nombre AS residente,
+             c.nombre AS cliente
         FROM tickets t
         LEFT JOIN facturas f  ON f.ticket_id = t.id
         LEFT JOIN users u     ON u.id = t.user_id
+        LEFT JOIN clientes c  ON c.id = u.cliente_id
         LEFT JOIN residentes r ON r.id = t.residente_id
        WHERE f.id IS NULL
          AND t.status IN ('error','pendiente_confirmacion')
-       ORDER BY t.creado DESC`);
+         AND ${alcanceVM.sql}
+       ORDER BY t.creado DESC`, alcanceVM.params);
 
     const casos = rows.map((t) => {
       let o = {};
@@ -1112,7 +1144,7 @@ app.get("/api/admin/validacion-manual", auth, requireAdmin, async (req, res) => 
         fecha: o.fecha || null,
         datosOcr: o,
         tieneImagen: !!t.tiene_imagen,
-        subidoPor: t.subido_por, residente: t.residente,
+        subidoPor: t.subido_por, residente: t.residente, cliente: t.cliente,
         creado: t.creado,
         accion,
       };

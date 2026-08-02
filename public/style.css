@@ -826,3 +826,92 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
   gap: 10px;
   justify-content: flex-end;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CAPA FUTURISTA — minimalista, sobre el mismo guinda
+   ───────────────────────────────────────────────────────────────────────────
+   Va al FINAL y solo re-declara propiedades: no toca ni un selector existente.
+   Para volver al diseño anterior basta con borrar este bloque — nada más
+   depende de él. Es a propósito: es una propuesta, y tiene que poder deshacerse
+   sin cirugía.
+
+   La idea no es "añadir efectos" sino quitar peso visual: menos sombra difusa,
+   bordes de 1px que sí se ven, superficies planas y una línea de acento que
+   aparece solo al pasar por encima. El color no cambia; cambia cómo respira.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --card-radius: 14px;              /* menos redondeado = más técnico */
+  --shadow: 0 1px 2px rgba(36, 20, 23, .05);
+  --shadow-md: 0 8px 32px rgba(123, 18, 32, .10);
+  --linea: rgba(123, 18, 32, .14);  /* el borde de acento, discreto */
+}
+
+body { letter-spacing: -0.011em; }
+
+/* Superficies: borde nítido en vez de sombra difusa. */
+.card, .stat-card, .residente-mini-card, .modal, .modal-card {
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+.card:hover, .stat-card:hover {
+  border-color: var(--linea);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Las cifras son el contenido real de la tarjeta: que pesen. */
+.stat-value {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;   /* los números no bailan al actualizarse */
+}
+.stat-label {
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  font-size: .68rem;
+  font-weight: 600;
+  opacity: .72;
+}
+
+/* Filo superior de acento que solo aparece al pasar por encima. */
+.stat-card { position: relative; overflow: hidden; }
+.stat-card::before {
+  content: '';
+  position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, var(--vino), var(--gris-marca));
+  transform: scaleX(0); transform-origin: left;
+  transition: transform .25s ease;
+}
+.stat-card:hover::before { transform: scaleX(1); }
+
+/* La barra deja de ser un bloque sólido: cristal sobre el fondo. */
+.navbar {
+  background: linear-gradient(135deg, var(--vino) 0%, var(--vino-oscuro) 100%);
+  box-shadow: 0 8px 32px rgba(123, 18, 32, .22);
+  backdrop-filter: saturate(1.2);
+}
+.nav-link { transition: background .18s ease, color .18s ease; }
+
+/* Tarjeta de saludo: sin el icono decorativo, el texto ocupa todo el ancho. */
+.greeting-card {
+  background: linear-gradient(135deg, var(--vino) 0%, var(--vino-oscuro) 100%);
+  border: none;
+  position: relative; overflow: hidden;
+}
+/* Una sola forma geométrica muy tenue, en vez de un emoji. */
+.greeting-card::after {
+  content: '';
+  position: absolute; right: -60px; top: -60px;
+  width: 220px; height: 220px; border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .10);
+}
+
+/* Botones más planos y con foco visible (accesibilidad, no adorno). */
+.btn, button { transition: transform .12s ease, filter .18s ease; }
+.btn:active, button:active { transform: translateY(1px); }
+:focus-visible { outline: 2px solid var(--vino); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

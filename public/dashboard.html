@@ -136,34 +136,29 @@
     <!-- Greeting -->
     <div class="greeting-card">
       <div class="greeting-text">
-        <h2>Hola, <span id="greeting-name">...</span> 👋</h2>
+        <h2>Hola, <span id="greeting-name">...</span></h2>
         <p id="greeting-sub">Cargando tu resumen...</p>
       </div>
-      <div class="greeting-icon">🎨</div>
     </div>
 
-    <!-- Stats -->
+    <!-- Stats — sin iconos decorativos: manda el dato, no el adorno. -->
     <div class="stats-grid" style="margin-bottom:24px">
       <div class="stat-card">
-        <div class="stat-icon">🎫</div>
         <div class="stat-value" id="stat-tickets">0</div>
         <div class="stat-label">Tickets subidos</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">🧾</div>
         <div class="stat-value" id="stat-facturas">0</div>
         <div class="stat-label">Facturas generadas</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">⏳</div>
         <div class="stat-value" id="stat-pendientes">0</div>
         <div class="stat-label">Pendientes de facturar</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon">⚡</div>
         <div class="stat-value" id="stat-tiempo">0h</div>
         <div class="stat-label">Tiempo ahorrado</div>
-        <div class="stat-sub" id="stat-tiempo-sub">vs. hacerlo manualmente</div>
+        <div class="stat-sub" id="stat-tiempo-sub">10 min por factura, vs. hacerlo a mano</div>
       </div>
     </div>
 
@@ -496,7 +491,6 @@
         const gasto = gastoMes[String(r.id)] || 0;
         return `
           <div class="residente-mini-card">
-            <div class="rmc-icon">👷</div>
             <div class="rmc-name">${r.nombre}</div>
             <div class="rmc-tickets">${r.ticket_count}</div>
             <div class="rmc-label">ticket${Number(r.ticket_count) !== 1 ? 's' : ''} subido${Number(r.ticket_count) !== 1 ? 's' : ''}</div>
