@@ -116,7 +116,21 @@ if (process.env.MANTENIMIENTO === 'true') {
   });
 }
 
-app.use(express.static(path.join(__dirname, "public")));
+// ⚠️ El CSS y el JS del portal NO se cachean; el resto sí, un día.
+//
+// Los .html enlazan "/style.css" a secas, sin versión. Sin esta cabecera el
+// navegador se queda con la copia vieja y el usuario NO ve los cambios hasta
+// que vacía la caché a mano. Comprobado hoy: el servidor ya servía la barra de
+// navegación móvil nueva y el navegador seguía pintando la anterior — y eso le
+// habría pasado igual a cada cliente.
+//
+// Las imágenes y el resto de estáticos sí se cachean: no cambian.
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders(res, ruta) {
+    if (/\.(css|js|html)$/i.test(ruta)) res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    else res.setHeader("Cache-Control", "public, max-age=86400");
+  },
+}));
 
 const facturasDir = path.join(__dirname, "facturas");
 if (!fs.existsSync(facturasDir)) fs.mkdirSync(facturasDir, { recursive: true });
