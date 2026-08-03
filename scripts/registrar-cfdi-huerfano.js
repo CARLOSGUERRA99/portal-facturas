@@ -28,7 +28,6 @@ const db = require('../lib/db');
 const { subirArchivoR2 } = require('../storage/r2');
 
 const APLICAR = process.argv.includes('--aplicar');
-const RFC_GPN = 'GPR110128QD8';
 const HORAS = Number(process.env.HORAS || 72);
 // El residente se puede fijar con RESIDENTE=<id>; por defecto GASOLINAS (11),
 // que es el genérico para cargas de combustible.
@@ -100,15 +99,42 @@ function recogerDelBuzon() {
     const d = leerCFDI(texto);
 
     if (!d.uuid) { console.log(`⏭️  ${c.xml.filename}: sin UUID (¿no es un CFDI timbrado?)`); continue; }
-    if (d.receptorRfc !== RFC_GPN) { console.log(`⏭️  ${d.uuid}: receptor ${d.receptorRfc}, no es de GPN`); continue; }
+
+    // ⚠️ El receptor se busca entre TODOS los clientes, no solo GPN.
+    //
+    // Este script nació cuando el portal era de un único RFC y comparaba contra
+    // GPR110128QD8 a pelo. Con la cartera multicliente eso descarta facturas
+    // legítimas: pasó con el CFDI de CAPUFE de Daniel Ávila, que llegó bien al
+    // buzón y el script lo tiró con "no es de GPN".
+    const [[cliente]] = await db.query(
+      'SELECT id, nombre FROM clientes WHERE rfc = ?', [d.receptorRfc]);
+    if (!cliente) { console.log(`⏭️  ${d.uuid}: receptor ${d.receptorRfc} no es de ningún cliente dado de alta`); continue; }
 
     const [ya] = await db.query(
       "SELECT f.id, f.ticket_id FROM facturas f WHERE f.xml_url LIKE ? LIMIT 1", [`%${d.uuid}%`]
     );
     if (ya.length) { console.log(`⏭️  ${d.emisorNombre} $${d.total} — ya registrado (ticket #${ya[0].ticket_id})`); continue; }
 
+    // El login al que colgar el ticket es uno del cliente que corresponda.
+    const [[dueno]] = await db.query(
+      'SELECT id FROM users WHERE cliente_id = ? ORDER BY id LIMIT 1', [cliente.id]);
+    const userId = dueno ? dueno.id : 1;
+
+    // Si YA existe un ticket de ese cliente, sin factura y por el mismo importe,
+    // la factura se engancha a ÉL en vez de crear uno nuevo: el ticket ya lo
+    // subió el residente y duplicarlo ensucia su historial.
+    const [[existente]] = await db.query(
+      `SELECT t.id FROM tickets t
+         LEFT JOIN facturas f ON f.ticket_id = t.id
+        WHERE t.user_id = ? AND f.id IS NULL
+          AND ABS(CAST(JSON_UNQUOTE(JSON_EXTRACT(t.ocr_json,'$.total')) AS DECIMAL(12,2)) - ?) < 0.01
+        ORDER BY t.id DESC LIMIT 1`,
+      [userId, d.total]
+    );
+
     console.log(`🆕 ${d.emisorNombre}  $${d.total}  ${String(d.fecha).slice(0, 10)}  folio ${d.folio || '—'}`);
-    console.log(`    UUID ${d.uuid}`);
+    console.log(`    cliente: ${cliente.nombre} · UUID ${d.uuid}`);
+    if (existente) console.log(`    ↳ se enganchará al ticket #${existente.id} que ya existe`);
     nuevos++;
     if (!APLICAR) { console.log('    (simulación — usa --aplicar para registrarlo)\n'); continue; }
 
@@ -124,14 +150,27 @@ function recogerDelBuzon() {
       nota: 'Registrado desde el CFDI del buzón: el ticket no estaba en el sistema.',
     };
 
-    const [ins] = await db.query(
-      `INSERT INTO tickets (user_id, comercio, status, ocr_json, residente_id,
-                            nombre_archivo, requiere_confirmacion, creado)
-       VALUES (1, ?, 'procesado', ?, ?, ?, 0, ?)`,
-      [d.emisorNombre, JSON.stringify(ocr), RESIDENTE,
-       `cfdi_${d.uuid.slice(0, 8)}.xml`, new Date(d.fecha || Date.now())]
-    );
-    const ticketId = ins.insertId;
+    let ticketId;
+    if (existente) {
+      ticketId = existente.id;
+      // Se completa el OCR con lo que dice el XML timbrado, que manda sobre lo
+      // que se leyó de la foto, y se marca como procesado.
+      const [[t]] = await db.query('SELECT ocr_json FROM tickets WHERE id = ?', [ticketId]);
+      const previo = typeof t.ocr_json === 'object' ? (t.ocr_json || {}) : JSON.parse(t.ocr_json || '{}');
+      await db.query(
+        "UPDATE tickets SET status = 'procesado', error_msg = NULL, requiere_confirmacion = 0, ocr_json = ? WHERE id = ?",
+        [JSON.stringify({ ...previo, uuid: d.uuid, comercio: previo.comercio || d.emisorNombre }), ticketId]
+      );
+    } else {
+      const [ins] = await db.query(
+        `INSERT INTO tickets (user_id, comercio, status, ocr_json, residente_id,
+                              nombre_archivo, requiere_confirmacion, creado)
+         VALUES (?, ?, 'procesado', ?, ?, ?, 0, ?)`,
+        [userId, d.emisorNombre, JSON.stringify(ocr), RESIDENTE,
+         `cfdi_${d.uuid.slice(0, 8)}.xml`, new Date(d.fecha || Date.now())]
+      );
+      ticketId = ins.insertId;
+    }
 
     const base = `facturas/${d.uuid}`;
     const xmlUrl = await subirArchivoR2(c.xml.content, `${base}.xml`, 'application/xml');
@@ -139,10 +178,10 @@ function recogerDelBuzon() {
 
     await db.query(
       `INSERT INTO facturas (user_id, ticket_id, comercio, xml_url, pdf_url, status)
-       VALUES (1, ?, ?, ?, ?, 'completado')`,
-      [ticketId, d.emisorNombre, xmlUrl, pdfUrl]
+       VALUES (?, ?, ?, ?, ?, 'completado')`,
+      [userId, ticketId, d.emisorNombre, xmlUrl, pdfUrl]
     );
-    console.log(`    ✅ ticket #${ticketId} + factura registrados\n`);
+    console.log(`    ✅ ${existente ? 'factura enganchada al' : 'ticket + factura creados en el'} ticket #${ticketId}\n`);
   }
 
   console.log(`\n${nuevos} CFDI sin ticket ${APLICAR ? 'registrados' : 'encontrados (simulación)'}.`);
