@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cartera de clientes — Timbra</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/notificaciones.js"></script>
+  <style>
+    .cliente-card { background:#fff; border:1px solid var(--border); border-radius:var(--card-radius); padding:18px 20px; margin-bottom:14px; }
+    .cliente-top { display:flex; align-items:center; gap:14px; }
+    .cliente-logo { width:46px; height:46px; border-radius:12px; object-fit:contain; background:#fff; border:1px solid var(--border); flex-shrink:0; }
+    .cliente-info { flex:1; min-width:0; }
+    .cliente-nombre { font-weight:700; font-size:.96rem; }
+    .cliente-rfc { font-size:.78rem; color:var(--text-muted); font-variant-numeric:tabular-nums; }
+    .cliente-metricas { display:flex; gap:22px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+    .metrica-valor { font-weight:800; font-size:1.15rem; font-variant-numeric:tabular-nums; }
+    .metrica-etiqueta { font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); font-weight:600; }
+    .estado-pill { font-size:.7rem; font-weight:700; padding:4px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.05em; }
+    .e-activo { background:var(--success-bg); color:var(--success); }
+    .e-prueba { background:var(--warning-bg); color:var(--warning); }
+    .e-suspendido { background:var(--error-bg); color:var(--error); }
+    .acciones { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+    .zona-logo { border:1.5px dashed var(--border); border-radius:12px; padding:14px; text-align:center; margin-top:12px; }
+    .zona-logo.activa { border-color:var(--vino); background:var(--vino-light); }
+    @media (max-width:700px){ .cliente-metricas{ gap:14px; flex-wrap:wrap; } }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/dashboard" class="nav-brand">
+      <img src="https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png" alt="G&amp;A" class="nav-brand-logo">
+      <div>
+        <div class="nav-brand-name">Timbra</div>
+        <div class="nav-brand-sub">G&amp;A Servicios Administrativos</div>
+      </div>
+    </a>
+    <div class="nav-links">
+      <a href="/dashboard" class="nav-link">Inicio</a>
+      <a href="/mis-tickets" class="nav-link">Mis Tickets</a>
+      <a href="/mis-facturas" class="nav-link">Mis Facturas</a>
+      <a href="/clientes" class="nav-link active">Clientes</a>
+      <a href="/admin-residentes" class="nav-link">Admin</a>
+    </div>
+    <div class="nav-right">
+      <div class="nav-avatar" id="nav-avatar">GA</div>
+      <a href="/logout" class="nav-logout">Salir</a>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="page-header">
+      <div class="page-title">Cartera de clientes</div>
+      <div class="page-subtitle">Cada cliente es un contribuyente con su propio RFC. Los bots y el agente se comparten entre todos.</div>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:24px">
+      <div class="stat-card"><div class="stat-value" id="m-clientes">0</div><div class="stat-label">Clientes</div></div>
+      <div class="stat-card"><div class="stat-value" id="m-activos">0</div><div class="stat-label">Activos</div></div>
+      <div class="stat-card"><div class="stat-value" id="m-tickets">0</div><div class="stat-label">Tickets totales</div></div>
+      <div class="stat-card"><div class="stat-value" id="m-ingreso">$0</div><div class="stat-label">Ingreso mensual</div></div>
+    </div>
+
+    <div id="lista"></div>
+  </div>
+
+<script>
+let CLIENTES = [];
+
+async function cargar() {
+  const r = await (await fetch('/api/admin/clientes')).json();
+  if (!r.ok) return;
+  CLIENTES = r.clientes;
+
+  document.getElementById('m-clientes').textContent = CLIENTES.length;
+  document.getElementById('m-activos').textContent = CLIENTES.filter(c => c.estado_cuenta === 'activo').length;
+  document.getElementById('m-tickets').textContent = CLIENTES.reduce((a, c) => a + Number(c.tickets || 0), 0);
+  // Solo cuenta lo que de verdad entra: quien está en prueba o suspendido no paga.
+  const ingreso = CLIENTES.filter(c => c.estado_cuenta === 'activo')
+    .reduce((a, c) => a + Number(c.mensualidad || 0), 0);
+  document.getElementById('m-ingreso').textContent = '$' + ingreso.toLocaleString('es-MX');
+
+  document.getElementById('lista').innerHTML = CLIENTES.map(c => {
+    const logo = c.marca_logo || 'https://pub-4d0fb2c51f724fb9a56066f6d7cbfb71.r2.dev/marca/logo-ga.png';
+    const persona = c.tipo_persona === 'fisica' ? 'Persona física' : 'Persona moral';
+    const prueba = c.prueba_hasta ? ` · prueba hasta ${String(c.prueba_hasta).slice(0,10)}` : '';
+    return `
+      <div class="cliente-card">
+        <div class="cliente-top">
+          <img class="cliente-logo" src="${logo}" alt="">
+          <div class="cliente-info">
+            <div class="cliente-nombre">${c.nombre}</div>
+            <div class="cliente-rfc">${c.rfc} · ${persona} · régimen ${c.regimen_fiscal || '—'}${prueba}</div>
+          </div>
+          <span class="estado-pill e-${c.estado_cuenta}">${c.estado_cuenta}</span>
+        </div>
+
+        <div class="cliente-metricas">
+          <div><div class="metrica-valor">${c.tickets || 0}</div><div class="metrica-etiqueta">Tickets</div></div>
+          <div><div class="metrica-valor">${c.usuarios || 0}</div><div class="metrica-etiqueta">Usuarios</div></div>
+          <div><div class="metrica-valor">$${Number(c.mensualidad || 0).toLocaleString('es-MX')}</div><div class="metrica-etiqueta">Mensualidad</div></div>
+          <div><div class="metrica-valor">${c.permite_subusuarios ? 'Sí' : 'No'}</div><div class="metrica-etiqueta">Capturistas</div></div>
+        </div>
+
+        <div class="acciones">
+          ${['activo','prueba','suspendido'].filter(e => e !== c.estado_cuenta)
+            .map(e => `<button class="btn btn-ghost btn-sm" onclick="cambiarEstado(${c.id},'${e}')">Marcar ${e}</button>`).join('')}
+          <label class="btn btn-outline btn-sm" style="cursor:pointer;margin:0;">
+            Cambiar logo
+            <input type="file" accept="image/*" style="display:none" onchange="subirLogo(${c.id}, this)">
+          </label>
+        </div>
+        <div class="zona-logo" id="zl-${c.id}" style="display:none;"></div>
+      </div>`;
+  }).join('');
+}
+
+async function cambiarEstado(id, estado) {
+  const r = await (await fetch(`/api/admin/clientes/${id}/estado`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ estado })
+  })).json();
+  if (r.ok) cargar(); else alert(r.msg || 'No se pudo cambiar');
+}
+
+// El recorte de fondo ocurre en el navegador (quitarFondoLogo, en
+// notificaciones.js). Al servidor solo le llega el PNG ya transparente: así no
+// hace falta ninguna librería de imágenes en Railway.
+async function subirLogo(clienteId, input) {
+  const archivo = input.files && input.files[0];
+  if (!archivo) return;
+  const zona = document.getElementById('zl-' + clienteId);
+  zona.style.display = 'block';
+  zona.className = 'zona-logo activa';
+  zona.textContent = 'Quitando el fondo…';
+  try {
+    const r = await subirLogoCliente(clienteId, archivo, 45);
+    if (!r.ok) throw new Error(r.msg || 'falló la subida');
+    zona.textContent = '✅ Logo actualizado';
+    setTimeout(cargar, 900);
+  } catch (e) {
+    zona.className = 'zona-logo';
+    zona.textContent = '❌ ' + e.message;
+  }
+}
+
+cargar();
+</script>
+</body>
+</html>

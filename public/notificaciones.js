@@ -183,3 +183,21 @@ async function subirLogoCliente(clienteId, archivo, tolerancia) {
   });
   return r.json();
 }
+
+// ── ENLACES SEGÚN QUIÉN ENTRA ────────────────────────────────────────────────
+//
+// "Clientes" es la cartera de G&A: quiénes son, cuánto pagan, en qué estado
+// están. Un admin de cliente NO tiene por qué ver a los demás clientes de la
+// plataforma, así que el enlace nace oculto en el HTML y solo se enseña aquí,
+// cuando /api/marca confirma que quien entró es el dueño.
+//
+// El servidor ya bloquea /clientes por su lado; esto es para que no se vea un
+// enlace que va a rebotar, no como control de acceso.
+async function ajustarMenuPorRol() {
+  try {
+    const { marca } = await (await fetch('/api/marca')).json();
+    const enlace = document.getElementById('nav-clientes');
+    if (enlace && marca && marca.esPlataforma) enlace.style.display = '';
+  } catch { /* si falla, el enlace se queda oculto: fallar hacia lo seguro */ }
+}
+document.addEventListener('DOMContentLoaded', ajustarMenuPorRol);

@@ -459,6 +459,13 @@ app.get("/validacion-manual", pageAuth, requireAdmin, (req, res) =>
 app.get("/admin-residentes", pageAuth, requireAdmin, (req, res) =>
   res.sendFile(path.join(__dirname, "public", "admin-residentes.html")));
 
+// La cartera es SOLO del dueño de la plataforma. Un admin de cliente no tiene
+// por qué ver quiénes son los demás clientes de G&A ni cuánto pagan.
+app.get("/clientes", pageAuth, requireAdmin, (req, res) => {
+  if (!esPlataforma(req)) return res.redirect("/dashboard");
+  res.sendFile(path.join(__dirname, "public", "clientes.html"));
+});
+
 // ── REGISTRO ──
 app.post("/register", async (req, res) => {
   try {
@@ -1607,6 +1614,69 @@ app.post("/api/admin/clientes/:id/logo", auth, requireAdmin, async (req, res) =>
     const url = await subirArchivoR2(buf, `marca/cliente-${clienteId}-${Date.now()}.png`, "image/png");
     await db.query("UPDATE clientes SET marca_logo = ? WHERE id = ?", [url, clienteId]);
     res.json({ ok: true, url });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// Alta / edición de un cliente desde el panel, sin tocar la consola.
+// Con 30 clientes en la cartera, dar de alta no puede seguir siendo un script.
+app.post("/api/admin/clientes", auth, requireAdmin, async (req, res) => {
+  try {
+    if (!esPlataforma(req)) return res.status(403).json({ ok: false, msg: "Solo G&A gestiona la cartera" });
+    const c = req.body || {};
+    const rfc = String(c.rfc || "").trim().toUpperCase();
+    if (!/^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(rfc))
+      return res.json({ ok: false, msg: "El RFC no tiene forma válida" });
+    if (!c.nombre) return res.json({ ok: false, msg: "Falta el nombre" });
+
+    // 13 caracteres = persona física; 12 = moral. Determina el régimen que le
+    // toca y si tiene sentido que tenga capturistas.
+    const fisica = rfc.length === 13;
+    const [ya] = await db.query("SELECT id FROM clientes WHERE rfc = ?", [rfc]);
+
+    if (ya.length) {
+      await db.query(
+        `UPDATE clientes SET nombre=?, razon_social=?, codigo_postal=?, regimen_fiscal=?,
+                uso_cfdi=?, calle=?, num_ext=?, num_int=?, colonia=?, municipio=?, estado=?,
+                email_contacto=?, mensualidad=?, estado_cuenta=?, prueba_hasta=?,
+                permite_subusuarios=?, marca_nombre=?, marca_color=?
+           WHERE id=?`,
+        [c.nombre, c.razon_social || c.nombre, c.codigo_postal, c.regimen_fiscal, c.uso_cfdi || "G03",
+         c.calle, c.num_ext, c.num_int, c.colonia, c.municipio, c.estado, c.email_contacto,
+         c.mensualidad || 0, c.estado_cuenta || "prueba", c.prueba_hasta || null,
+         c.permite_subusuarios ? 1 : 0, c.marca_nombre || null, c.marca_color || null, ya[0].id]
+      );
+      return res.json({ ok: true, id: ya[0].id, actualizado: true });
+    }
+
+    const [r] = await db.query(
+      `INSERT INTO clientes (nombre, rfc, razon_social, tipo_persona, codigo_postal, regimen_fiscal,
+              uso_cfdi, calle, num_ext, num_int, colonia, municipio, estado, email_contacto,
+              mensualidad, estado_cuenta, prueba_hasta, permite_subusuarios, marca_nombre, marca_color)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [c.nombre, rfc, c.razon_social || c.nombre, fisica ? "fisica" : "moral", c.codigo_postal,
+       c.regimen_fiscal, c.uso_cfdi || "G03", c.calle, c.num_ext, c.num_int, c.colonia,
+       c.municipio, c.estado, c.email_contacto, c.mensualidad || 0,
+       c.estado_cuenta || "prueba", c.prueba_hasta || null,
+       c.permite_subusuarios ? 1 : (fisica ? 0 : 1), c.marca_nombre || null, c.marca_color || null]
+    );
+    res.json({ ok: true, id: r.insertId });
+  } catch (e) {
+    res.json({ ok: false, msg: e.message });
+  }
+});
+
+// Suspender / reactivar. No se borra un cliente: sus facturas son documentos
+// fiscales y tienen que seguir ahí aunque deje de pagar.
+app.post("/api/admin/clientes/:id/estado", auth, requireAdmin, async (req, res) => {
+  try {
+    if (!esPlataforma(req)) return res.status(403).json({ ok: false, msg: "Solo G&A gestiona la cartera" });
+    const estado = String(req.body?.estado || "");
+    if (!["prueba", "activo", "suspendido"].includes(estado))
+      return res.json({ ok: false, msg: "Estado no válido" });
+    await db.query("UPDATE clientes SET estado_cuenta = ? WHERE id = ?", [estado, Number(req.params.id)]);
+    res.json({ ok: true });
   } catch (e) {
     res.json({ ok: false, msg: e.message });
   }
