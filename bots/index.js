@@ -52,7 +52,12 @@ function normalizarDatos(datos) {
   d.monto      = primero(d.monto, d.total, d.importe);
   d.fechaPago  = primero(d.fechaPago, d.fecha, d.fechaCompra);
   d.fecha      = primero(d.fecha, d.fechaPago, d.fechaCompra);
-  d.codigo     = primero(d.codigo, d.codigoTicket, d.codigoFacturacion, d.folio);
+  // CAPUFE: el código de 18 caracteres llega como `codigo` con el prompt nuevo,
+  // pero las lecturas hechas antes con el prompt genérico lo dejaron en
+  // `referencia` — es el caso de los tickets #199 y #200 del cliente DGA.
+  // El folio numérico va el ÚLTIMO a propósito: no sirve para facturar y
+  // mandarlo sería quemar el código sin remedio, porque consultar reserva.
+  d.codigo     = primero(d.codigo, d.codigoTicket, d.codigoFacturacion, d.referencia, d.folio);
   d.referencia = primero(d.referencia, d.codigoTicket, d.folio);
   d.urlEstacion = primero(d.urlEstacion, d.portalUrl, d.portal_url);
   d.portalUrl  = primero(d.portalUrl, d.portal_url, d.urlEstacion);

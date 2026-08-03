@@ -115,7 +115,21 @@ const visionWorker = new Worker("vision", async (job) => {
 
   // Confianza alta + portal facturable → directo a la cola de bots.
   // Portal desconocido → el frontend abre el cuestionario (que encola al agente).
-  if (!requiereConfirmacion && portalDetectado !== "desconocido" && esPortalFacturable(datosOCR, datosOCR.portalUrl || portalUrl)) {
+  // ⚠️ El portal que manda es el de la PASADA 1, no el que el modelo repita en
+  // la Pasada 2.
+  //
+  // `esPortalFacturable` miraba `datosOCR.portal`, que es lo que el modelo
+  // escribió al extraer. Cuando un portal no tiene prompt propio se usa el
+  // genérico, y ese devuelve `portal: "desconocido"` aunque la Pasada 1 lo
+  // hubiera identificado con 99 de confianza.
+  //
+  // Pasó de verdad con los dos tickets de CAPUFE del cliente DGA (#199 y #200):
+  //     Portal: capufe (99pts)     ← Pasada 1, correcto
+  //     portal: 'desconocido'      ← Pasada 2 con el prompt genérico
+  // y se quedaron parados en pendiente_confirmacion pese a que CAPUFE lleva
+  // sesiones en el gate y tiene bot escrito y enrutado.
+  const datosConPortal = { ...datosOCR, portal: datosOCR.portal && datosOCR.portal !== "desconocido" ? datosOCR.portal : portalDetectado };
+  if (!requiereConfirmacion && portalDetectado !== "desconocido" && esPortalFacturable(datosConPortal, datosOCR.portalUrl || portalUrl)) {
     await db.query("UPDATE tickets SET requiere_confirmacion = 0 WHERE id = ?", [ticketId]);
     const portalKey = (datosOCR.portal || datosOCR.comercio || "desconocido").toLowerCase().replace(/\s+/g, "");
     await encolarBot(ticketId, ticket.user_id, portalKey);

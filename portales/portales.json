@@ -1369,5 +1369,12 @@
       },
       "notas_desarrollo": "GPN ya tiene perfil guardado. Ojo con el Total: el ticket muestra SubTotal y Total, y el bueno es el Total."
     }
+  },
+  "fusionados": {
+    "autozonedemexico": "autozone",
+    "elcaporalrestaurantecampestre": "elcaporal",
+    "allegrocaffezonadoradatxutxufo": "allegro",
+    "littlecaesars": "littlecaesarsnavojoa",
+    "7elevenmexicosadecv": "7eleven"
   }
 }

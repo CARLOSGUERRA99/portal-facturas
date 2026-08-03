@@ -331,6 +331,37 @@ async function restaurarBotsDinamicos(db) {
       let updated = false;
       for (const row of rows) {
         if (portalesData.portales[row.comercio]) continue; // ya existe
+
+        // ⚠️ NO RESUCITAR PORTALES QUE SE FUSIONARON A MANO.
+        //
+        // El agente da de alta con una clave derivada del nombre del comercio
+        // ("autozonedemexico"), aunque ya exista la canónica "autozone" con su
+        // bot escrito y verificado. Esos duplicados se fusionaron en
+        // scripts/deduplicar-portales.js… pero como las filas de
+        // `portales_agente` siguen ahí, ESTA función los volvía a crear en cada
+        // arranque y deshacía la limpieza.
+        //
+        // Visto en los logs de producción del 02/08: tras el despliegue
+        // reaparecieron autozonedemexico, elcaporalrestaurantecampestre,
+        // allegrocaffezonadoradatxutxufo y 7elevenmexicosadecv. No es cosmético:
+        // el banco de OCR demostró que con el duplicado presente el ticket de
+        // AutoZone se detectaba como "autozonedemexico" y se enrutaba al bot
+        // viejo del agente en vez de al que sí factura.
+        if (portalesData.fusionados && portalesData.fusionados[row.comercio]) {
+          console.log(`⏭️ portales.json: ${row.comercio} está fusionado en "${portalesData.fusionados[row.comercio]}" — no se recrea`);
+          continue;
+        }
+
+        // Segunda red: si otra entrada YA declara este mismo archivo de bot,
+        // es el mismo portal con otro nombre. Se evita el duplicado aunque
+        // nadie lo haya registrado en `fusionados`.
+        const archivoBot = (row.nombre_archivo || row.comercio + '.js').replace(/^bots\//, '');
+        const yaDeclarado = Object.entries(portalesData.portales)
+          .find(([, p]) => (p.bot || '').replace(/^bots\//, '') === archivoBot);
+        if (yaDeclarado) {
+          console.log(`⏭️ portales.json: ${row.comercio} usa el mismo bot que "${yaDeclarado[0]}" — no se duplica`);
+          continue;
+        }
         // Mismo caso que en activarBot: la columna es de tipo JSON y mysql2 ya
         // la deserializa. Aquí el bug quedaba silenciado por el catch vacío
         // (analisis={} → portales.json se escribía sin tecnología/campos/flujo).
