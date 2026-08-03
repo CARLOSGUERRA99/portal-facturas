@@ -157,12 +157,52 @@
             <div class="acciones">
               ${c.portalUrl ? `<a class="btn" href="${esc(urlAbs(c.portalUrl))}" target="_blank" rel="noopener">Abrir portal ↗</a>` : ''}
               ${c.tieneImagen ? `<a class="btn" href="/api/tickets/${c.id}/imagen?descargar=1">⬇ Foto</a>` : ''}
+              <button class="btn" onclick="copiarDatos(${c.id}, this)">Copiar datos</button>
               <button class="btn pri" onclick="abrirCfdi(${c.id})">Cerrar con CFDI</button>
               <button class="btn" onclick="abrirNota(${c.id})">Anotar</button>
             </div>
           </div>
         </div>`;
     }).join('');
+  }
+
+  // ── MODO ASISTIDO ──────────────────────────────────────────────────────────
+  //
+  // Cuando un portal pide CAPTCHA no queda otra que resolverlo una persona. Lo
+  // que sí se puede quitar es lo demás: teclear el RFC, el régimen, el folio y
+  // el importe a mano en el portal del comercio.
+  //
+  // Con 30 clientes y RFC distintos, escribirlos de memoria es la vía rápida a
+  // timbrar con el receptor equivocado — y eso no se corrige: CAPUFE avisa
+  // literalmente que "una vez emitida no se podrá remitir a un RFC diferente".
+  // Por eso los datos fiscales vienen del CLIENTE del ticket, no de lo que uno
+  // recuerde.
+  async function copiarDatos(id, boton) {
+    const c = casos.find(x => x.id === id);
+    if (!c) return;
+    const f = c.fiscales || {};
+    const bloque = [
+      `RFC:            ${f.rfc || '—'}`,
+      `Razón social:   ${f.razonSocial || '—'}`,
+      `Código postal:  ${f.codigoPostal || '—'}`,
+      `Régimen fiscal: ${f.regimenFiscal || '—'}`,
+      `Uso del CFDI:   ${f.usoCfdi || 'G03'}`,
+      `Correo:         ${f.correo || ''}`,
+      '',
+      `Comercio:       ${c.comercio || '—'}`,
+      `Folio/código:   ${c.folio || '—'}`,
+      `Importe:        ${c.total != null ? '$' + c.total : '—'}`,
+      `Fecha:          ${c.fecha || '—'}`,
+    ].join('\n');
+    try {
+      await navigator.clipboard.writeText(bloque);
+      const antes = boton.textContent;
+      boton.textContent = '✅ Copiado';
+      setTimeout(() => { boton.textContent = antes; }, 1600);
+    } catch {
+      // Sin permiso de portapapeles (o sin HTTPS): se enseña para copiar a mano.
+      prompt('Copia estos datos:', bloque);
+    }
   }
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));

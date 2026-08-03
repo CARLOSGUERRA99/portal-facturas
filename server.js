@@ -1144,7 +1144,11 @@ app.get("/api/admin/validacion-manual", auth, requireAdmin, async (req, res) => 
              t.ocr_json, t.residente_id, t.email_contacto,
              (t.ruta_archivo IS NOT NULL AND t.ruta_archivo <> '') AS tiene_imagen,
              u.nombre AS subido_por, r.nombre AS residente,
-             c.nombre AS cliente
+             c.nombre AS cliente,
+             -- Los datos fiscales viajan con el caso para que quien lo resuelva
+             -- a mano no tenga que ir a buscarlos: con 30 clientes y RFC
+             -- distintos, copiarlos de memoria es la vía rápida a timbrar mal.
+             c.rfc, c.razon_social, c.codigo_postal, c.regimen_fiscal, c.uso_cfdi
         FROM tickets t
         LEFT JOIN facturas f  ON f.ticket_id = t.id
         LEFT JOIN users u     ON u.id = t.user_id
@@ -1177,6 +1181,11 @@ app.get("/api/admin/validacion-manual", auth, requireAdmin, async (req, res) => 
         datosOcr: o,
         tieneImagen: !!t.tiene_imagen,
         subidoPor: t.subido_por, residente: t.residente, cliente: t.cliente,
+        fiscales: {
+          rfc: t.rfc, razonSocial: t.razon_social, codigoPostal: t.codigo_postal,
+          regimenFiscal: t.regimen_fiscal, usoCfdi: t.uso_cfdi || 'G03',
+          correo: 'buzonfacturas@serviciosga.site',
+        },
         creado: t.creado,
         accion,
       };
