@@ -551,6 +551,13 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
     box-shadow: 0 -6px 20px rgba(0, 0, 0, .08);
   }
   .nav-links .nav-link {
+    /* ⚠️ EL COLOR HAY QUE REDECLARARLO, Y NO ES UN DETALLE.
+       En escritorio los enlaces van SOBRE el guinda de la barra, así que
+       .nav-link los pinta en blanco. Al moverlos abajo, el fondo pasa a ser
+       blanco… y quedaban BLANCO SOBRE BLANCO: la barra estaba ahí, ocupaba su
+       sitio y era invisible. Reportado desde el móvil: "sale color blanco y no
+       se pueden ver las opciones". */
+    color: var(--text-muted, #7C6A6D);
     flex: 1;
     text-align: center;
     font-size: .72rem;
