@@ -896,7 +896,12 @@ body { letter-spacing: -0.011em; }
 .navbar {
   background: linear-gradient(135deg, var(--vino) 0%, var(--vino-oscuro) 100%);
   box-shadow: 0 8px 32px rgba(123, 18, 32, .22);
-  backdrop-filter: saturate(1.2);
+  /* ⚠️ NADA DE backdrop-filter AQUÍ.
+     Lo tenía y volvió a romper la barra inferior del móvil: backdrop-filter
+     crea bloque contenedor para los hijos `position: fixed`, exactamente igual
+     que el `transform` que ya se había quitado por este mismo motivo. La barra
+     dejaba de anclarse a la pantalla y volvía a dibujarse arriba.
+     El efecto no aportaba nada —la barra es opaca— y costaba la navegación. */
 }
 .nav-link { transition: background .18s ease, color .18s ease; }
 
