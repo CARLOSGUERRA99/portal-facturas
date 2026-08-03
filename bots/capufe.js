@@ -257,7 +257,22 @@ async function facturarCapufe({
     // es que lo reservó OTRO RFC (o se facturó por otra vía): eso sí es
     // irrecuperable desde aquí.
     if (!yaEnLista && /ya se encuentra capturado/i.test(textoTrasValidar)) {
-      // No se da por perdido: el portal tiene una vía propia para estos casos.
+      // ⚠️ La recuperación NO se intenta por defecto, y no es pereza: se probó
+      // en vivo con dos códigos y en ambos respondió "No existe factura con ese
+      // código alfanumérico" y descargó 0 bytes. Es decir, solo sirve para
+      // rescatar facturas YA EMITIDAS, no para completar un código capturado a
+      // medias. Intentarlo igualmente cuesta ~200s y se lleva por delante el
+      // tope de sesión de Browserless, matando el bot con "Requesting main
+      // frame too early". Se deja tras una bandera para poder usarla el día que
+      // haga falta recuperar un CFDI que sí exista.
+      if (process.env.CAPUFE_INTENTAR_RECUPERAR !== "1") {
+        await browser.close();
+        return {
+          ok: false,
+          error_code: "ya_facturado",
+          msg: `CAPUFE: el código ${codigoLimpio} ya está capturado en el portal. Si se capturó sin emitir, el consumo NO se puede recuperar: hay que pedirlo a soporte de CAPUFE (soportecapufe@quadrum.mx).`,
+        };
+      }
       const rescate = await recuperarFacturaPorCodigo(page, codigoLimpio, screenshot, apiCalls, { rfc, razonSocial, codigoPostal, regimenFiscal, usoCfdi });
       await browser.close();
       if (rescate.ok === true) {
@@ -288,12 +303,64 @@ async function facturarCapufe({
     }
     console.log(yaEnLista ? "✅ Código recuperado de la lista del RFC" : "✅ Código verificado por el portal");
 
+    // ── EMISIÓN REAL — tres pasos, y saltarse cualquiera deja el código quemado ─
+    //
+    // Así es el flujo de verdad (confirmado con capturas del portal el 02/08):
+    //   1. Al validar, el código se pinta como fila en la tabla "CÓDIGOS
+    //      AGREGADOS" (código · plaza · fecha · costo).
+    //   2. SOLO ENTONCES aparece, DEBAJO de esa tabla, el botón "Facturar
+    //      conceptos". En la pantalla inicial ese botón NO EXISTE — comprobado
+    //      leyendo el DOM: los únicos botones son "Validar Código", "Activar
+    //      cámara" y "Aviso de Privacidad".
+    //   3. Al pulsarlo sale un modal "Confirmación" que exige pulsar
+    //      "Si estoy seguro".
+    //
+    // Lo que hacía antes: buscaba "Facturar conceptos" 6 segundos después de
+    // validar —cuando aún no existía— y nunca contestaba la confirmación. Por
+    // eso el ticket #199 validó (reservando el código) y no llegó a emitirse:
+    // el consumo quedó capturado y sin factura, y ya no hay forma de
+    // recuperarlo — la recuperación responde "No existe factura con ese código".
+    console.log("⏳ Esperando a que el código aparezca en CÓDIGOS AGREGADOS...");
+    const enTabla = await page.waitForFunction(
+      (cod) => {
+        const filas = Array.from(document.querySelectorAll("tr, .p-datatable-row, [class*=row]"));
+        return filas.some(f => (f.textContent || "").replace(/\s+/g, "").includes(cod));
+      },
+      { timeout: 20000 }, codigoLimpio
+    ).then(() => true).catch(() => false);
+
+    if (!enTabla) {
+      await screenshot("error_no_llego_a_la_tabla");
+      await browser.close();
+      return { ok: false, msg: `CAPUFE: el código ${codigoLimpio} se validó pero no apareció en CÓDIGOS AGREGADOS — no se pulsa Facturar para no dejarlo a medias` };
+    }
+    console.log("✅ Código en la tabla");
+
     console.log("🧾 Facturar conceptos (EMISIÓN REAL)...");
-    await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll("button")).find(x => /facturar conceptos/i.test(x.textContent || ""));
-      if (b) b.click();
+    const pulsoFacturar = await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button"))
+        .find(x => /facturar conceptos/i.test(x.textContent || "") && x.offsetParent && !x.disabled);
+      if (!b) return false;
+      b.click();
+      return true;
     });
-    await page.waitForTimeout(6000);
+    if (!pulsoFacturar) {
+      await screenshot("error_sin_boton_facturar");
+      await browser.close();
+      return { ok: false, msg: `CAPUFE: el código ${codigoLimpio} quedó en la tabla pero no apareció el botón "Facturar conceptos"` };
+    }
+    await page.waitForTimeout(2500);
+
+    // El modal de confirmación: sin pulsar "Si estoy seguro" NO se emite nada.
+    const confirmo = await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button"))
+        .find(x => /s[ií]\s*estoy\s*seguro/i.test((x.textContent || "").replace(/\s+/g, " ")) && x.offsetParent);
+      if (!b) return false;
+      b.click();
+      return true;
+    });
+    console.log(confirmo ? "✅ Confirmación aceptada (Si estoy seguro)" : "⚠️ No apareció el modal de confirmación");
+    await page.waitForTimeout(9000);
     await screenshot("p5_post_facturar");
 
     // Buscar en las respuestas de API algo que traiga el CFDI (XML/PDF en base64 o URL)
