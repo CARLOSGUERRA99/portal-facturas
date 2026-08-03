@@ -36,6 +36,113 @@ async function abrirYSeleccionar(page, dropdownIndex, matchFn, label) {
   await page.waitForTimeout(400);
 }
 
+// Usa la opción "Recuperar una factura, por código alfanumérico" del propio
+// portal para rescatar un código que quedó capturado sin completar el flujo.
+//
+// Es la salida que el portal ofrece para exactamente este caso, y hace falta
+// porque validar un código LO RESERVA: si el proceso se corta antes de
+// "Facturar conceptos", "Validar Código" ya solo responde "ya se encuentra
+// capturado" y `buscar_tickets.json` devuelve lista vacía en sesión nueva. Sin
+// esta vía el consumo quedaba inalcanzable para siempre.
+//
+// ⚠️ El panel de recuperación mete un SEGUNDO input con id="codigo" en la misma
+// página (el portal duplica el id). Hay que quedarse con el del panel de
+// recuperación, no con el de 18 caracteres del formulario normal.
+async function recuperarFacturaPorCodigo(page, codigoLimpio, screenshot, apiCalls, fiscales = {}) {
+  console.log(`♻️ Intentando "Recuperar factura por código" para ${codigoLimpio}...`);
+  const abierto = await page.evaluate(() => {
+    const a = Array.from(document.querySelectorAll("a, button, li"))
+      .find(e => /recuperar una factura/i.test(e.textContent || "") && e.offsetParent);
+    if (!a) return false;
+    a.click();
+    return true;
+  });
+  if (!abierto) return { ok: false, msg: "CAPUFE: no se encontró la opción de recuperar factura" };
+  await page.waitForTimeout(2500);
+
+  const escrito = await page.evaluate((cod) => {
+    // El input de recuperación es el que NO pide 18 caracteres.
+    const campos = Array.from(document.querySelectorAll('input[id="codigo"]')).filter(i => i.offsetParent);
+    const inp = campos.find(i => !/18/.test(i.placeholder || "")) || campos[0];
+    if (!inp) return false;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(inp, cod);
+    inp.dispatchEvent(new Event("input", { bubbles: true }));
+    inp.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  }, codigoLimpio);
+  if (!escrito) return { ok: false, msg: "CAPUFE: no apareció el campo de recuperación" };
+
+  await page.waitForTimeout(600);
+  await page.evaluate(() => {
+    const b = Array.from(document.querySelectorAll("button"))
+      .find(x => /recuperar|buscar|consultar|aceptar/i.test(x.textContent || "") && x.offsetParent);
+    if (b) b.click();
+  });
+  await page.waitForTimeout(5000);
+  await screenshot("p6_recuperacion");
+
+  let texto = await page.evaluate(() => document.body.innerText);
+  if (/no se encontr|no existe|sin resultados/i.test(texto)) {
+    return { ok: false, msg: `CAPUFE: la recuperación no encontró el código ${codigoLimpio}` };
+  }
+
+  // ⚠️ La recuperación NO es solo "descargar una factura ya hecha": el panel
+  // pide otra vez los datos fiscales ("Capturar datos fiscales: RFC, Nombre,
+  // Domicilio Fiscal, Régimen"). Es decir, es la vía para COMPLETAR la emisión
+  // de un código que quedó capturado a medias — justo nuestro caso.
+  //
+  // (Descargar el documento directo con
+  //  documentos/descargar_codigo_alfanumerico.json responde 403: hay que pasar
+  //  por este formulario, no hay atajo.)
+  if (/capturar datos fiscales/i.test(texto)) {
+    console.log("   el panel pide datos fiscales — rellenando para completar la emisión");
+    await page.evaluate((f) => {
+      const set = (el, v) => {
+        if (!el || v == null) return;
+        const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+        s.call(el, String(v));
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.dispatchEvent(new Event("blur", { bubbles: true }));
+      };
+      // Los inputs del panel de recuperación son los VISIBLES en este momento:
+      // el formulario normal queda oculto detrás.
+      const visibles = Array.from(document.querySelectorAll("input")).filter(i => i.offsetParent);
+      const porId = (id) => visibles.filter(i => i.id === id).pop();
+      set(porId("rfc"), f.rfc);
+      set(porId("nombre"), f.razonSocial);
+      set(porId("domicilioFiscalReceptor"), String(f.codigoPostal || "").slice(0, 5));
+      set(porId("correo"), "buzonfacturas@serviciosga.site");
+    }, fiscales);
+    await page.waitForTimeout(1500);
+
+    // Régimen y Uso CFDI vuelven a ser p-dropdown de PrimeReact.
+    const regimen = String(fiscales.regimenFiscal || "601").match(/\d{3}/)?.[0] || "601";
+    const uso = String(fiscales.usoCfdi || "G03").toUpperCase();
+    for (const [idx, buscado, etiqueta] of [[0, regimen, "Régimen"], [1, uso, "Uso CFDI"]]) {
+      try { await abrirYSeleccionar(page, idx, t => t.toUpperCase().startsWith(buscado), etiqueta); }
+      catch (e) { console.log(`   ⚠️ ${etiqueta}: ${e.message}`); }
+    }
+    await screenshot("p7_recuperacion_fiscales");
+
+    await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button"))
+        .find(x => /facturar|emitir|generar|aceptar|continuar/i.test(x.textContent || "") && x.offsetParent);
+      if (b) b.click();
+    });
+    await page.waitForTimeout(8000);
+    await screenshot("p8_recuperacion_final");
+    texto = await page.evaluate(() => document.body.innerText);
+  }
+
+  const respuesta = apiCalls.filter(c => /recuperar|factura|cfdi|descarg|documento/i.test(c.url)).slice(-4);
+  for (const r of respuesta) console.log(`   ${r.url.split("/").slice(-1)[0]} → ${(r.body || "(vacío)").slice(0, 200)}`);
+
+  const exito = /[eé]xito|factura.*(generad|emitid)|se ha enviado|correo/i.test(texto);
+  return { ok: exito ? true : null, texto: texto.replace(/\s+/g, " ").slice(0, 400), api: respuesta };
+}
+
 async function facturarCapufe({
   codigo, // código FACTURACION de 18 caracteres (sin espacios)
   rfc, razonSocial, codigoPostal, regimenFiscal, usoCfdi,
@@ -113,30 +220,73 @@ async function facturarCapufe({
     await page.keyboard.type("buzonfacturas@serviciosga.site", { delay: 15 });
     await screenshot("p3_fiscales_completos");
 
-    console.log(`📋 Código: ${codigoLimpio}...`);
-    await page.click("#codigo");
-    await page.keyboard.type(codigoLimpio, { delay: 25 });
-    await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll("button")).find(x => /validar c[oó]digo/i.test(x.textContent || ""));
-      if (b) b.click();
-    });
-    await page.waitForTimeout(3500);
-    await screenshot("p4_post_validar");
+    // ⚠️ ANTES DE VALIDAR: mirar si el código YA ESTÁ EN LA LISTA de este RFC.
+    //
+    // Validar un código lo RESERVA en el backend de CAPUFE. Si un intento
+    // anterior validó pero no llegó a "Facturar conceptos", el código queda
+    // guardado contra ese RFC y un segundo "Validar" responde "ya se encuentra
+    // capturado" — que el bot interpretaba como "ya facturado" y se rendía,
+    // dejando el ticket muerto para siempre.
+    //
+    // Pero NO está perdido: `buscar_tickets.json` lo devuelve en la lista del
+    // RFC en cuanto se teclea el RFC. Medido con el ticket #199 de DGA, tras un
+    // intento cortado a medias:
+    //   [246248584,"GUAYMAS","K8KPKTZBHKSF7WMVHQ",1785594713000,48.00,0,null]
+    // O sea: el consumo sigue ahí, pendiente de facturar. Lo único que hay que
+    // hacer es NO revalidarlo y saltar directo a emitir.
+    const yaEnLista = apiCalls.some(c => /buscar_tickets/i.test(c.url) && (c.body || "").includes(codigoLimpio));
+
+    if (yaEnLista) {
+      console.log(`♻️ El código ${codigoLimpio} ya estaba guardado en este RFC — se salta la validación y se factura directo`);
+      await screenshot("p4_recuperado_de_lista");
+    } else {
+      console.log(`📋 Código: ${codigoLimpio}...`);
+      await page.click("#codigo");
+      await page.keyboard.type(codigoLimpio, { delay: 25 });
+      await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("button")).find(x => /validar c[oó]digo/i.test(x.textContent || ""));
+        if (b) b.click();
+      });
+      await page.waitForTimeout(3500);
+      await screenshot("p4_post_validar");
+    }
 
     const textoTrasValidar = await page.evaluate(() => document.body.innerText);
-    if (/ya se encuentra capturado/i.test(textoTrasValidar)) {
+
+    // Si dice "ya capturado" pero el código NO aparece en la lista de este RFC,
+    // es que lo reservó OTRO RFC (o se facturó por otra vía): eso sí es
+    // irrecuperable desde aquí.
+    if (!yaEnLista && /ya se encuentra capturado/i.test(textoTrasValidar)) {
+      // No se da por perdido: el portal tiene una vía propia para estos casos.
+      const rescate = await recuperarFacturaPorCodigo(page, codigoLimpio, screenshot, apiCalls, { rfc, razonSocial, codigoPostal, regimenFiscal, usoCfdi });
       await browser.close();
-      return { ok: false, error_code: "ya_facturado", msg: `CAPUFE: el código ${codigoLimpio} ya está capturado en el sistema de CAPUFE (validación previa no completada, o ya facturado por otra vía) — usa "Recuperar factura por código" para confirmar` };
+      if (rescate.ok === true) {
+        console.log("♻️ Recuperación completada — el CFDI llega por correo (IMAP)");
+        return { ok: true, procesandoCorreo: true, _recuperado: true };
+      }
+      if (rescate.ok === false) {
+        return { ok: false, error_code: "ya_facturado", msg: `${rescate.msg} (el código quedó capturado sin completar la emisión)` };
+      }
+      // La recuperación devolvió algo: se reporta tal cual para decidir a mano.
+      // No se inventa un "ok": si hubiera CFDI, llega al buzón y lo recoge IMAP.
+      return {
+        ok: false,
+        error_code: "ya_facturado",
+        msg: `CAPUFE: código ${codigoLimpio} capturado; la recuperación respondió: ${(rescate.texto || "").replace(/\s+/g, " ").slice(0, 220)}`,
+        _recuperacion: rescate,
+      };
     }
     if (/no existe|c[oó]digo inv[aá]lido|no se encontr/i.test(textoTrasValidar) && !/verificado/i.test(textoTrasValidar)) {
       await browser.close();
       return { ok: false, error_code: "datos_invalidos", msg: `CAPUFE: código no reconocido por el portal (${codigoLimpio})` };
     }
-    if (!/verificado y guardado/i.test(textoTrasValidar)) {
+    // Si se recuperó de la lista no hay mensaje de "verificado": ese texto solo
+    // aparece cuando se acaba de validar. Exigirlo abortaría el rescate.
+    if (!yaEnLista && !/verificado y guardado/i.test(textoTrasValidar)) {
       await browser.close();
       return { ok: false, msg: `CAPUFE: respuesta inesperada tras validar código: ${textoTrasValidar.slice(0, 200)}` };
     }
-    console.log("✅ Código verificado por el portal");
+    console.log(yaEnLista ? "✅ Código recuperado de la lista del RFC" : "✅ Código verificado por el portal");
 
     console.log("🧾 Facturar conceptos (EMISIÓN REAL)...");
     await page.evaluate(() => {
