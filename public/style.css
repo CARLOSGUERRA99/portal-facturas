@@ -580,8 +580,15 @@ tbody td { padding: 14px 18px; font-size: 0.875rem; color: var(--text); }
      que el último botón de cada página no quede tapado. */
   .container { padding: 84px 16px calc(84px + env(safe-area-inset-bottom)); }
 
-  /* El botón flotante de WhatsApp se pisaba con la barra inferior. */
-  .wa-float, .whatsapp-float { bottom: calc(80px + env(safe-area-inset-bottom)) !important; }
+  /* ⚠️ El botón de WhatsApp tapaba el último enlace de la barra ("Admin").
+     Dos detalles que costaron el fallo: la clase real es .wa-bubble —no
+     .wa-float, que fue lo primero que probé— y está definida en un <style>
+     DENTRO de cada .html, que va después de esta hoja y por tanto gana. De ahí
+     el !important, que aquí no es pereza sino la única forma de ganarle a un
+     estilo declarado más abajo en el documento. */
+  .wa-bubble { bottom: calc(78px + env(safe-area-inset-bottom)) !important; right: 14px !important; }
+  .wa-btn { width: 48px !important; height: 48px !important; }
+  .wa-tooltip { display: none !important; }   /* no hay hover en un teléfono */
 
   /* Las tablas anchas se desplazan dentro de su caja en vez de romper el ancho
      de la página, que es lo que provoca el zoom-out horizontal en móvil. */

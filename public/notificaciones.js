@@ -201,3 +201,29 @@ async function ajustarMenuPorRol() {
   } catch { /* si falla, el enlace se queda oculto: fallar hacia lo seguro */ }
 }
 document.addEventListener('DOMContentLoaded', ajustarMenuPorRol);
+
+// ── ETIQUETAS CORTAS EN LA BARRA INFERIOR ────────────────────────────────────
+//
+// En escritorio caben "Mis Tickets" y "Mis Facturas" de sobra. En un teléfono de
+// 375px, con seis secciones, cada una dispone de ~62px y los textos se tocan
+// entre sí — se lee peor que si no hubiera etiqueta.
+//
+// Se acortan por JS y no por CSS porque no hay forma de reescribir el texto de
+// un enlace desde la hoja de estilos, y duplicar el markup por viewport
+// significaría mantener dos menús sincronizados a mano. El texto original se
+// guarda para poder restaurarlo si la pantalla crece (girar el teléfono).
+function ajustarEtiquetasMenu() {
+  const CORTAS = {
+    '/mis-tickets': 'Tickets',
+    '/mis-facturas': 'Facturas',
+    '/perfil': 'Perfil',
+  };
+  const movil = window.innerWidth <= 700;
+  document.querySelectorAll('.nav-links .nav-link').forEach((a) => {
+    if (!a.dataset.textoLargo) a.dataset.textoLargo = a.textContent.trim();
+    const ruta = new URL(a.href, location.origin).pathname;
+    a.textContent = movil && CORTAS[ruta] ? CORTAS[ruta] : a.dataset.textoLargo;
+  });
+}
+document.addEventListener('DOMContentLoaded', ajustarEtiquetasMenu);
+window.addEventListener('resize', ajustarEtiquetasMenu);
