@@ -1,0 +1,3007 @@
+{
+ "meta": {
+  "total_portales": 31,
+  "con_bot": 29,
+  "en_produccion": 28,
+  "generados_por_agente": 3,
+  "fecha_extraccion": "2026-08-07",
+  "fuente": "repositorio portal-facturas (portales.json + bots/ + lib/) y base de datos — NO historial de chat"
+ },
+ "patrones_globales": {
+  "tecnologias": {
+   "SoftRestaurant / mefacturo.mx": 3,
+   "EDX Retail": 2,
+   "Por determinar": 2,
+   "ASP.NET WebForms": 1,
+   "JSF PrimeFaces": 1,
+   "ASP.NET MVC": 1,
+   "ASP.NET WebForms + AJAX": 1,
+   "Angular SPA": 1,
+   "Angular 15 con reactive forms y ng-mask": 1,
+   "Next.js + Material UI v5": 1,
+   "AngularJS SPA": 1,
+   "Origon Cloud": 1,
+   "Desconocida": 1,
+   "ASP.NET Core con login de cuenta": 1,
+   "SPA con jQuery Chosen; login con reCAPTCHA v2": 1,
+   "SPA con autocomplete de drives": 1,
+   "AngularJS con CAPTCHA de imagen": 1,
+   "Blazor/MudBlazor": 1,
+   "misma plataforma que Enerfuel Tech": 1,
+   "NexusFuel multi-tenant": 1,
+   "NexusFuel": 1,
+   "SPA React + PrimeReact": 1,
+   "SoftRestaurant / AutoFactura": 1,
+   "PHP + Select2 con catálogos por AJAX": 1,
+   "ASP.NET": 1,
+   "Portal estatal con login de cuenta": 1,
+   "portal propio con registro de cliente": 1
+  },
+  "portales_con_captcha": [
+   {
+    "slug": "homedepot",
+    "tipo": "Cloudflare Turnstile"
+   },
+   {
+    "slug": "7eleven",
+    "tipo": "imagen"
+   }
+  ],
+  "requieren_cuenta": [
+   "benavides",
+   "autozone",
+   "igasfac",
+   "oxxogas",
+   "caffenio",
+   "erfc",
+   "facturagas",
+   "orler"
+  ],
+  "campos_mas_pedidos": {
+   "total": 19,
+   "folio": 12,
+   "fecha": 7,
+   "referencia": 7,
+   "tc": 1,
+   "tr": 1,
+   "idVenta": 1,
+   "codigoTicket": 1,
+   "portalUrl": 1,
+   "folioFactura": 1,
+   "caja": 1,
+   "fechaCompra": 1,
+   "noTicket": 1,
+   "idFacturacion": 1,
+   "comercio": 1,
+   "codFacturacion": 1,
+   "drive": 1,
+   "codigo": 1
+  }
+ },
+ "portales": [
+  {
+   "portal": {
+    "nombre_comercial": "Walmart de México (Bodega Aurrera / Mi Bodega Aurrera / Walmart / Sam's Club / Superama)",
+    "razon_social": "Bodega Aurrera",
+    "slug": "bodegaaurrera",
+    "url_portal": "https://facturacion.walmartmexico.com.mx/frmDatos.aspx",
+    "url_base": "https://facturacion.walmartmexico.com.mx/frmDatos.aspx",
+    "tecnologia": "ASP.NET WebForms",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "tc",
+     "tr",
+     "fecha",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": "#ctl00_ContentPlaceHolder1_txtEmail",
+    "input_cp": null,
+    "input_regimen_fiscal": "#ctl00_ContentPlaceHolder1_ddlregimenFiscal",
+    "input_uso_cfdi": "#ctl00_ContentPlaceHolder1_ddlusoCFDI",
+    "input_forma_pago": null,
+    "boton_facturar": "button, input[type=submit], a",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "button, input[type=submit], a",
+    "#ctl00_ContentPlaceHolder1_radConsultar",
+    "input[placeholder=",
+    "#ctl00_ContentPlaceHolder1_rdMail",
+    "#ctl00_ContentPlaceHolder1_txtEmail",
+    "#ctl00_ContentPlaceHolder1_rdDescargar",
+    "#ctl00_ContentPlaceHolder1_txtTC",
+    "a[href*=",
+    "#ctl00_ContentPlaceHolder1_ddlregimenFiscal",
+    "#ctl00_ContentPlaceHolder1_ddlusoCFDI",
+    "select",
+    "input[type=radio]",
+    "input[type=text][id*=",
+    "a[href=",
+    "#ctl00_ContentPlaceHolder1_btnAceptar"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000,
+     10000,
+     8000,
+     20000
+    ],
+    "esperas_fijas_total_s": 14.2
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 2,
+     "exitos": 0,
+     "segundos_medio": 43.8
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "bodegaaurrera",
+    "por_texto_ocr": [
+     "bodega aurrera",
+     "bodegaaurrera",
+     "wal mart",
+     "walmart",
+     "sam's club",
+     "superama"
+    ],
+    "por_comercio": [
+     "bodega aurrera",
+     "walmart",
+     "wal mart",
+     "sam's club",
+     "superama"
+    ],
+    "por_url_qr": []
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "OXXO Facturación Electrónica",
+    "razon_social": "OXXO (cualquier sucursal — San Javier, Misiones, Centro, etc.)",
+    "slug": "oxxo",
+    "url_portal": "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/inicio.do",
+    "url_base": "https://www4.oxxo.com:9443/facturacionElectronica-web/views/layout/inicio.do",
+    "tecnologia": "JSF PrimeFaces (Java)",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "fecha",
+     "folio",
+     "idVenta",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Abrir portal, cerrar popup inicial (.ui-dialog-titlebar-close)",
+     "Paso 2: Fecha con datepicker jQuery UI (#form:fecha_input) — navegar mes a mes",
+     "Paso 3: Llenar folio (#form:folio), idVenta (#form:venta), total (#form:total)",
+     "Paso 4: Click 'Validar Ticket' (span con texto exacto) → esperar #form:continuar habilitado",
+     "Paso 5: Click #form:continuar",
+     "Paso 6: RFC (#form:rfc) + blur → dispara carga de régimen fiscal",
+     "Paso 7: Razón social — polling activo 40 intentos × 300ms en múltiples selectores",
+     "Paso 8: Dirección (#form:calle, ext, int, colonia, dele)",
+     "Paso 9: CP (#form:codigo) + blur → dispara carga de estado",
+     "Paso 10: Estado (#form:estado_label → panel li items)",
+     "Paso 11: Régimen fiscal (#form:selectOneMenuRegFis_label → buscar '601')",
+     "Paso 12: Uso CFDI (#form:selectOneMenuCFDI_label → buscar 'Gastos en general')",
+     "Paso 13: Click #form:generarFactura",
+     "Paso 14: Enviar correo + descargar PDF/XML → fallback IMAP"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": "/no tuvo éxito|no encontr|folio.*no.*valid|favor de volver/i",
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": "#form\\\\:validarTicket",
+    "input_fecha": "#form\\\\:fecha_input",
+    "input_total": "#form\\\\:total",
+    "input_rfc": "#form\\\\:rfc",
+    "input_correo": "#form\\\\:emailEnv",
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": "#form\\\\:selectOneMenuCFDI_panel ul",
+    "input_forma_pago": null,
+    "boton_facturar": "#form\\\\:generarFactura",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": ".ui-messages-error, [class*=",
+    "modal_ya_facturado": null
+   },
+   "selectores_todos": [
+    "#form\\\\:fecha_input",
+    ".ui-datepicker-month",
+    ".ui-datepicker-year",
+    ".ui-datepicker-prev",
+    ".ui-datepicker-next:not(.ui-state-disabled)",
+    ".ui-datepicker-calendar td[data-handler=",
+    "#form\\\\:emailEnv",
+    "#form\\\\:j_idt66",
+    "#form\\\\:j_idt68",
+    "#form\\\\:j_idt70",
+    ".ui-dialog-titlebar-close",
+    ".ui-dialog-titlebar-close, .ui-dialog-titlebar-icon",
+    ".ui-dialog",
+    ".ui-datepicker:not([style*=",
+    "#form\\\\:validarTicket",
+    "#form\\\\:continuar",
+    ".ui-messages-error, [class*=",
+    ".ui-messages-error, .ui-message-error-detail, [class*=",
+    "#form\\\\:rfc",
+    "#form\\\\:selectOneMenuRegFis_panel ul",
+    "li",
+    "#form\\\\:codigo",
+    "#form\\\\:estado_panel li.ui-selectonemenu-item",
+    "#form\\\\:selectOneMenuRegFis_panel li.ui-selectonemenu-item",
+    "#form\\\\:selectOneMenuCFDI_panel ul",
+    "#form\\\\:selectOneMenuCFDI_panel li.ui-selectonemenu-item",
+    "input[type=",
+    "a, button, input[type=",
+    "a, button",
+    "#form\\\\:folio",
+    "#form\\\\:venta",
+    "#form\\\\:total",
+    "#form\\\\:j_idt62",
+    "#form\\\\:calle",
+    "#form\\\\:ext",
+    "#form\\\\:int",
+    "#form\\\\:colonia",
+    "#form\\\\:dele",
+    "#form\\\\:estado_label",
+    "#form\\\\:selectOneMenuRegFis_label",
+    "#form\\\\:selectOneMenuCFDI_label",
+    "#form\\\\:generarFactura"
+   ],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [
+     30000,
+     10000,
+     6000,
+     15000,
+     20000
+    ],
+    "esperas_fijas_total_s": 40.6
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 1,
+     "exitos": 1,
+     "segundos_medio": 51
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "oxxo",
+    "por_texto_ocr": [
+     "oxxo"
+    ],
+    "por_comercio": [
+     "oxxo"
+    ],
+    "por_url_qr": [],
+    "nota_deteccion": "SOLO la tienda de conveniencia. Si el ticket menciona OXXO GAS, litros, bomba o precio por litro, es \"oxxogas\", NO este."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "BuzonFacturas (ARCO)",
+    "razon_social": "Gasolineras ARCO (cualquier sucursal)",
+    "slug": "arco",
+    "url_portal": "https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0",
+    "url_base": "https://buzonfacturas.com/GenerarCFDI/Index?avanzada=0",
+    "tecnologia": "ASP.NET MVC",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "codigoTicket",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Navegar a URL (del QR o base), llenar RFC (input#RFC), click submit",
+     "Paso 2: Click 'Guardar y continuar' → navega a /DatosTicket",
+     "Paso 3: Llenar código de facturación (input#CodigoFacturacion), click #btnVerificar",
+     "Paso 4: Detectar casos especiales: ticket vencido (+2 días) o ya facturado",
+     "Paso 5: Seleccionar forma de pago (select#FormaDePago → '28' tarjeta débito)",
+     "Paso 6: Seleccionar uso CFDI (select#UsoCFDI → 'G03')",
+     "Paso 7: Llenar correo (input#correo) ANTES de generar",
+     "Paso 8: Click 'Generar factura' → navega a pantalla de confirmación",
+     "Paso 9: Descarga directa XML/PDF con targetcreated → fallback IMAP"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": "/ya fue facturado|ya existe|ya procesado|previously invoiced/i",
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": "input#CodigoFacturacion, input[name=",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "input#RFC",
+    "input_correo": "input#correo",
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": "select#UsoCFDI",
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": "button.btn-success",
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "input[name=",
+    "button, input[type=",
+    "table tbody tr",
+    "table tbody tr:first-child td:last-child img, table tbody tr:first-child td:last-child a",
+    "input#RFC",
+    "button[type=",
+    "button[name=",
+    "button.btn-success",
+    "input#CodigoFacturacion, input[name=",
+    "select#FormaDePago",
+    "select#UsoCFDI",
+    "input#correo",
+    "input#folioFactura",
+    "input[id*=",
+    "span#folioFactura",
+    "[id*=",
+    "input[type=",
+    "a, button",
+    "button#btnVerificar"
+   ],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [
+     10000,
+     30000,
+     20000
+    ],
+    "esperas_fijas_total_s": 10
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 11,
+     "exitos": 0,
+     "segundos_medio": 38.5
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "arco",
+    "por_texto_ocr": [
+     "buzonfacturas",
+     "arco"
+    ],
+    "por_comercio": [
+     "arco"
+    ],
+    "por_url_qr": [
+     "buzonfacturas.com",
+     "buzonfacturas",
+     "arco"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "NexusFuel / Gasmaz",
+    "razon_social": "Gasmaz",
+    "slug": "gasmaz",
+    "url_portal": "https://redmaxfactura.nexusfuel.mx/",
+    "url_base": "https://redmaxfactura.nexusfuel.mx/",
+    "tecnologia": "ASP.NET WebForms + AJAX",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "portalUrl",
+     "referencia",
+     "folio",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Cargar portal (URL del QR o redmaxfactura.nexusfuel.mx)",
+     "Paso 2: Llenar #txtReferencia, #txtFolio, #txtAmount, #txtRFC",
+     "Paso 3: Click #btnNext → detectar caso: paso2 | ya_facturado | timeout",
+     "Paso 4 (caso ya_facturado): waitForSelector #divFiles → descargarArchivos()",
+     "Paso 5 (caso normal): llenar #txtName, #txtEmail",
+     "Paso 6: Seleccionar #selFiscalRegime (régimen fiscal)",
+     "Paso 7: Esperar AJAX options.length > 1 en #selVoucherUse, luego seleccionar",
+     "Paso 8: Seleccionar #selPaymentWay (forma de pago)",
+     "Paso 9: Click botón 'Facturar' con evaluateHandle().asElement().click()",
+     "Paso 10: Promise.race navegación/confirmación",
+     "Paso 11: waitForSelector #divFiles → descargarArchivos()"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": "#txtReferencia",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": ".alert-success, #pConfirmationMessage",
+    "modal_error": ".alert-success, #pConfirmationMessage",
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "#txtReferencia",
+    "#txtName",
+    "#divDocumentsDownload",
+    "#divFiles",
+    "#selFiscalRegime",
+    "#selVoucherUse",
+    "button",
+    ".alert-success, #pConfirmationMessage",
+    "#btnNext"
+   ],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [
+     20000,
+     30000,
+     15000,
+     10000
+    ],
+    "esperas_fijas_total_s": 6.9
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 3,
+     "exitos": 3,
+     "segundos_medio": 32.2
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "gasmaz",
+    "por_texto_ocr": [
+     "nexusfuel",
+     "gasmaz"
+    ],
+    "por_comercio": [
+     "gasmaz"
+    ],
+    "por_url_qr": [
+     "nexusfuel.mx",
+     "nexusfuel",
+     "gasmaz"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Home Depot Mexico",
+    "razon_social": "Home Depot (cualquier sucursal en México)",
+    "slug": "homedepot",
+    "url_portal": "https://facturacion.homedepot.com.mx:2053/FacturacionWeb/#/portalweb",
+    "url_base": "https://facturacion.homedepot.com.mx:2053/FacturacionWeb/#/portalweb",
+    "tecnologia": "Angular SPA (puerto 2053, HTTPS propio)",
+    "tiene_captcha": true,
+    "tipo_captcha": "Cloudflare Turnstile",
+    "captcha_evidencia": "resuelto con CapSolver (AntiTurnstileTaskProxyLess)",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "folio",
+     "fecha",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Cargar portal Angular en puerto 2053 (ignoreHTTPSErrors: true)",
+     "Paso 2: Llenar barcode (folio) en input:nth-of-type(1) y RFC en input:nth-of-type(2)",
+     "Paso 3: Click 'Facturar/Buscar/Validar' — detectar ya_facturado o folio inválido",
+     "Paso 4: Llenar razón social, código postal, uso CFDI, correo",
+     "Paso 5: Click 'Facturar/Generar' — esperar confirmación",
+     "Paso 6: Interceptar descarga XML y PDF (targetcreated)"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": "/generada\\s*correctamente|xml|pdf|descarg|reenviar\\s*factura/i",
+    "mensaje_ya_facturado": "/ya\\s*(fue\\s*)?facturad|previously\\s*invoiced/i",
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": "#ticket",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#rfc",
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": "app-modal-alert",
+    "modal_error": ".alert, .error, [class*=",
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "script[src]",
+    "iframe[src*=",
+    "#rfc",
+    "#ticket",
+    "input[name=",
+    "button.btn-primary",
+    ".alert, .error, [class*=",
+    "#nombre",
+    "button",
+    "app-modal-alert",
+    "a, button"
+   ],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [
+     40000,
+     15000,
+     10000,
+     5000,
+     8000
+    ],
+    "esperas_fijas_total_s": 55.4
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "homedepot",
+    "por_texto_ocr": [
+     "home depot"
+    ],
+    "por_comercio": [
+     "home depot"
+    ],
+    "por_url_qr": [
+     "homedepot.com.mx"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Farmacias Guadalajara",
+    "razon_social": "Farmacias Guadalajara (cualquier sucursal)",
+    "slug": "farmaciaguadalajara",
+    "url_portal": "https://www.movil.farmaciasguadalajara.com/facturacion/",
+    "url_base": "https://www.movil.farmaciasguadalajara.com/facturacion/",
+    "tecnologia": "Angular 15 con reactive forms y ng-mask",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "folioFactura",
+     "caja",
+     "fechaCompra",
+     "noTicket"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Cargar portal Angular",
+     "Paso 2: Llenar folioFactura (formato XXXXXX-XXXXXX-X con guiones)",
+     "Paso 3: Click 'Validar folio' → modal de confirmación de sucursal → click 'Sí'",
+     "Paso 4: Clasificar modal resultado (sistema_caido | datos_invalidos | ya_facturado | confirmacion)",
+     "Paso 5: Si confirmacion → waitForSelector('input#rfc:not([disabled])')",
+     "Paso 6: Llenar RFC, CP, razón social, régimen, uso CFDI",
+     "Paso 7: Generar factura"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": "/ya\\s+(fue\\s+)?facturad|ya\\s+procesad|previously\\s+invoiced/i",
+    "mensaje_ticket_invalido": "/ Datos del ticket inválidos /"
+   },
+   "selectores_criticos": {
+    "input_folio": "input#folioFactura",
+    "input_fecha": "input#fechaCompra",
+    "input_total": null,
+    "input_rfc": "input#rfc:not([disabled])",
+    "input_correo": "input#envioCorreo-input",
+    "input_cp": null,
+    "input_regimen_fiscal": "select#regimenFiscal",
+    "input_uso_cfdi": "select#usoCfdi",
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "input#folioFactura",
+    "button",
+    ".swal2-popup",
+    "input#rfc:not([disabled])",
+    ".swal2-popup button",
+    "input#envioCorreo-input",
+    "input[type=",
+    "a, button, input[type=",
+    "input#fechaCompra",
+    "input#politicasPr-input",
+    "select#regimenFiscal",
+    "select#usoCfdi"
+   ],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [
+     30000,
+     15000,
+     8000,
+     20000,
+     5000,
+     10000
+    ],
+    "esperas_fijas_total_s": 21
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "en_desarrollo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Bot tiene lógica correcta pero aún no tiene caso de éxito end-to-end validado"
+   },
+   "deteccion": {
+    "por_portal_field": "farmaciaguadalajara",
+    "por_texto_ocr": [
+     "farmacia guadalajara",
+     "farmaciasguadalajara",
+     "fragua"
+    ],
+    "por_comercio": [
+     "farmacia guadalajara",
+     "fragua"
+    ],
+    "por_url_qr": [
+     "farmaciasguadalajara.com"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Panamá Restaurante y Pastelería",
+    "razon_social": "Panamá Restaurante y Pastelería (Culiacán, Mazatlán, Los Mochis)",
+    "slug": "panama",
+    "url_portal": "https://portalfacturacion.grupopanama.mx/",
+    "url_base": "https://portalfacturacion.grupopanama.mx/",
+    "tecnologia": "Next.js + Material UI v5 (React SPA) — sin IDs en inputs, MUI Selects",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "idFacturacion",
+     "total",
+     "comercio"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 0: Cargar https://portalfacturacion.grupopanama.mx/",
+     "Paso 1: Click 'Generar Factura' por texto",
+     "Paso 2: Seleccionar ciudad por radio button (mapear desde comercio del ticket)",
+     "Paso 3: Click SIGUIENTE",
+     "Paso 4: Llenar 'ID Facturación' (React native setter) + 'Total de compra'",
+     "Paso 5: Click 'Consultar ticket' → esperar AJAX → detectar errores",
+     "Paso 6: Esperar que SIGUIENTE se habilite → click SIGUIENTE",
+     "Paso 7: Llenar RFC → click 'Buscar cliente' → esperar carga AJAX datos fiscales",
+     "Paso 8: MUI Select 'Forma Pago' → seleccionar 'Efectivo'",
+     "Paso 9: Llenar 'Correo': buzonfacturas@serviciosga.site",
+     "Paso 10: Click SIGUIENTE (se habilita con FP + correo)",
+     "Paso 11: Click 'FACTURAR' (MuiButton-containedPrimary + CheckCircleIcon)",
+     "Paso 12: Interceptar XML/PDF por response/targetcreated, subir R2; fallback IMAP"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": "/ya fue facturado|ya facturado|ya exist/i",
+    "mensaje_ticket_invalido": "/no encontrado|no existe|inv[aá]lido|incorrecto|no v[aá]lido/i"
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "input[placeholder=",
+    "label, p.MuiFormLabel-root, .MuiInputLabel-root, p",
+    "input",
+    "input[type=",
+    "ul[role=",
+    "label, p, span, .MuiFormLabel-root, .MuiInputLabel-root, legend",
+    "[role=",
+    ".MuiFormControl-root",
+    "label, p, span, legend",
+    ".MuiSelect-select, [role=",
+    "button",
+    "button, [role=",
+    "[data-testid=",
+    "a, button"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     3000,
+     5000,
+     30000,
+     10000,
+     15000,
+     12000,
+     8000
+    ],
+    "esperas_fijas_total_s": 19.1
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 1,
+     "exitos": 0,
+     "segundos_medio": 253.8
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "panama",
+    "por_texto_ocr": [
+     "grupopanama",
+     "pastelerias panama",
+     "restaurante panama"
+    ],
+    "por_comercio": [
+     "pasteleria panama",
+     "pastelerias panama",
+     "restaurante panama"
+    ],
+    "por_url_qr": [
+     "grupopanama.mx"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Farmacias Benavides",
+    "razon_social": "Farmacias Benavides (cualquier sucursal)",
+    "slug": "benavides",
+    "url_portal": "https://e-facturate.com/benavides/",
+    "url_base": "https://e-facturate.com/benavides/",
+    "tecnologia": "EDX Retail (jQuery + Bootstrap), wizard 4 pasos",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": true,
+    "campos_requeridos": [
+     "folio",
+     "fecha",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Cargar portal, llenar #txt_ticket (folio sin asteriscos), #txt_total (2 decimales), #txt_rfccliente",
+     "Paso 2: Click Siguiente → waitForSelector #txt_cucfdi (Datos Fiscales)",
+     "Paso 3: Typeahead CFDI (#txt_cucfdi → tipo código → click sugerencia jQuery UI)",
+     "Paso 4: Select régimen fiscal (#cbo_cregfiscal por valor SAT ej. '601')",
+     "Paso 5: Correo fijo en #txt_ccorreo (buzonfacturas@serviciosga.site)",
+     "Paso 6: Click Siguiente → waitForFunction 'COMPROBANTE FISCAL' en body",
+     "Paso 7: Click Siguiente → waitForFunction 'Descargar Factura' o #btn_dxmlpdf",
+     "Paso 8: Click #btn_dxmlpdf → interceptar ZIP → extraer PDF+XML → subir R2",
+     "Paso 9 (fallback): llenar #txt_dcorreo + click #btn_denviar → procesandoCorreo: true"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": "/ya fue facturado|ya facturado|ha sido generada/i",
+    "mensaje_ya_facturado": "/ya fue facturado|ya facturado|ha sido generada/i",
+    "mensaje_ticket_invalido": "/[^\\n]*(no encontrado|no existe|datos incorrectos|ticket inv[aá]lido)[^\\n]*/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#txt_ticket",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": "#txt_dcorreopet",
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": "#txt_cucfdi",
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": "#btn_dxmlpet",
+    "boton_descargar_pdf": "#btn_dxmlpdf",
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "button, input[type=",
+    "[name*=",
+    "#btn_dxmlpet",
+    "#btn_dxmlpdf",
+    "button, a",
+    "#txt_ticket",
+    "#txt_dcorreopet",
+    "#btn_denviarpet",
+    "#txt_cucfdi",
+    "a, div",
+    "#cbo_cregfiscal",
+    "#txt_ccorreo",
+    "#btn_dxmlpdf, #btn_dxmlpet, [name*=",
+    "#txt_dcorreo",
+    "#btn_denviar"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000,
+     20000
+    ],
+    "esperas_fijas_total_s": 16.7
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 1,
+     "exitos": 0,
+     "segundos_medio": 55.5
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "benavides",
+    "por_texto_ocr": [
+     "benavides"
+    ],
+    "por_comercio": [
+     "benavides"
+    ],
+    "por_url_qr": [
+     "e-facturate.com/benavides"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Carl's Jr (ICR S.A. de C.V.)",
+    "razon_social": "Carl's Jr (cualquier sucursal México)",
+    "slug": "carljr",
+    "url_portal": "https://retailedx.com/ICR4/",
+    "url_base": "https://retailedx.com/ICR4/",
+    "tecnologia": "EDX Retail (jQuery + Bootstrap), wizard 4 pasos",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "referencia",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Cargar http://facturacion4.icr.mx/, llenar #txt_ticket (referencia ~14 dígitos), #txt_total (2 decimales), #txt_rfccliente",
+     "Paso 2: Click Siguiente → detectar errores (ya_facturado / datos_invalidos) → waitForSelector #txt_cucfdi",
+     "Paso 3: Typeahead CFDI (#txt_cucfdi → escribir código → click sugerencia jQuery UI)",
+     "Paso 4: Select régimen fiscal (#cbo_cregfiscal por valor SAT ej. '601')",
+     "Paso 5: Correo fijo en #txt_ccorreo (buzonfacturas@serviciosga.site)",
+     "Paso 6: Click Siguiente → waitForFunction 'COMPROBANTE FISCAL|Confirmar Datos' en body",
+     "Paso 7: Click Siguiente → waitForFunction 'Descargar Factura|exitosamente|Enhorabuena' o #btn_dxmlpdf",
+     "Paso 8: Click #btn_dxmlpdf → interceptar ZIP → extraer PDF+XML → subir R2",
+     "Paso 9 (fallback): llenar #txt_dcorreo + click #btn_denviar → procesandoCorreo: true"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": "/ya ha sido generada|ya fue generada|generada su factura|factura.*ya.*generad/i",
+    "mensaje_ya_facturado": "/ya fue facturado|ya facturado|factura.*ya.*generada/i",
+    "mensaje_ticket_invalido": "/no encontrado|no existe|ticket inv|referencia.*inv|inv.*referencia|no se encontr/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#txt_ticket",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": "#txt_dcorreopet",
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": "#txt_cucfdi",
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": "#btn_dxmlpdf",
+    "boton_descargar_pdf": "#btn_dxmlpdf",
+    "modal_exito": null,
+    "modal_error": ".alert, .error, .mensaje-error, [class*=",
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "button, input[type=",
+    "a[href*=",
+    "#txt_ticket",
+    "a, button, input[type=",
+    "#txt_dcorreopet",
+    "#btn_denviarpet",
+    "#txt_cucfdi",
+    "a, div",
+    "#cbo_cregfiscal",
+    "#txt_ccorreo",
+    ".alert, .error, .mensaje-error, [class*=",
+    "#btn_dxmlpdf",
+    "#txt_dcorreo",
+    "#btn_denviar"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000,
+     20000
+    ],
+    "esperas_fijas_total_s": 20.8
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 9,
+     "exitos": 0,
+     "segundos_medio": 88.3
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "carljr",
+    "por_texto_ocr": [
+     "carls jr",
+     "carl's jr",
+     "icr s.a"
+    ],
+    "por_comercio": [
+     "carls jr",
+     "carl's jr",
+     "icr s.a"
+    ],
+    "por_url_qr": [
+     "facturacion4.icr.mx",
+     "icr.mx"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Rendichicas / Rendilitros",
+    "razon_social": "Estacion Piru SA de CV",
+    "slug": "rendichicas",
+    "url_portal": "https://facturacion.rendilitros.com/",
+    "url_base": "https://facturacion.rendilitros.com/",
+    "tecnologia": "AngularJS SPA",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "folio",
+     "fecha",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": "#form-field-Fecha",
+    "input_total": null,
+    "input_rfc": "#form-field-DFRFC",
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": "#btnPdf",
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": null
+   },
+   "selectores_todos": [
+    "button[ng-click=",
+    "#form-field-Fecha",
+    "#form-field-DFRFC",
+    "#btnPdf",
+    "[ng-click="
+   ],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [
+     15000,
+     20000,
+     30000
+    ],
+    "esperas_fijas_total_s": 0
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 4,
+     "exitos": 0,
+     "segundos_medio": 40
+    },
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "rendichicas",
+    "por_texto_ocr": [
+     "rendichicas",
+     "rendilitros",
+     "estacion piru"
+    ],
+    "por_comercio": [
+     "rendichicas",
+     "estacion piru"
+    ],
+    "por_url_qr": [
+     "rendilitros.com",
+     "rendichicas.com",
+     "rendilitros",
+     "rendichicas"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "SushiO (mefacturo.mx)",
+    "razon_social": "SushiO (cualquier sucursal)",
+    "slug": "sushito",
+    "url_portal": "https://mefacturo.mx/sushio",
+    "url_base": "https://mefacturo.mx/sushio",
+    "tecnologia": "SoftRestaurant / mefacturo.mx (ASP.NET MVC)",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "referencia",
+     "folio",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": [
+     "Paso 1: Cargar portal, llenar #CodigoUnicoTicket, #FolioTicket (si existe), #RFC",
+     "Paso 2: Click 'Facturar' — esperar resultado: vencido | ya_facturado | invalido | paso2",
+     "Paso 3 (si paso2): Llenar correo, régimen fiscal, click 'Facturar/Generar'",
+     "Paso 4: Esperar confirmación → intentar descarga directa o procesandoCorreo"
+    ],
+    "reconocimiento": "",
+    "mensaje_exito": "/ya\\s+(fue|est[aá])\\s+facturad|ya\\s+facturad|cfdi\\s+ya|comprobante\\s+ya\\s+generad|factura\\s+ya\\s+(generad|emitid)/i",
+    "mensaje_ya_facturado": "/ya\\s+(fue|est[aá])\\s+facturad|ya\\s+facturad|cfdi\\s+ya|comprobante\\s+ya\\s+generad|factura\\s+ya\\s+(generad|emitid)/i",
+    "mensaje_ticket_invalido": "/no\\s+(se\\s+)?(encontr[oó]|existe)|ticket\\s+inv[aá]lido|datos\\s+incorrectos|no\\s+v[aá]lido|c[oó]digo.*(incorrect|inv[aá]lid)/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#CodigoUnicoTicket",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": "#RegimenFiscal, #Regimen, select[name*=",
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": "#btn_facturar",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "a[href^=",
+    "#CodigoUnicoTicket",
+    "#FolioTicket",
+    "#btn_facturar",
+    "a, button, input[type=",
+    "input[type=",
+    "#RegimenFiscal, #Regimen, select[name*=",
+    "a[href]"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "datos_invalidos",
+     "ticket_vencido",
+     "timeout"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 5.4
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": true,
+    "estado_agente": "activo",
+    "estadisticas": null,
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "sushito",
+    "por_texto_ocr": [
+     "sushi o",
+     "sushio"
+    ],
+    "por_comercio": [
+     "sushi o",
+     "sushio"
+    ],
+    "por_url_qr": [
+     "mefacturo.mx/sushio"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "El Caporal Restaurante (mefacturo.mx)",
+    "razon_social": "El Caporal (restaurante)",
+    "slug": "elcaporal",
+    "url_portal": "https://mefacturo.mx/elcaporalrestaurante",
+    "url_base": "https://mefacturo.mx/elcaporalrestaurante",
+    "tecnologia": "SoftRestaurant / mefacturo.mx — misma plataforma que SushiO",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": "/ya\\s+(fue|est[aá])\\s+facturad|ya\\s+facturad|cfdi\\s+ya|comprobante\\s+ya\\s+generad|factura\\s+ya\\s+(generad|emitid)/i",
+    "mensaje_ya_facturado": "/ya\\s+(fue|est[aá])\\s+facturad|ya\\s+facturad|cfdi\\s+ya|comprobante\\s+ya\\s+generad|factura\\s+ya\\s+(generad|emitid)/i",
+    "mensaje_ticket_invalido": "/no\\s+(se\\s+)?(encontr[oó]|existe)|ticket\\s+inv[aá]lido|datos\\s+incorrectos|no\\s+v[aá]lido|c[oó]digo.*(incorrect|inv[aá]lid)/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#CodigoUnicoTicket",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": "#RegimenFiscal, #Regimen, select[name*=",
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": "#btn_facturar",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "a[href^=",
+    "#CodigoUnicoTicket",
+    "#FolioTicket",
+    "#btn_facturar",
+    "a, button, input[type=",
+    "input[type=",
+    "#RegimenFiscal, #Regimen, select[name*=",
+    "a[href]"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "datos_invalidos",
+     "ticket_vencido",
+     "timeout"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 5.4
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "elcaporal",
+    "por_texto_ocr": [
+     "el caporal",
+     "caporal",
+     "elcaporalrestaurantecampestre",
+     "el caporal restaurante campestre"
+    ],
+    "por_comercio": [
+     "el caporal",
+     "caporal",
+     "elcaporalrestaurantecampestre"
+    ],
+    "por_url_qr": [
+     "mefacturo.mx/elcaporal"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Allegro Caffe / Txutxu Food (mefacturo.mx)",
+    "razon_social": "Allegro Caffe",
+    "slug": "allegro",
+    "url_portal": "https://mefacturo.mx/allegrezonadorada",
+    "url_base": "https://mefacturo.mx/allegrezonadorada",
+    "tecnologia": "SoftRestaurant / mefacturo.mx — misma plataforma que SushiO",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": "/ya\\s+(fue|est[aá])\\s+facturad|ya\\s+facturad|cfdi\\s+ya|comprobante\\s+ya\\s+generad|factura\\s+ya\\s+(generad|emitid)/i",
+    "mensaje_ya_facturado": "/ya\\s+(fue|est[aá])\\s+facturad|ya\\s+facturad|cfdi\\s+ya|comprobante\\s+ya\\s+generad|factura\\s+ya\\s+(generad|emitid)/i",
+    "mensaje_ticket_invalido": "/no\\s+(se\\s+)?(encontr[oó]|existe)|ticket\\s+inv[aá]lido|datos\\s+incorrectos|no\\s+v[aá]lido|c[oó]digo.*(incorrect|inv[aá]lid)/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#CodigoUnicoTicket",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": "#RegimenFiscal, #Regimen, select[name*=",
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": "#btn_facturar",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "a[href^=",
+    "#CodigoUnicoTicket",
+    "#FolioTicket",
+    "#btn_facturar",
+    "a, button, input[type=",
+    "input[type=",
+    "#RegimenFiscal, #Regimen, select[name*=",
+    "a[href]"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "datos_invalidos",
+     "ticket_vencido",
+     "timeout"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 5.4
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "produccion",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "allegro",
+    "por_texto_ocr": [
+     "allegro",
+     "txutxu",
+     "allegrocaffezonadoradatxutxufo",
+     "allegro caffe zona dorada / txutxu food"
+    ],
+    "por_comercio": [
+     "allegro",
+     "txutxu",
+     "allegrocaffezonadoradatxutxufo"
+    ],
+    "por_url_qr": [
+     "mefacturo.mx/allegre"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "AutoZone de México",
+    "razon_social": "AutoZone (cualquier sucursal México)",
+    "slug": "autozone",
+    "url_portal": "https://autozone.cdc.origon.cloud/facturacion/autozone",
+    "url_base": "https://autozone.cdc.origon.cloud/facturacion/autozone",
+    "tecnologia": "Origon Cloud — plataforma SaaS de facturación",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": true,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "Bot AutoZone de México — plataforma CDC (Origon Cloud) — Angular Material\n\nFlujo (multi-step wizard con DIV.navigation-container como botones de navegación):\n  Inicio → Facturación Rápida → Iniciar →\n  Paso 1 (0%)  : Código de barras (mat-input-0, text)\n  Paso 2 (20%) : Fecha de compra (calendario con <td> clickeables)\n  Paso 3 (30%) : Monto de compra (mat-input-1, number) → validación AJAX\n  Paso 4 (40%+): Datos de Facturación (RFC, nombre, CP, régimen, CFDI, correo)\n  Paso final   : Generar factura → descarga XML/PDF o correo\n\nTecnología: Angular Material v14+ con custom navigation-container buttons",
+    "mensaje_exito": "/ya.*facturad|facturado.*previamente|ya.*fue.*generado|ya.*emitid/i",
+    "mensaje_ya_facturado": "/ya.*facturad|facturado.*previamente|ya.*fue.*generado|ya.*emitid/i",
+    "mensaje_ticket_invalido": "/no se encontr[oó]|no encontrado|ticket.*no.*v[aá]lid|datos.*incorrectos|verifique/i"
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": "button.mat-calendar-body-cell",
+    "input_total": "#mat-input-1",
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "div.navigation-container",
+    "#mat-input-0",
+    "span.example-header-label",
+    "button.mat-calendar-body-cell",
+    ".mat-calendar-body-selected, [aria-selected=",
+    "td",
+    "#mat-input-1",
+    "button, a, div",
+    "div, span, p, h1, h2, h3",
+    "input, mat-select, .mat-select",
+    "mat-option, .mat-option, li, div, span",
+    "button, div",
+    "button, a",
+    "a[href]"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ticket_vencido",
+     "datos_invalidos",
+     "ya_facturado"
+    ],
+    "timeouts_ms": [
+     45000,
+     20000,
+     10000,
+     8000
+    ],
+    "esperas_fijas_total_s": 27.4
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Bot pendiente de crear. Plataforma Origon Cloud. Campos esperados: folio, fecha, total, barcode, RFC, razón social, CP, correo."
+   },
+   "deteccion": {
+    "por_portal_field": "autozone",
+    "por_texto_ocr": [
+     "autozone",
+     "autozonedemexico",
+     "autozone de mexico"
+    ],
+    "por_comercio": [
+     "autozone",
+     "autozonedemexico"
+    ],
+    "por_url_qr": [
+     "autozone.cdc.origon.cloud",
+     "origon.cloud"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "TUFESA",
+    "razon_social": "TUFESA (empresa de autobuses)",
+    "slug": "tufesa",
+    "url_portal": "https://www.tufesa.com.mx/facturacion",
+    "url_base": "https://www.tufesa.com.mx/facturacion",
+    "tecnologia": "Por determinar",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": "/enviad|correo electr|exitos|solicitud.*recib/i",
+    "mensaje_ya_facturado": "/ya\\s+(fue|est[aá]|ha\\s+sido)\\s+facturad|ya\\s+facturad/i",
+    "mensaje_ticket_invalido": "/no\\s+(se\\s+)?(encontr[oó]|existe)|no\\s+v[aá]lid|incorrect|verifi|sin\\s+resultado/i"
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "#CboTipoFact",
+    "#txtCod",
+    "#cboOrigen",
+    "#TxtFch",
+    "#btnEnviar"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     35000,
+     15000,
+     10000
+    ],
+    "esperas_fijas_total_s": 13.2
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": true,
+    "estado_agente": "activo",
+    "estadisticas": null,
+    "notas": "Bot pendiente. Analizar formulario de facturación de boletos de autobús."
+   },
+   "deteccion": {
+    "por_portal_field": "tufesa",
+    "por_texto_ocr": [
+     "tufesa"
+    ],
+    "por_comercio": [
+     "tufesa"
+    ],
+    "por_url_qr": [
+     "tufesa.com.mx"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Puente Colorado",
+    "razon_social": "Puente Colorado",
+    "slug": "puentecolorado",
+    "url_portal": "https://www.puentecoloradofacturacion.com.mx",
+    "url_base": "https://www.puentecoloradofacturacion.com.mx",
+    "tecnologia": "Por determinar",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": null,
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": null,
+   "selectores_todos": [],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [],
+    "esperas_fijas_total_s": 0
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": false,
+    "bot_en_gate": false,
+    "estado_declarado": "pendiente",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Bot pendiente. Analizar portal de facturación."
+   },
+   "deteccion": {
+    "por_portal_field": "puentecolorado",
+    "por_texto_ocr": [
+     "puente colorado"
+    ],
+    "por_comercio": [
+     "puente colorado"
+    ],
+    "por_url_qr": [
+     "puentecoloradofacturacion.com.mx"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Little Caesars Navojoa",
+    "razon_social": "Little Caesars Navojoa",
+    "slug": "littlecaesarsnavojoa",
+    "url_portal": "https://cfdi.analytix360.cloud/cafrena/lc/crear-cvo/",
+    "url_base": "https://cfdi.analytix360.cloud/cafrena/lc/crear-cvo/",
+    "tecnologia": "Desconocida",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": true
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": "/ Verificar si el portal cargó correctamente o devolvió 404/",
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": "#folio",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "input[name=",
+    "#folio",
+    "form input"
+   ],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 9.4
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": false,
+    "estado_declarado": "produccion",
+    "generado_por_agente": true,
+    "estado_agente": "activo",
+    "estadisticas": null,
+    "notas": null
+   },
+   "deteccion": {
+    "por_portal_field": "littlecaesarsnavojoa",
+    "por_texto_ocr": [
+     "littlecaesarsnavojoa",
+     "little caesars navojoa",
+     "little caesars",
+     "little caesar"
+    ],
+    "por_comercio": [
+     "littlecaesarsnavojoa",
+     "little caesars",
+     "little caesar"
+    ],
+    "por_url_qr": [
+     "cfdi.analytix360.cloud",
+     "analytix360"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "IGasFac (gasolineras)",
+    "razon_social": "Gasolineras PABA",
+    "slug": "igasfac",
+    "url_portal": "https://www.igasfac.com.mx",
+    "url_base": "https://www.igasfac.com.mx",
+    "tecnologia": "ASP.NET Core con login de cuenta",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": true,
+    "campos_requeridos": [
+     "folio",
+     "total"
+    ],
+    "soporta_cfdi_40": true
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "IGasFac — www.igasfac.com.mx\n\nPortal con CUENTA: requiere login previo (credenciales solo por variables de\nentorno IGAS_USER / IGAS_PASS, nunca en código).\n\nReconocimiento real (2026-07-29, cuenta real, ticket folio\n0637-00475232-00093301). Los cuatro detalles que cuestan sangre:\n\n  1. #Input_Folio lleva `data-mask=\"folioWeb\"`. page.keyboard.type() y\n     element.value = ... NO funcionan: la máscara los ignora y el campo se\n     queda vacío o a medias. Hay que pulsar DÍGITO A DÍGITO con\n     page.keyboard.press() y una pausa entre cada uno.\n\n  2. Hay DOS botones \"Agregar\": el de la pantalla, que abre el modal, y el\n     del propio modal, que confirma. Son iguales de texto, así que el\n     segundo se busca recorriendo la lista AL REVÉS.\n\n  3. El botón que guarda los Datos Fiscales NO es descendiente de su\n     formulario: se asocia con el atributo HTML `form=`. No hay selector CSS\n     que lo alcance desde el form, así que se localiza por\n     `button.form.id === 'submitModificarDatosFiscales'`.\n\n  4. La Forma de Pago se RESETEA en cada solicitud nueva, así que hay que\n     seleccionarla y confirmarla SIEMPRE, aunque la cuenta ya la tenga\n     guardada de una vez anterior.\n\nEntrega: el portal NO descarga el CFDI en pantalla, lo manda por correo. El\nbot devuelve procesandoCorreo:true y el CFDI lo recoge el flujo de IMAP.\n\n⚠️ Rechazo conocido CFDI40147: es un desfase entre el PAC (SmartWeb) y la\nlista masiva del SAT, NO un dato mal puesto. Se resuelve solo en 2-3 días;\nreintentar entonces con el mismo folio.",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": "/ya se encuentra facturad|ya (fue|ha sido) facturad|previamente facturad/i",
+    "mensaje_ticket_invalido": "/no (se encontr|existe)|inv[aá]lid|incorrect/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#Input_Folio",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": "#Input_Email",
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": "#ClaveFormaPago",
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "#Input_Email",
+    "button",
+    "#Input_Password",
+    "button, a",
+    "#Input_Folio",
+    "#ClaveFormaPago"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos",
+     "ya_facturado",
+     "reintentar_despues"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000,
+     12000,
+     18000
+    ],
+    "esperas_fijas_total_s": 15.8
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "El folio que pide el portal es el FOLIOWEB largo (formato 4-8-8 con guiones) impreso DEBAJO de \"Facturacion en: www.igasfac.com.mx\", NO el \"Folio:\" corto de arriba. Ventana: hasta el ultimo dia del mes."
+   },
+   "deteccion": {
+    "por_portal_field": "igasfac",
+    "por_texto_ocr": [
+     "igasfac.com.mx",
+     "igasfac",
+     "folioweb",
+     "facture en linea"
+    ],
+    "por_comercio": [],
+    "por_url_qr": [
+     "igasfac.com.mx",
+     "1gasfac.com.mx",
+     "lgasfac.com.mx"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "OXXO GAS",
+    "razon_social": "OXXO GAS (estaciones de servicio)",
+    "slug": "oxxogas",
+    "url_portal": "https://facturacion.oxxogas.com",
+    "url_base": "https://facturacion.oxxogas.com",
+    "tecnologia": "SPA con jQuery Chosen; login con reCAPTCHA v2",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "el reconocimiento dice explícitamente que no hay",
+    "requiere_registro": true,
+    "campos_requeridos": [
+     "folio",
+     "fecha",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "OXXO GAS — facturacion.oxxogas.com\n\n══════════════════════════════════════════════════════════════════════════\n⚠️ ES UNA SPA: HAY QUE ENTRAR SIEMPRE POR LA HOME. Medido el 2026-07-31.\n\n  `https://facturacion.oxxogas.com/` es una single-page app: la URL NUNCA\n  cambia, ni al entrar a Facturar ni a Mis Facturas. Todas las pantallas se\n  pintan por JavaScript sobre la misma ruta.\n\n  👉 Navegar DIRECTO a /facturacion/facturar devuelve un HTML degradado, sin\n     una sola etiqueta <script src> (jQuery, Chosen y Angular ausentes).\n     Eso hace que #regimen_fiscal y #usocfdi nunca se pueblen y que el clic\n     en \"Agregar Ticket\" no dispare ninguna petición — el botón no tiene\n     handler porque no hay JS. Ese falso síntoma se atribuyó por error a un\n     bloqueo del WAF y a rate-limiting; no era ni lo uno ni lo otro.\n\n  Entrando por la home y pulsando el enlace \"ACCEDER A FACTURAR\", el portal\n  carga completo y verificado: 29 scripts, jQuery=true, Chosen=true, 5\n  contenedores .chosen-container en el DOM, #estacion con 584 opciones. Y al\n  elegir el RFC con page.select() los dependientes se pueblan solos\n  (#regimen_fiscal 0→9 opciones, #usocfdi 0→4), así que el <select> nativo\n  SÍ notifica correctamente pese a la decoración de Chosen.\n\n  Corolario para cualquier bot futuro de este portal: nunca hacer deep link,\n  siempre home + clic. Y comprobar que los selects dependientes se poblaron\n  antes de seguir (page.select() no lanza error si la opción no existe: deja\n  el campo vacío EN SILENCIO y el fallo aparece mucho después).\n\n  Presupuesto: Browserless corta la sesión a los 60 s exactos en este plan y\n  rechaza con HTTP 400 cualquier &timeout=. Por eso el flujo se parte en dos:\n  emitir dentro del navegador, y recuperar el XML/PDF después con fetch()\n  autenticado por la misma cookie (no hace falta navegador para eso).\n══════════════════════════════════════════════════════════════════════════\n\n⚠️ ESTE BOT NO ES AUTÓNOMO. Requiere una cookie de sesión ya\nautenticada MANUALMENTE por el usuario (ver más abajo). NO intenta\nresolver el reCAPTCHA v2 del login bajo ninguna circunstancia — esa\nregla es absoluta e innegociable en este proyecto. La única forma de\noperar este bot es:\n  1. El usuario inicia sesión a mano en facturacion.oxxogas.com en un\n     navegador real, resolviendo el reCAPTCHA él mismo.\n  2. Copia el valor de la cookie `ci_sessions` (DevTools → Application\n     → Cookies → facturacion.oxxogas.com) y, si existen, las cookies\n     `incap_ses_*_3020163` / `visid_incap_3020163` (capa Incapsula/WAF).\n  3. Esas cookies se pasan como variables de entorno\n     OXXOGAS_CI_SESSION / OXXOGAS_INCAP_SES_117 / OXXOGAS_INCAP_SES_363\n     / OXXOGAS_VISID_INCAP al invocar este bot — NUNCA hardcodeadas en\n     código ni guardadas en .env (son credenciales de sesión reales).\n  4. La sesión expira / se invalida con el tiempo (no confirmado cuánto\n     dura) — hay que repetir el proceso periódicamente.\n\nReconocimiento y verificación real (2026-07-28, cuenta real GPN,\nticket real Estación Galerías BJX León, Folio 7540670, $800.00):\n  - Con la cookie `ci_sessions` inyectada (CodeIgniter — el servidor\n    ya la emite incluso sin login, y el login solo la marca como\n    autenticada), el dashboard carga completo sin volver a pedir el\n    reCAPTCHA. La capa Incapsula (WAF) NO rechazó las requests desde\n    el servidor de automatización pese a venir de una IP distinta a\n    la del usuario.\n  - El formulario de Facturación (RFC → Régimen → Uso CFDI → Estación\n    → Folio → Monto → \"Agregar Ticket\" → Forma de Pago → \"Facturar\n    Tickets\") NO tiene CAPTCHA en ningún punto — solo el login lo\n    tiene.\n  - \"Estación / Gasolinera\" y \"Seleccione los RFCs\" son <select>\n    decorados con la librería \"Chosen\" (jQuery) — para esos SÍ hace\n    falta simular apertura+opción, pero en la práctica `page.select()`\n    nativo de Puppeteer funciona bien porque el <select> real sigue\n    presente en el DOM (solo oculto visualmente).\n  - CRÍTICO: el <select> \"Forma de Pago\" que aparece en cada fila de\n    \"Tickets a Facturar\" (tras Agregar Ticket) es un <select> nativo\n    SIN decoración Chosen, y además SIN atributo `id` (solo `name`,\n    con un sufijo numérico aleatorio por fila, ej.\n    \"tipopago_996633\") — hay que ubicarlo por `name`, no por `id`, y\n    usar `page.select('select[name=\"...\"]', valor)` directo.\n  - Tras seleccionar la Forma de Pago, ese <select> puede desaparecer\n    del DOM casi de inmediato (la fila pasa a mostrar el texto fijo) —\n    no hay que volver a consultarlo para verificar, solo confirmar que\n    el placeholder \"Seleccione un Tipo de Pago\" ya no aparece en el\n    body.\n  - El carrito de \"Tickets a Facturar\" es estado del navegador\n    (Angular), NO persiste en el servidor entre sesiones/pestañas\n    nuevas — cada corrida de este bot debe re-agregar el ticket desde\n    cero, no asumir que ya está ahí.\n  - Tras \"Facturar Tickets\" exitoso, el formulario se resetea a vacío\n    (RFC/Régimen/Uso CFDI en blanco, carrito vacío) — esa es la señal\n    de éxito, no un mensaje de confirmación explícito en pantalla.\n  - La factura real y sus enlaces de descarga (XML/PDF directos, más\n    el link de verificación del SAT) aparecen en \"Mis Facturas\"\n    (ACCEDER A MIS FACTURAS), columna \"Acciones\" de la fila con el\n    folio recién generado — esos <a href> son URLs autenticadas por\n    la misma cookie de sesión, descargables con fetch() + header\n    Cookie manual (no requieren un segundo login).\n  - Verificado en vivo: folio real 62703067, UUID\n    d9edf987-788b-4f71-97cb-2ccc55d449af, Total $800.00 exacto, RFC\n    receptor GPR110128QD8 correcto.",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": "#ticket",
+    "input_fecha": null,
+    "input_total": "#monto",
+    "input_rfc": "#rfc",
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": "#regimen_fiscal",
+    "input_uso_cfdi": "#usocfdi",
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": null
+   },
+   "selectores_todos": [
+    "#${el.id}_chosen",
+    ".chosen-container",
+    "tr",
+    "select",
+    "script[src]",
+    "#rfc",
+    "#regimen_fiscal",
+    "#usocfdi",
+    "#ticket",
+    "#monto",
+    "#estacion",
+    "button",
+    "select[name=",
+    "#agregar_tickets"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "captcha"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 21.2
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "manual",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "NO es la tienda OXXO. El ticket trae \"Folio:\" de 7 digitos y \"Bomba:\". Requiere cookies de sesion inyectadas a mano: el login tiene reCAPTCHA v2 que no se resuelve. Entrar SIEMPRE por la home, nunca por deep link."
+   },
+   "deteccion": {
+    "por_portal_field": "oxxogas",
+    "por_texto_ocr": [
+     "oxxo gas",
+     "oxxogas.com",
+     "estacion galerias",
+     "spin premia"
+    ],
+    "por_comercio": [
+     "oxxo gas"
+    ],
+    "por_url_qr": [
+     "oxxogas.com"
+    ],
+    "nota_deteccion": "la gasolinera. Tiene prioridad sobre \"oxxo\" siempre que aparezca la palabra GAS o haya carga de combustible."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "CAFFENIO",
+    "razon_social": "CAFFENIO (cafeterias drive)",
+    "slug": "caffenio",
+    "url_portal": "https://facturaciondrive.caffenio.com/ticket",
+    "url_base": "https://facturaciondrive.caffenio.com/ticket",
+    "tecnologia": "SPA con autocomplete de drives",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "el reconocimiento dice explícitamente que no hay",
+    "requiere_registro": true,
+    "campos_requeridos": [
+     "folio",
+     "codFacturacion",
+     "drive",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "CAFFENIO — facturaciondrive.caffenio.com (plataforma de Servicios\nAdministrativos OSLO, S.A. de C.V., usada por los ~381 drives de CAFFENIO).\n\nReconocimiento real (2026-07-30, portal en vivo):\n  - La home solo muestra el login de \"MI CAFFENIO\". El flujo SIN CUENTA vive\n    en la ruta directa /ticket: el enlace \"Factura sin cuenta MI CAFFENIO\"\n    apunta ahí, pero hacerle click (ni por JS ni sintético) no navega de forma\n    confiable — este bot va DIRECTO a /ticket.\n  - NO hay CAPTCHA en ningún punto del flujo (verificado en la home y en\n    /ticket: sin iframes de recaptcha/turnstile, sin nodos [class*=captcha],\n    y la palabra \"captcha\" no aparece en el HTML).\n  - Formulario de /ticket, tres campos obligatorios:\n      input[name=\"folio\"]           (type=number, ej. \"12345\")\n      input[name=\"codFacturacion\"]  (type=number, ej. \"12345678\" — 8 dígitos)\n      input[placeholder=\"Seleccione...\"]  → autocomplete del \"Drive\"\n    y el botón \"Buscar ticket\".\n  - El Drive es un autocomplete con 381 opciones (todas las sucursales del\n    país, con prefijo \"Caffenio \"). Hay que escribir para filtrar y luego\n    hacer click en el <li>/[role=option] real; asignar el valor no basta.\n  - VENTANA: el portal avisa \"podrás facturar tu compra dentro de los 30 días\n    naturales según la fecha impresa en tu ticket\". Fuera de eso el folio ya\n    no existe para el portal.\n  - El portal valida folio+codFacturacion+drive EN CONJUNTO. Si algo no\n    coincide responde \"No se encontró orden con la información capturada.\"\n    sin generar nada — probar un drive equivocado es inocuo.\n\n⚠️ ESTADO: flujo de búsqueda verificado en vivo contra el portal real, pero el\ncierre E2E (datos fiscales → timbrado → XML/PDF) NO está verificado todavía,\nporque el único ticket real disponible (#145) tiene el folio y el código de\nfacturación ILEGIBLES en la foto (el OCR los marcó dudosos: se lee \"2116b11\",\ncon la \"b\" ambigua entre 6/8/0, y el código con 7 dígitos donde el portal\nespera 8). Se probaron los 2 únicos drives de Cd. Obregón y ambos\nrespondieron \"No se encontró orden\". Falta una foto más nítida del ticket\npara cerrar el ciclo y confirmar los pasos posteriores.",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": "/ya (fue|ha sido) facturad|previamente facturad/i",
+    "mensaje_ticket_invalido": "/no se encontr[oó] orden/i"
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "input[placeholder=",
+    "[role=option], li",
+    "input[name=",
+    "button"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos",
+     "ya_facturado",
+     "ticket_vencido"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 11.6
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Exige folio + codigo de facturacion + nombre del drive, y los valida en conjunto. Ventana de 30 dias naturales. Sin CAPTCHA."
+   },
+   "deteccion": {
+    "por_portal_field": "caffenio",
+    "por_texto_ocr": [
+     "caffenio",
+     "facturaciondrive"
+    ],
+    "por_comercio": [
+     "caffenio"
+    ],
+    "por_url_qr": [
+     "facturaciondrive.caffenio.com"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "7-Eleven México",
+    "razon_social": "7 Eleven Mexico SA de CV",
+    "slug": "7eleven",
+    "url_portal": "https://www.e7-eleven.com.mx/facturacion/KPortalExterno/",
+    "url_base": "https://www.e7-eleven.com.mx/facturacion/KPortalExterno/",
+    "tecnologia": "AngularJS con CAPTCHA de imagen (CapSolver)",
+    "tiene_captcha": true,
+    "tipo_captcha": "imagen",
+    "captcha_evidencia": "resuelto con CapSolver (ImageToTextTask)",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "folio",
+     "fecha",
+     "total"
+    ],
+    "soporta_cfdi_40": true
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": "/ La pantalla de éxito tiene botones Descargar XML/",
+    "mensaje_ya_facturado": "/facturad[oa]\\s+anterior|ya\\s+(fue|ha\\s+sido|est[aá])\\s+facturad|ya\\s+existe.*factura/",
+    "mensaje_ticket_invalido": "/no.*(existe|encontr|v[aá]lid|registr)|inv[aá]lid|incorrect|no.*disponible/"
+   },
+   "selectores_criticos": {
+    "input_folio": "#noTicket",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#rfcCliente",
+    "input_correo": "#emailInput",
+    "input_cp": "#cp",
+    "input_regimen_fiscal": "#regimenFiscalReceptor",
+    "input_uso_cfdi": "#usoCfdi",
+    "input_forma_pago": "#formaPago",
+    "boton_facturar": "button,a,.btn,input[type=submit]",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "button,a,.btn",
+    "#noTicket",
+    "button,a,.btn,input[type=submit]",
+    "a,button",
+    "button,a,.btn,input[type=submit],input[type=button]",
+    "img#Kaptcha",
+    "img[src*=",
+    "img",
+    "input[name=",
+    "table",
+    "thead",
+    "tbody tr",
+    "#rfcCliente",
+    "#razon",
+    "#regimenFiscalReceptor",
+    "#usoCfdi",
+    "#cp",
+    "#emailInput",
+    "#formaPago",
+    "#formaPagoAux",
+    "img#Kaptcha, img[src*=",
+    "img#reload, img[id*=",
+    "#captcha"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "ticket_vencido",
+     "datos_invalidos",
+     "captcha"
+    ],
+    "timeouts_ms": [
+     35000,
+     8000,
+     20000,
+     45000,
+     12000
+    ],
+    "esperas_fijas_total_s": 0
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "El folio es el codigo de barras de EXACTAMENTE 35 digitos; el portal rechaza si faltan."
+   },
+   "deteccion": {
+    "por_portal_field": "7eleven",
+    "por_texto_ocr": [
+     "7-eleven",
+     "7 eleven",
+     "e7-eleven.com.mx"
+    ],
+    "por_comercio": [
+     "7 eleven",
+     "7-eleven"
+    ],
+    "por_url_qr": [
+     "e7-eleven.com.mx"
+    ]
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Enerfuel Tech",
+    "razon_social": "Grupo Inmo SA de CV",
+    "slug": "enerfueltech",
+    "url_portal": "https://factura.enerfueltech.com/",
+    "url_base": "https://factura.enerfueltech.com/",
+    "tecnologia": "Blazor/MudBlazor — \"Facturar sin registro\" con un único campo Referencia",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "referencia",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "Enerfuel Tech — factura.enerfueltech.com (plataforma Blazor/MudBlazor\ncompartida por varias marcas de gasolineras, ej. Grupo Inmo SA de CV).\n\nReconocimiento real (2026-07-27, cuenta real GPN, ticket real Grupo Inmo\nSA de CV, Ticket 715245, Referencia 049847152458CE1, $1,000.00):\n  1. \"Facturar sin registro\" (sin cuenta) → campo único \"Referencia\"\n     (impreso en el ticket) → \"Buscar\". Si no hay consumo, el portal\n     responde literalmente \"No se encontró el consumo.\" — NO asumir un\n     límite fijo de horas: se probó un ticket de hace 144h (vencido, \"No\n     se encontró\") y otro de 72h que SÍ seguía disponible, así que la\n     ventana real no es \"24h\" como se creía inicialmente — hay que\n     consultar siempre y confiar en la respuesta real del portal, nunca\n     en una regla de tiempo fija.\n  2. \"Continuar\" revela el panel \"Mis datos fiscales\": Nombre/RFC/Código\n     Postal son <input> normales; Régimen/Uso CFDI son MudSelect\n     (componentes Blazor) — requieren un click SINTÉTICO REAL de\n     Puppeteer (elementHandle.click(), NO el .click() de JS vía\n     evaluate) para que el popover de opciones abra correctamente.\n  3. El botón FACTURAR se habilita solo cuando los 5 campos obligatorios\n     están completos (Entidad Federativa/Ciudad/Colonia/Calle son\n     opcionales).\n  4. Tras Facturar, la propia página muestra el folio real (ej.\n     \"RB-69628\") y un campo de correo con botón \"Enviar\"/\"Reenviar\" —\n     esa es la única vía de entrega confirmada (no hay descarga directa\n     confiable vía Puppeteer en esta app Blazor/SignalR). Reconsultar la\n     misma Referencia después es idempotente: el portal dice \"El consumo\n     ya fue facturado\" y muestra el mismo folio sin generar duplicado.",
+    "mensaje_exito": "/factura generada/i",
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": "/no se encontr[oó] el consumo/i"
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    ".mud-select",
+    ".mud-list-item",
+    "button, a",
+    "input[type=",
+    "button"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000
+    ],
+    "esperas_fijas_total_s": 19.9
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Ticket impreso por terminal NetPay. El portal pide SOLO la Referencia. La ventana real NO es fija: hay que consultar y confiar en la respuesta del portal."
+   },
+   "deteccion": {
+    "por_portal_field": "enerfueltech",
+    "por_texto_ocr": [
+     "pagina(s) para facturar",
+     "enerfueltech.com",
+     "netpay"
+    ],
+    "por_comercio": [
+     "grupo inmo"
+    ],
+    "por_url_qr": [
+     "enerfueltech.com"
+    ],
+    "nota_deteccion": "El dato de facturación es la \"Referencia:\" del PIE del ticket (15-16 caracteres sin guiones), NO el \"Folio:\" con guiones de la terminal bancaria."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Enerser",
+    "razon_social": "Petroliferos La Territorial S de RL de CV",
+    "slug": "enerser",
+    "url_portal": "http://facturacion.enerser.com.mx/",
+    "url_base": "http://facturacion.enerser.com.mx/",
+    "tecnologia": "misma plataforma que Enerfuel Tech, otro dominio",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "referencia",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": null,
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": null,
+   "selectores_todos": [],
+   "manejo_errores": {
+    "error_codes": [],
+    "timeouts_ms": [],
+    "esperas_fijas_total_s": 0
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": false,
+    "bot_en_gate": false,
+    "estado_declarado": "pendiente",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Mismo formato de ticket y mismo campo Referencia que enerfueltech, pero OTRO dominio: falta confirmar en vivo que bots/enerfueltech.js sirva tal cual antes de marcarlo activo."
+   },
+   "deteccion": {
+    "por_portal_field": "enerser",
+    "por_texto_ocr": [
+     "pagina(s) para facturar",
+     "enerser.com.mx",
+     "netpay"
+    ],
+    "por_comercio": [
+     "petroliferos la territorial"
+    ],
+    "por_url_qr": [
+     "enerser.com.mx"
+    ],
+    "nota_deteccion": "El dato de facturación es la \"Referencia:\" del PIE del ticket (15-16 caracteres sin guiones), NO el \"Folio:\" con guiones de la terminal bancaria."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "NexusFuel / facturacionestacion.com (Grupo GASHR y estaciones asociadas)",
+    "razon_social": "Autoservicio Gashr / Valero GDL",
+    "slug": "gashr",
+    "url_portal": "https://valerogdl.facturacionestacion.com",
+    "url_base": "https://valerogdl.facturacionestacion.com",
+    "tecnologia": "NexusFuel multi-tenant — un subdominio por estación",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "folio",
+     "referencia",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "Grupo GASHR (Autoservicio Gashr / Valero GDL) — valerogdl.facturacionestacion.com\nMisma plataforma NexusFuel que Petrofigues (bots/petrofigues.js) — campos,\nflujo, confirm() al facturar y descarga directa idénticos, confirmado en\nvivo. Único cambio real: la URL base (grupogashr.com.mx → \"IR A\nFACTURACIÓN ELECTRONICA\" → valerogdl.facturacionestacion.com).\nTicket real usado en reconocimiento: Autoservicio Gashr Valero GDL La 60,\nReferencia 6060, Folio 1929725, $399.00. Cuenta GPN ya tenía perfil\nguardado (mismo RFC, datos ligeramente distintos a los de Petrofigues —\ncada tenant NexusFuel guarda su propio registro de cliente).",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": "/ya fue facturado anteriormente/i",
+    "mensaje_ticket_invalido": "/Ticket no encontrado|no se encontr[oó]|Folio inv[aá]lido/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#txtReferencia",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#txtRFC",
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "#txtReferencia",
+    "button",
+    "select",
+    "#txtFolio",
+    "#txtAmount",
+    "#txtRFC"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 7.7
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "El subdominio cambia por estación (valerogdl., lasconchas., …): reconocer el DOMINIO, no el subdominio. Ventana corta: el ticket avisa 24 hrs."
+   },
+   "deteccion": {
+    "por_portal_field": "gashr",
+    "por_texto_ocr": [
+     "facturacionestacion.com",
+     "referencia para facturar",
+     "facturacion en linea"
+    ],
+    "por_comercio": [],
+    "por_url_qr": [
+     "facturacionestacion.com"
+    ],
+    "nota_deteccion": "El bot pide DOS datos: folio = el número de \"Ticket:\", referencia = la \"Referencia para facturar\" (que coincide con el número de \"Estación:\"). No confundirlos."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Petrofigues",
+    "razon_social": "Petrofigues",
+    "slug": "petrofigues",
+    "url_portal": "https://facturacion.petrofigues.com",
+    "url_base": "https://facturacion.petrofigues.com",
+    "tecnologia": "NexusFuel — misma plataforma y mismos campos que gashr",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "folio",
+     "referencia",
+     "total"
+    ],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "Petrofigues — petrofigues.facturacionestacion.com (compartido por ~19\ngasolineras del grupo, identificadas por \"Referencia\"/número de estación).\n\nReconocimiento real (2026-07-27, cuenta real GPN, ticket real Gonzer 1\n\"Brujas I\", referencia 13697, ticket 1067336, $1,000.00):\n  1. https://petrofigues.facturacionestacion.com/ es la ENTRADA ÚNICA\n     para todas las estaciones — no hace falta pasar por el selector de\n     sucursal del sitio de marketing (petrofigues.com/facturacion.html,\n     cuyos links de estación son en realidad todos el mismo href).\n  2. Form inicial: #txtReferencia (número de estación), #txtFolio\n     (número de ticket), #txtAmount (importe total), #txtRFC → botón\n     #btnNext (\"Buscar\") → POST Home/FindTicketAndClientData.\n  3. Si el RFC ya factura seguido con este grupo, el cliente viene\n     GUARDADO server-side y el resto del form se autocompleta (nombre,\n     domicilio, colonia, CP, ciudad, estado, régimen fiscal, forma de\n     pago) — confirmado con la cuenta real de GPN. El único campo que\n     SIEMPRE queda vacío es \"Uso CFDI\" (select #selVoucherUse).\n  4. #selVoucherUse es un <select> nativo pero sus <option value> son\n     IDs numéricos internos (ej. \"3\" para \"Gastos en general\"), no\n     \"G03\" — hay que buscar la opción por TEXTO, no por value fijo.\n  5. Botón \"Facturar\" dispara un window.confirm() (\"¿Está seguro que\n     desea generar esta factura?\") — SIN page.on('dialog') el tab muere\n     (mismo bug ya documentado para 7-Eleven: diálogo no manejado).\n  6. Tras aceptar, la factura se genera EN EL ACTO (no hay espera ni\n     correo) — la respuesta de Home/CreateInvoice trae el nombre de\n     archivo con el UUID real embebido:\n     \"20260727_{RFCEMISOR}_{RFCRECEPTOR}_{UUID}.xml^{estacion}\"\n  7. Descarga directa (confirmado real, XML+PDF verificados con la\n     cuenta real): DownloadInvoice.aspx?fiscalFolioId={UUID}&stationId={estacion}\n     devuelve el XML real (Content-Type: application/xml). El PDF se\n     obtiene del mismo Report/ReportViewer.aspx que abre el link \"PDF\"\n     (se navega esa URL en pestaña nueva y se captura la respuesta\n     application/pdf).\n  8. Reintentar el mismo folio es seguro/idempotente: el portal responde\n     \"Este folio ya fue facturado anteriormente!\" con los mismos links\n     de descarga, no genera un duplicado.",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": "/ya fue facturado anteriormente/i",
+    "mensaje_ticket_invalido": "/Ticket no encontrado|no se encontr[oó]|Folio inv[aá]lido/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#txtReferencia",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#txtRFC",
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "#txtReferencia",
+    "select",
+    "button",
+    "#txtFolio",
+    "#txtAmount",
+    "#txtRFC",
+    "#btnNext"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 7.7
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Otro tenant NexusFuel. Cada tenant guarda su propio registro de cliente aunque el RFC sea el mismo."
+   },
+   "deteccion": {
+    "por_portal_field": "petrofigues",
+    "por_texto_ocr": [
+     "petrofigues"
+    ],
+    "por_comercio": [
+     "petrofigues"
+    ],
+    "por_url_qr": [
+     "petrofigues"
+    ],
+    "nota_deteccion": "El bot pide DOS datos: folio = el número de \"Ticket:\", referencia = la \"Referencia para facturar\" (que coincide con el número de \"Estación:\"). No confundirlos."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "CAPUFE — Caminos y Puentes Federales",
+    "razon_social": "CAPUFE",
+    "slug": "capufe",
+    "url_portal": "https://facturacioncapufe.com.mx/Capufe/facturacionrapida",
+    "url_base": "https://facturacioncapufe.com.mx/Capufe/facturacionrapida",
+    "tecnologia": "SPA React + PrimeReact, backend REST",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [
+     "codigo",
+     "total"
+    ],
+    "soporta_cfdi_40": true
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "CAPUFE (Caminos y Puentes Federales) — facturacioncapufe.com.mx/Capufe/facturacionrapida\nSPA React + PrimeReact, backend REST en /capufe-quadrum-backend/sinregistro/*.\nReconocimiento real confirmó:\n - El dato que pide el portal es el código \"FACTURACION\" de 18 caracteres\n   impreso en el ticket (NO el folio) — placeholder \"Código de 18 caracteres\".\n - RFC dispara buscar_receptor_por_rfc.json (auto-completa si ya existe) +\n   regimen/usocfdi_rfc.json + usocfdi40/uso_cfdi_por_rfc.json (catálogos).\n - Régimen Fiscal y Uso CFDI son <div class=\"p-dropdown\"> (PrimeReact), NO\n   <select> nativos — hay que hacer click para abrir el panel y click en el\n   <li class=\"p-dropdown-item\"> real; asignar .value no tiene efecto.\n - \"Validar Código\" llama a sinregistro/ticket/validar.json. Si el código ya\n   fue validado antes en OTRA sesión sin llegar a \"Facturar conceptos\", el\n   backend lo marca \"ya se encuentra capturado\" y lo rechaza — por eso todo\n   el flujo debe correr en una sola sesión continua, sin cortes.\n - Botón final real es \"Facturar conceptos\" (el link de nav \"Facturar sus\n   códigos\" solo navega a esta misma pantalla, no es el submit).\n - Aviso del propio portal: una vez emitida la factura NO se puede remitir\n   a otro RFC ni corregir datos — los datos fiscales deben ser correctos\n   desde la primera vez.",
+    "mensaje_exito": "/[eé]xito|factura.*(generad|emitid)|se ha enviado|correo/i",
+    "mensaje_ya_facturado": "/ya se encuentra capturado/i",
+    "mensaje_ticket_invalido": "/no se encontr|no existe|sin resultados/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#codigo",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#rfc",
+    "input_correo": "#correo",
+    "input_cp": "#domicilioFiscalReceptor",
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": "button[texto=\"Facturar conceptos\"]",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    ".p-dropdown",
+    "li.p-dropdown-item",
+    "a, button, li",
+    "input[id=",
+    "button",
+    "input",
+    "#rfc",
+    "tr, .p-datatable-row, [class*=row]",
+    "#nombre",
+    "#domicilioFiscalReceptor",
+    "#correo",
+    "#codigo"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos",
+     "ya_facturado"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000,
+     20000
+    ],
+    "esperas_fijas_total_s": 37.3
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "Consultar el código lo RESERVA: si se valida y no se llega a \"Facturar conceptos\", queda tomado. Régimen y Uso CFDI son p-dropdown de PrimeReact, no <select>."
+   },
+   "deteccion": {
+    "por_portal_field": "capufe",
+    "por_texto_ocr": [
+     "capufe",
+     "caminos y puentes",
+     "plaza de cobro",
+     "facturacioncapufe"
+    ],
+    "por_comercio": [
+     "capufe",
+     "caminos y puentes federales"
+    ],
+    "por_url_qr": [
+     "facturacioncapufe.com.mx",
+     "capufe.gob.mx"
+    ],
+    "nota_deteccion": "El dato que pide el portal es el código \"FACTURACION\" de 18 caracteres, NO el folio."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Dana Comida Mexicana",
+    "razon_social": "Dana Comida Mexicana",
+    "slug": "dana",
+    "url_portal": "https://autofactura.softrestaurant.com",
+    "url_base": "https://autofactura.softrestaurant.com",
+    "tecnologia": "SoftRestaurant / AutoFactura",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "",
+    "mensaje_exito": "/ya\\s+(fue|est[aá]|ha\\s+sido)\\s+(facturad|generad)|ya\\s+facturad|cfdi\\s+ya|comprobante\\s+ya\\s+generad|factura\\s+ya\\s+(generad|emitid)/i",
+    "mensaje_ya_facturado": "/ ya facturado /",
+    "mensaje_ticket_invalido": "/no\\s+(se\\s+)?(encontr[oó]|existe)|ticket\\s+inv[aá]lido|datos\\s+(incorrectos|no\\s+v[aá]lidos)|no\\s+v[aá]lido|c[oó]digo.*(incorrect|inv[aá]lid)|sin\\s+resultados/i"
+   },
+   "selectores_criticos": {
+    "input_folio": "#unicCode",
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": "#RegimenFiscal, #Regimen, select[name*=",
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "a[href^=",
+    "#unicCode",
+    "#folio",
+    "button, a, input[type=",
+    "input[type=",
+    "#RegimenFiscal, #Regimen, select[name*=",
+    "a[href]"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "ya_facturado",
+     "datos_invalidos",
+     "ticket_vencido",
+     "timeout"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 5.5
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "referencia = código de facturación, distinto del folio."
+   },
+   "deteccion": {
+    "por_portal_field": "dana",
+    "por_texto_ocr": [
+     "dana comida",
+     "autofactura"
+    ],
+    "por_comercio": [
+     "dana"
+    ],
+    "por_url_qr": [
+     "autofactura"
+    ],
+    "nota_deteccion": "Misma familia que SushiO pero con selectores propios (#unicCode/#folio/#RFC)."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "eRFC (plataforma compartida)",
+    "razon_social": "gasolineras y comercios chicos que facturan en erfc.com.mx",
+    "slug": "erfc",
+    "url_portal": "https://erfc.com.mx",
+    "url_base": "https://erfc.com.mx",
+    "tecnologia": "PHP + Select2 con catálogos por AJAX",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": true,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": true
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "eRFC (erfc.com.mx) — plataforma compartida por muchas gasolineras/comercios\nchicos que reciben CFDIs vía código IDW impreso en el ticket.\n\nReconocimiento real (2026-07-27, cuenta real GPN, ticket real \"Natalia\nMaría del Carmen Flores Arciniega S.A. de C.V.\", IDW real confirmado):\n  1. Home: correo + RFC + checkbox \"He leído...\" (DISABLED hasta hacer\n     click en \"Oprima para Leer Términos y Condiciones\", que expande el\n     texto inline y habilita el checkbox) → botón \"Ingresar\".\n  2. /facturacion/: RFC llega prellenado por sesión. CP (#DomicilioFiscalReceptor)\n     y Razón Social (#nombre) son inputs normales. Régimen Fiscal\n     (#RegimenFiscalReceptor) y Uso CFDI (#selectUsoCfdi) son Select2 con\n     datos vía AJAX (select.controller.php?select=regimenfiscal/usocfdi) —\n     SOLO cargan tras un click real (Puppeteer, no dispatchEvent) sobre el\n     <span class=\"select2-selection\">, no sobre el <select> oculto. Uso\n     CFDI ya trae \"G03\" preseleccionado por default.\n  3. Email (#email) — cuidado: llega PRE-LLENADO con el correo del login,\n     hay que limpiarlo antes de escribir o queda duplicado/concatenado.\n  4. Código IDW: 5 inputs #idw_tmp_01..05, tamaños confirmados vía\n     config.controller.php (len_box1=3, resto 4, total len_idws=19) — NO\n     asumir 4 parejo. CRÍTICO: el propio portal advierte \"Respete tal cual\n     está impreso el código IDW mayúsculas y minúsculas\" — en la prueba\n     real, un carácter que a simple vista parecía letra \"O\" mayúscula\n     resultó ser dígito \"0\" (confirmado porque letra/dígito no se pueden\n     distinguir a simple vista en la fuente del ticket; se probó contra\n     revisaIDW.php hasta obtener \"1-O.K.\" en vez de error 500).\n  5. Botón \"+\" (#btn_idw) agrega el IDW a la lista tras validarlo\n     (revisaIDW.php). Botón \"Enviar\" (#btn_envio) hace la petición real\n     (guarda_peticion.php) — la respuesta confirma con isOK:true, pero el\n     CFDI real lo genera DESPUÉS \"el establecimiento comercial\" (proceso\n     asíncrono, no hay descarga inmediata). Estado queda \"Registrado\" en\n     \"Mis Facturas\" (facturas_x_usuario.controller.php) hasta que el\n     comercio lo procese — se recoge por correo (mismo mecanismo IMAP que\n     el resto del proyecto).",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#rfc",
+    "input_correo": "#correo",
+    "input_cp": "#DomicilioFiscalReceptor",
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": null
+   },
+   "selectores_todos": [
+    ".select2-selection",
+    ".select2-results__option",
+    "#rfc",
+    "#correo",
+    "#link_terminos_condiciones",
+    "#accept_terminos_condiciones",
+    "#btn-access",
+    "#DomicilioFiscalReceptor",
+    "#nombre",
+    "#email",
+    "#${idsIdw[i]}",
+    "#btn_idw",
+    "#btn_envio"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 11
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "El checkbox de términos está DISABLED hasta pulsar \"Oprima para Leer Términos y Condiciones\"."
+   },
+   "deteccion": {
+    "por_portal_field": "erfc",
+    "por_texto_ocr": [
+     "erfc.com.mx",
+     "erfc",
+     "idw"
+    ],
+    "por_comercio": [],
+    "por_url_qr": [
+     "erfc.com.mx"
+    ],
+    "nota_deteccion": "El dato de facturación es el código IDW impreso en el ticket."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "FacturaGAS / ControlGAS (ATIO Group)",
+    "razon_social": "gasolineras que facturan con ControlGAS",
+    "slug": "facturagas",
+    "url_portal": "https://app.facturagas.net",
+    "url_base": "https://app.facturagas.net",
+    "tecnologia": "ASP.NET — \"Facturación sin Usuario\"",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": true,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "FacturaGAS / ControlGAS — app.facturagas.net (plataforma de ATIO Group,\nrentada por muchas gasolineras chicas). El ticket imprime una URL propia\ndel negocio (ej. \"sumeca.ddns.net:83/ControlGASFE\" o similar DDNS) pero\nesa URL suele estar mal transcrita/impresa (el ticket real de esta prueba\ndecía \"umeca.ddns.net\" — SIN LA S — y no resolvía; el backend real de\napp.facturagas.net devolvió \"sumeca.ddns.net\", con S). No usar la URL\nimpresa en el ticket para navegar — usar SIEMPRE app.facturagas.net.\n\nReconocimiento real (2026-07-27, cuenta real GPN, ticket real Suministros\nEnergéticos de Calidad E12183, Folio 2025730, WebID 60844255, $1,500.00):\n  1. app.facturagas.net → \"Facturación sin Usuario\" (sin cuenta/login) →\n     generar_factura.aspx.\n  2. Estación: input con autocomplete (#rstation_Input, RadComboBox\n     Telerik) — escribir el nombre del comercio y hacer click en el <li>\n     real de la lista (no basta con seleccionar por teclado).\n  3. Folio (#despacho) + WebID (#webId) → \"Consultar Ticket\" (#btnSerchTk)\n     → si son correctos aparece \"Ticket validado correctamente\" con\n     Monto/Fecha reales para cruzar contra el ticket.\n  4. RFC (#inputRfc2) + botón \"Agregar\" (el que está PEGADO al campo RFC,\n     no el de más abajo) — CRÍTICO: los campos Nombre/Correo/CP/Régimen/\n     Uso CFDI están INERTES (no aceptan texto) hasta que este \"Agregar\"\n     del RFC se presiona. Llenarlos antes no tiene efecto y solo dispara\n     la validación \"Complete los campos marcados con (*)\".\n  5. Tras Agregar: #inputRazon, #inputCorreo, #inputCp (sin autofill —\n     cuenta nueva para este RFC en esta plataforma), #cmbRegimen y\n     #cmbUsos son <select> nativos normales (a diferencia de otros\n     portales de esta tanda, aquí SÍ son selects reales).\n  6. \"Generar Factura\" — la respuesta tarda más de 5s (\"Consultando,\n     espere...\"); NO asumir fallo solo porque no se capturó la respuesta\n     de red a tiempo. La forma confiable de confirmar es re-consultar el\n     mismo Folio/WebID: si ya está facturado, el propio \"Consultar\n     Ticket\" lo dice (\"Folio ... ya ha sido facturado.\") de forma\n     idempotente (no genera un duplicado ni truena).\n  7. Entrega: por CORREO real al buzón de captura (verificado: llega\n     \"Ha recibido un CFDI (FACTURA) para ...\" con XML+PDF adjuntos\n     reales) — no hay descarga directa confiable desde la UI de\n     app.facturagas.net ni desde el portal legado sumeca.ddns.net/\n     controlgasfe (que además pide un \"Código Cliente\" propio que no es\n     ninguno de los datos impresos en el ticket).\n\n⚠️ OJO — NO todas las estaciones \"ControlGasFE\" están en app.facturagas.net.\nVarias corren su PROPIA instancia en un DDNS del negocio y no aparecen en el\nautocomplete de estaciones del portal central. Comprobado con la estación\nP22904 \"LA SUERTE\" (Inmobiliaria Hemajo de Atlacomulco), que factura en\nhttp://hemajolasuerte.ddns.net:8087/ControlGasFE/ — ese portal pide los\nmismos tres datos (Estación / Folio / Web ID) pero es otro sitio.\n\nY lo más importante para el negocio: esas instancias propias avisan\n\"Solo se pueden facturar notas máximo 72 HORAS posteriores a haber sido\nrealizadas\". Es una ventana mucho más corta que los 30 días habituales, así\nque un ticket de este tipo hay que subirlo y facturarlo el mismo día.",
+    "mensaje_exito": "/Ticket validado correctamente/i",
+    "mensaje_ya_facturado": "/ya ha sido facturado/i",
+    "mensaje_ticket_invalido": "/no se encontr[oó]|folio inv[aá]lido|datos incorrectos/i"
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#inputRfc2",
+    "input_correo": "#inputCorreo",
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": null,
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "#rstation_Input",
+    "li, .dx-item, [role=\\",
+    "button, a, input[type=button]",
+    "button, a",
+    "#despacho",
+    "#webId",
+    "#btnSerchTk",
+    "#inputRfc2",
+    "#inputRazon",
+    "#inputCorreo",
+    "#inputCp"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000
+    ],
+    "esperas_fijas_total_s": 17.3
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 8,
+     "exitos": 0,
+     "segundos_medio": 13.7
+    },
+    "notas": "El ticket imprime una URL propia del negocio (ej. sumeca.ddns.net:83) que a menudo no resuelve. El WebID es el dato clave."
+   },
+   "deteccion": {
+    "por_portal_field": "facturagas",
+    "por_texto_ocr": [
+     "facturagas",
+     "controlgas",
+     "controlgasfe",
+     "webid"
+    ],
+    "por_comercio": [],
+    "por_url_qr": [
+     "facturagas.net",
+     "controlgasfe"
+    ],
+    "nota_deteccion": "NO navegar a la URL DDNS impresa en el ticket: suele venir mal transcrita. Usar SIEMPRE app.facturagas.net."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "Casetas de Sinaloa (Orler)",
+    "razon_social": "Autopistas de cuota de Sinaloa",
+    "slug": "orler",
+    "url_portal": "https://facturacion.sinaloa.gob.mx",
+    "url_base": "https://facturacion.sinaloa.gob.mx",
+    "tecnologia": "Portal estatal con login de cuenta",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": true,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": false
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "Orler / Sinaloa — facturacion.sinaloa.gob.mx (casetas de peaje del estado)\nRequiere LOGIN (cuenta ya registrada por el usuario) — credenciales SOLO\npor variables de entorno, nunca hardcoded: ORLER_SINALOA_USER / ORLER_SINALOA_PASS.\n\nReconocimiento real (2026-07-27, cuenta real GPN, ticket real Caseta El\nPisal folio 0944056):\n  1. /login → input[name=\"user\"] + input[name=\"password\"] → botón \"INICIAR SESIÓN\"\n     (los id tienen sufijos generados dinámicamente — usar name, no id).\n  2. Tras login, ir directo a /nuevafactura (ya autenticado por cookie de sesión).\n  3. Radio name=\"caseta\": \"Sí\" (índice 0) revela el campo \"Número de carril\"\n     (name=\"carril\") — con \"No\" (default) ese campo NO existe en el DOM.\n  4. Folio: input[name=\"folio\"] (\"Folio / Operación de Caja\").\n  5. Fecha de Pago: input de solo-lectura que abre un datepicker Material\n     (mes actual por default) — hay que navegar con las flechas \"<\"/\">\" si\n     el mes del pago no es el mes mostrado, y hacer click en el día.\n  6. Importe: input[name=\"amount\"].\n  7. Botón \"BUSCAR\". Si el folio no es válido TODAVÍA (timing — Orler dice\n     \"Casetas de peaje: 5-6 días\" desde el pago), aparece un modal \"Alerta:\n     El folio no se encuentra con los datos proporcionados\". CONFIRMADO en\n     vivo con datos reales y correctos — no es un bug de datos, es tiempo.\n\n⚠️ Lo que sigue tras un \"Buscar\" EXITOSO (folio ya reconocido) NO se pudo\nverificar en vivo — el único ticket real disponible seguía dentro de la\nventana de espera. Se implementa según las instrucciones que el propio\nportal muestra en pantalla (\"Da clic en el botón facturar y después\nconfirma los datos... tu factura se enviará por correo electrónico\"), con\nselectores por texto (más tolerantes a cambios que un id). Debe\nreverificarse contra un folio real ya vencido antes de confiar en esta\nparte ciegamente.",
+    "mensaje_exito": "/la factura ha sido timbrada correctamente/i",
+    "mensaje_ya_facturado": "/ya (fue|ha sido) facturad|previamente facturad/i",
+    "mensaje_ticket_invalido": "/(usuario|contrase|incorrect|inv[aá]lid|bloque)[^\\n]{0,90}/i"
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": null,
+    "input_correo": null,
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": "button, a, input[type=button], input[type=submit]",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "input",
+    "div,span,h1,h2,h3",
+    "button, td, div",
+    "button",
+    "[class*=",
+    "input[name=",
+    "div,p,span",
+    "button, a",
+    "button, a, input[type=button], input[type=submit]"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "reintentar_despues",
+     "ya_facturado"
+    ],
+    "timeouts_ms": [
+     30000,
+     15000,
+     20000
+    ],
+    "esperas_fijas_total_s": 17.2
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": {
+     "intentos": 17,
+     "exitos": 0,
+     "segundos_medio": 26.1
+    },
+    "notas": "Las casetas tardan 5-6 días hábiles desde el pago en aparecer: error_code reintentar_despues, no ticket inválido."
+   },
+   "deteccion": {
+    "por_portal_field": "orler",
+    "por_texto_ocr": [
+     "sinaloa.gob.mx",
+     "caseta",
+     "autopista de cuota"
+    ],
+    "por_comercio": [
+     "caseta",
+     "autopista de cuota"
+    ],
+    "por_url_qr": [
+     "facturacion.sinaloa.gob.mx",
+     "sinaloa.gob.mx"
+    ],
+    "nota_deteccion": "Requiere login: credenciales SOLO por ORLER_SINALOA_USER / ORLER_SINALOA_PASS, nunca en código."
+   }
+  },
+  {
+   "portal": {
+    "nombre_comercial": "RAMCAL",
+    "razon_social": "gasolineras RAMCAL (Manzanillo / Guadalajara)",
+    "slug": "ramcal",
+    "url_portal": "https://corporativoramcal.mx",
+    "url_base": "https://corporativoramcal.mx",
+    "tecnologia": "portal propio con registro de cliente",
+    "tiene_captcha": false,
+    "tipo_captcha": "ninguno",
+    "captcha_evidencia": "sin evidencia de uso",
+    "requiere_registro": false,
+    "campos_requeridos": [],
+    "soporta_cfdi_40": true
+   },
+   "flujo_facturacion": {
+    "pasos_documentados": null,
+    "reconocimiento": "RAMCAL — corporativoramcal.mx (grupo de gasolineras en Manzanillo/GDL,\nplataforma \"Kernotek\" por estación: {url-propia-por-estación}/bajatufactura/).\n\nReconocimiento real (2026-07-27, cuenta real GPN, ticket real estación\nE07932 \"Ramcal Autopista Manzanillo Colima\", Transacción 0201801651,\nCódigo impreso \"01292742361\", $1,330.20):\n  1. La página de facturación del sitio corporativo (corporativoramcal.mx\n     /facturacion/) NO tiene formulario — solo lista las estaciones y un\n     botón por cada una que lleva a su propio subdominio/URL\n     \"{host-de-la-estación}/bajatufactura/\". Ese mapeo estación→URL debe\n     resolverse ahí (no está impreso en el ticket, solo la clave de\n     estación tipo \"E07932\").\n  2. En \"{url-estación}/bajatufactura/\": \"Generación de Factura\" → RFC →\n     Aceptar. IMPORTANTE: contra la suposición inicial de que Ramcal\n     siempre requiere alta manual por correo, la búsqueda por RFC SÍ\n     encuentra clientes ya dados de alta (probado con GPN, que ya\n     estaba registrado) — solo hace falta el alta manual cuando el RFC\n     no aparece en \"CLIENTES ENCONTRADOS\".\n  3. \"Seleccionar\" el cliente → pantalla de Facturación con los datos\n     fiscales guardados. OJO: esos datos pueden estar desactualizados\n     (en la prueba real, el domicilio guardado tenía un CP y estado\n     totalmente distintos a la Constancia de Situación Fiscal real —\n     \"SONORA C.P. 85080\" en vez de \"SINALOA C.P. 80140\" — lo cual\n     hubiera causado el mismo tipo de rechazo SAT que CFDI40147/\n     DomicilioFiscalReceptor). Por eso este bot SIEMPRE pasa por\n     \"Editar Datos\" y sobreescribe calle/número/colonia/municipio/\n     estado/CP con los valores reales recibidos, en vez de confiar en\n     lo que el portal ya tenga guardado.\n  4. El \"Código\" (impreso en el ticket, ej. \"01292742361\" — DISTINTO de\n     la \"Transacción\") identifica el consumo — se invalida tras usarse\n     una vez (\"Código inválido, verifique con la estación\" en un\n     reintento), así que no es idempotente para reconsulta: si ya se\n     facturó, hay que buscarla por \"Descargar Factura\" → \"Por Factura\"\n     (con el folio real, ej. \"P275856\"), NO reintentando el código.\n  5. \"Cuenta de pago (4 últimos dígitos)\" viene del comprobante bancario\n     (no del ticket de la gasolinera) — en la prueba real, el vale de\n     Banorte/BBVA que acompaña al ticket. Uso CFDI ya trae \"GASTOS EN\n     GENERAL\" por default.\n  6. Tras \"Facturar\" se genera el folio real y aparece un botón\n     \"Descargar\" directo en esa MISMA pantalla — pero si se necesita\n     recuperar después (nueva sesión), solo queda la vía \"Descargar\n     Factura → Por Factura → Enviar Correo\" (con el correo de captura).",
+    "mensaje_exito": null,
+    "mensaje_ya_facturado": null,
+    "mensaje_ticket_invalido": null
+   },
+   "selectores_criticos": {
+    "input_folio": null,
+    "input_fecha": null,
+    "input_total": null,
+    "input_rfc": "#rfc",
+    "input_correo": "#email",
+    "input_cp": null,
+    "input_regimen_fiscal": null,
+    "input_uso_cfdi": null,
+    "input_forma_pago": null,
+    "boton_facturar": "input[type=submit],button",
+    "boton_descargar_xml": null,
+    "boton_descargar_pdf": null,
+    "modal_exito": null,
+    "modal_error": null,
+    "modal_ya_facturado": "(detectado por TEXTO en el body, no por selector)"
+   },
+   "selectores_todos": [
+    "input,button",
+    "input,button,a",
+    "input[name=",
+    "#btn_cli_actualizar",
+    "input[type=submit],button",
+    "#email",
+    "#rfc",
+    "#btn_facturar",
+    "#btn_nf",
+    "#ev_cr"
+   ],
+   "manejo_errores": {
+    "error_codes": [
+     "datos_invalidos"
+    ],
+    "timeouts_ms": [
+     25000,
+     15000
+    ],
+    "esperas_fijas_total_s": 33.1
+   },
+   "estado": {
+    "investigado": true,
+    "bot_generado": true,
+    "bot_en_gate": true,
+    "estado_declarado": "activo",
+    "generado_por_agente": false,
+    "estado_agente": null,
+    "estadisticas": null,
+    "notas": "GPN ya tiene perfil guardado. Ojo con el Total: el ticket muestra SubTotal y Total, y el bueno es el Total."
+   },
+   "deteccion": {
+    "por_portal_field": "ramcal",
+    "por_texto_ocr": [
+     "ramcal",
+     "corporativoramcal"
+    ],
+    "por_comercio": [
+     "ramcal"
+    ],
+    "por_url_qr": [
+     "corporativoramcal.mx",
+     "ramcal.no-ip"
+    ]
+   }
+  }
+ ]
+}
