@@ -18,6 +18,20 @@ async function fillInput(page, selector, value) {
   console.log(`📝 ${selector}: "${actual}"`);
 }
 
+// El portal EDX avisa de TODO por un único modal, #modalnotificacion. Ahí está
+// siempre el motivo real; leerlo es la diferencia entre diagnosticar y adivinar.
+async function leerNotificacion(page) {
+  return page.evaluate(() => {
+    const m = document.querySelector("#modalnotificacion");
+    if (!m || m.offsetParent === null) return "";
+    return (m.innerText || "")
+      .replace(/\s+/g, " ")
+      .replace(/^\s*×?\s*Notificaci[oó]n\s*/i, "")   // la X de cerrar y el título
+      .replace(/\+?\s*Detalle\s*Aceptar\s*$/i, "")    // los botones del pie
+      .trim();
+  });
+}
+
 // Hace click en el botón "Siguiente"
 async function clickSiguiente(page) {
   const clicked = await page.evaluate(() => {
@@ -153,19 +167,39 @@ async function facturarCarlsJr({
     // pantalla — ANTES de que el bot alcance a llenarlos. Si se revisaba aquí,
     // el bot se rendía sin intentar completar el formulario (bug real
     // encontrado en producción, 2026-07-27, ticket #117).
-    const errTemprano = await page.evaluate(() => {
-      const body = document.body.innerText;
+    // El aviso del portal manda sobre cualquier heurística sobre el body: es el
+    // portal diciendo con sus palabras qué le pasa a ESTE ticket.
+    const aviso = await leerNotificacion(page);
+    if (aviso) console.log(`📢 Aviso del portal: ${aviso}`);
+
+    const errTemprano = await page.evaluate((av) => {
+      const body = av || document.body.innerText;
       if (/ya fue facturado|ya facturado|factura.*ya.*generada/i.test(body)) return "YA_FACTURADO";
+      // ⚠️ Lo de abajo es del PORTAL, no nuestro: el ticket existe (EDX repite su
+      //    número) pero la sucursal no ha subido la venta completa a la
+      //    plataforma. Nada que corregir de nuestro lado — hay que esperar a que
+      //    ICR sincronice, o reclamar en tienda. Visto en el ticket #206.
+      if (/no est[aá] completo|conector configurado|sin conector/i.test(body)) return "PORTAL_INCOMPLETO";
       if (/no encontrado|no existe|ticket inv|referencia.*inv|inv.*referencia|no se encontr/i.test(body)) return "DATOS_INVALIDOS";
       return null;
-    });
+    }, aviso);
+
     if (errTemprano === "YA_FACTURADO") {
       await browser.close();
       return { ok: false, error_code: "ya_facturado", msg: "Carl's Jr: la referencia ya fue facturada" };
     }
+    if (errTemprano === "PORTAL_INCOMPLETO") {
+      await screenshot("portal_incompleto");
+      await browser.close();
+      return {
+        ok: false,
+        error_code: "reintentar_despues",
+        msg: `Carl's Jr: el portal aún no tiene la venta completa de esta referencia — "${aviso}". Es una sincronización pendiente de la sucursal, no un dato mal capturado. Ojo: solo hay 30 días desde la fecha del ticket para facturar.`,
+      };
+    }
     if (errTemprano) {
       await browser.close();
-      return { ok: false, error_code: "datos_invalidos", msg: `Carl's Jr: ${errTemprano}` };
+      return { ok: false, error_code: "datos_invalidos", msg: `Carl's Jr: ${aviso || errTemprano}` };
     }
 
     // Esperar paso 2 (campo Uso CFDI) — si no aparece, capturar pantalla y reportar
@@ -178,8 +212,19 @@ async function facturarCarlsJr({
         return null;
       });
     if (!cfdiInput) {
+      // ⚠️ NO inventar el motivo. Este catch decía "referencia no encontrada o
+      //    datos del ticket inválidos" y era mentira: en el #206 la referencia
+      //    era correcta y el campo existía (0x0, tapado por el modal). Seis
+      //    reintentos culpando al usuario de un problema del portal.
+      const avisoTarde = (await leerNotificacion(page)) || aviso;
       await browser.close();
-      return { ok: false, error_code: "datos_invalidos", msg: "Carl's Jr: referencia no encontrada o datos del ticket inválidos" };
+      return {
+        ok: false,
+        error_code: "reintentar_despues",
+        msg: avisoTarde
+          ? `Carl's Jr: ${avisoTarde}`
+          : "Carl's Jr: el portal no avanzó a Datos Fiscales y no dio ningún aviso. Sin motivo confirmado — hay captura en R2.",
+      };
     }
     await screenshot("p3_datos_fiscales");
 
