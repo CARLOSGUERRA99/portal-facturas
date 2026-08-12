@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-08-02",
+  "actualizado": "2026-08-12",
   "portales": {
     "bodegaaurrera": {
       "nombre": "Walmart de México (Bodega Aurrera / Mi Bodega Aurrera / Walmart / Sam's Club / Superama)",
@@ -1218,7 +1218,6 @@
         "por_texto_ocr": [
           "capufe",
           "caminos y puentes",
-          "plaza de cobro",
           "facturacioncapufe"
         ],
         "por_comercio": [
@@ -1229,7 +1228,7 @@
           "facturacioncapufe.com.mx",
           "capufe.gob.mx"
         ],
-        "nota_deteccion": "El dato que pide el portal es el código \"FACTURACION\" de 18 caracteres, NO el folio."
+        "nota_deteccion": "El dato que pide el portal es el código \"FACTURACION\" de 18 caracteres, NO el folio. ⚠️ NO basta con que diga \"PLAZA DE COBRO\": esa frase la usan también las concesionarias privadas (Santa Ana-Altar, etc.), cuyos tickets NO llevan ese código y NO se facturan aquí. Solo es CAPUFE si aparece \"CAPUFE\" o \"CAMINOS Y PUENTES FEDERALES\", o si hay código de 18 caracteres."
       },
       "notas_desarrollo": "Consultar el código lo RESERVA: si se valida y no se llega a \"Facturar conceptos\", queda tomado. Régimen y Uso CFDI son p-dropdown de PrimeReact, no <select>."
     },
