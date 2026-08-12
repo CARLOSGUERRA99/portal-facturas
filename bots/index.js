@@ -9,6 +9,7 @@ const { facturarPanama } = require('./panama');
 const { facturarCarlsJr } = require('./carljr');
 const { facturarSushito } = require('./sushito');
 const { facturarAutoZone } = require('./autozone');
+const { facturarAlbatros } = require('./albatros');
 const { facturarDana } = require('./dana');
 const { facturarTufesa } = require('./tufesa');
 const { facturarBodegaAurrera } = require('./bodegaaurrera');
@@ -202,6 +203,16 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log("🎯 Portal detectado: Carl's Jr (ICR S.A. de C.V.)");
     return await facturarCarlsJr(datos);
+  }
+
+  if (
+    portal === 'albatros' ||
+    comercio.includes('albatros') ||
+    portalUrl.includes('albatrosautobuses') ||
+    portalUrl.includes('grupoalbatros')
+  ) {
+    console.log('🎯 Portal detectado: Albatros Autobuses');
+    return await facturarAlbatros(datos);
   }
 
   if (

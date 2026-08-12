@@ -1367,6 +1367,35 @@
         ]
       },
       "notas_desarrollo": "GPN ya tiene perfil guardado. Ojo con el Total: el ticket muestra SubTotal y Total, y el bueno es el Total."
+    },
+    "albatros": {
+      "nombre": "Albatros Autobuses",
+      "bot": "albatros.js",
+      "estado": "activo",
+      "url_base": "https://grupoalbatros.net/facturacion/",
+      "tecnologia": "PHP, formulario de 3 pasos, sin login ni CAPTCHA",
+      "stealth": true,
+      "comercios": [
+        "Albatros Autobuses",
+        "Grupo Albatros"
+      ],
+      "deteccion": {
+        "por_portal_field": "albatros",
+        "por_texto_ocr": [
+          "albatros autobuses",
+          "albatrosautobuses.com"
+        ],
+        "por_comercio": [
+          "albatros"
+        ],
+        "por_url_qr": [
+          "albatrosautobuses.com",
+          "albatrosautobuses.mx",
+          "grupoalbatros.net"
+        ],
+        "nota_deteccion": "El boleto imprime DOS códigos: el de ARRIBA, junto a la palabra BOLETO (ej. I7UB8C), es el que pide el portal; el \"Turno # S-XXXXXX\" de la línea \"Vendido en\" NO sirve. Plazo de 30 días."
+      },
+      "notas_desarrollo": "albatrosautobuses.com solo enlaza al portal real grupoalbatros.net/facturacion/. Flujo: formulario completo → Siguiente → paso2fact.php (confirmación, botón Facturar) → paso3fact.php con enlaces directos .xml y .pdf. El boleto y el importe van en campos array boleto[] e importe[]."
     }
   },
   "fusionados": {
