@@ -165,7 +165,11 @@ const botsWorker = new Worker("bots", async (job, token) => {
   }
 }, {
   connection: nuevaConexion(),
-  concurrency: 4,
+  // 3, no 4: con 4 sesiones simultáneas Browserless devolvió 429 y tumbó los
+  // tickets #229 y #230 en el mismo segundo (12/08/2026). El cuello de botella
+  // no es nuestro worker, es el plan de Browserless. Subir esto sin subir el
+  // plan solo cambia fallos de facturación por fallos de conexión.
+  concurrency: 3,
   // ⚠️ SIN ESTO EL SISTEMA PUEDE EMITIR LA MISMA FACTURA DOS VECES.
   //
   // El lock por defecto de BullMQ es 30s, pero un bot tarda bastante más:
