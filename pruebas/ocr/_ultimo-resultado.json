@@ -1,17 +1,9 @@
 {
- "fecha": "2026-08-02T06:59:10.601Z",
- "pct": "95.6",
- "perfectos": 21,
+ "fecha": "2026-08-12T06:34:15.849Z",
+ "pct": "97.1",
+ "perfectos": 22,
  "total": 24,
  "fallidos": [
-  {
-   "caso": "0151_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
-   "aciertos": 2,
-   "total": 3,
-   "fallos": [
-    "folio: esperaba \"7540670\" y salió \"7540070\""
-   ]
-  },
   {
    "caso": "0150_Analizando.jpeg",
    "aciertos": 3,
