@@ -168,6 +168,20 @@ async function facturarOrler({ carril, folio, fechaPago, importe, ticketId }) {
     await page.goto("https://facturacion.sinaloa.gob.mx/nuevafactura", { waitUntil: "load", timeout: 20000 });
     await page.waitForSelector('input[name="caseta"]', { timeout: 15000 });
 
+    // ⚠️ Sin carril el portal NO busca: contesta "Debes ingresar los campos
+    // solicitados" y se queda en la misma pantalla. Antes se enviaba igual
+    // (String(undefined) → "undefined") y el fallo se reportaba como "folio
+    // reconocido pero no se encontró el botón Facturar", que era mentira: el
+    // BUSCAR nunca llegó a ejecutarse. Mejor pararlo aquí y pedirlo.
+    if (!String(carril || "").trim()) {
+      await browser.close();
+      return {
+        ok: false,
+        error_code: "datos_invalidos",
+        msg: `Orler: falta el número de CARRIL, que el portal exige para buscar el folio ${folio}. Viene impreso en el ticket en la línea "CARRIL:" (ej. CARRIL: 5908 SENTIDO:A).`,
+      };
+    }
+
     const radios = await page.$$('input[name="caseta"]');
     await radios[0].click(); // "Sí"
     await page.waitForTimeout(700);
@@ -193,10 +207,31 @@ async function facturarOrler({ carril, folio, fechaPago, importe, ticketId }) {
     await page.waitForTimeout(3000);
     await screenshot("p3_resultado_buscar");
 
-    const alerta = await page.evaluate(() => {
-      const el = Array.from(document.querySelectorAll("div,p,span")).find(e => /el folio no se encuentra/i.test(e.textContent || ""));
-      return el ? el.textContent.trim() : null;
+    // ⚠️ Antes solo se buscaba "el folio no se encuentra", y de su AUSENCIA se
+    // deducía que el folio estaba reconocido. Es una deducción inválida: el
+    // portal tiene más avisos, y con cualquier otro el bot seguía adelante
+    // creyendo que todo iba bien. Ahora se recoge CUALQUIER alerta y se
+    // distingue después.
+    const avisoPortal = await page.evaluate(() => {
+      const el = Array.from(document.querySelectorAll("div,p,span"))
+        .find(e => /el folio no se encuentra|debes ingresar|campos solicitados|ya fue timbrad/i.test(e.textContent || "")
+                   && e.offsetParent !== null);
+      return el ? el.textContent.trim().replace(/\s+/g, " ").slice(0, 200) : null;
     });
+
+    // El formulario iba incompleto: BUSCAR no llegó a ejecutarse. No es un
+    // problema de timing del folio, así que no tiene sentido reintentarlo igual.
+    if (avisoPortal && /debes ingresar|campos solicitados/i.test(avisoPortal)) {
+      await screenshot("p3_formulario_incompleto");
+      await browser.close();
+      return {
+        ok: false,
+        error_code: "datos_invalidos",
+        msg: `Orler: el portal rechazó el formulario — "${avisoPortal}". Falta algún dato obligatorio (carril, folio, fecha o importe); revisa la foto del ticket.`,
+      };
+    }
+
+    const alerta = avisoPortal && /el folio no se encuentra/i.test(avisoPortal) ? avisoPortal : null;
 
     if (alerta) {
       // Cerrar el modal si sigue abierto (no afecta el resultado, solo limpieza)
