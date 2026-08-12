@@ -1,6 +1,7 @@
 const Imap = require('imap');
 const { simpleParser } = require('mailparser');
 const unzipper = require('unzipper');
+const { leerCFDI } = require('../lib/cfdi');
 
 // Acepta cualquier correo que parezca un CFDI/factura
 function esCFDI(subject, from) {
@@ -239,12 +240,27 @@ async function procesarCorreos(imap, uids, ticketCode, timer, resolve, reject, e
           const subject = parsed.subject || '';
           console.log(`📧 Correo: "${subject}" | De: ${from} | UID: ${msgUid}`);
 
-          if (!esCFDI(subject, from)) {
-            console.log(`   ↳ Ignorado (no es CFDI)`);
+          // ⚠️ EL ADJUNTO MANDA SOBRE EL REMITENTE Y EL ASUNTO.
+          //
+          // Antes se descartaba el correo AQUÍ, antes de abrir los adjuntos, si
+          // el remitente o el asunto no "sonaban" a factura. Eso tiraba correos
+          // que llevaban un CFDI real dentro — en concreto los REENVIADOS: si
+          // Carlos recibe la factura en su correo de empresa y la reenvía al
+          // buzón, el remitente pasa a ser carlosguerra@grupogpn.com y ya no
+          // casa con ninguna de las pistas. Pasó con las de PINFRA.
+          //
+          // Un XML que parsea como Comprobante ES un CFDI, lo mande quien lo
+          // mande. La heurística se queda solo para el caso sin adjunto útil.
+          const { xmlBuffer, pdfBuffer } = await extraerAdjuntos(parsed);
+          const traeCfdiDeVerdad = !!xmlBuffer && !!leerCFDI(xmlBuffer);
+
+          if (!traeCfdiDeVerdad && !esCFDI(subject, from)) {
+            console.log(`   ↳ Ignorado (ni trae CFDI adjunto ni parece factura)`);
             continue;
           }
-
-          const { xmlBuffer, pdfBuffer } = await extraerAdjuntos(parsed);
+          if (traeCfdiDeVerdad && !esCFDI(subject, from)) {
+            console.log(`   ↳ Aceptado por el ADJUNTO: trae un CFDI válido aunque el remitente no lo parezca (¿reenviado?)`);
+          }
 
           if (xmlBuffer || pdfBuffer) {
             // Filtrar por comercio para evitar cruzar facturas entre tickets.
