@@ -57,32 +57,32 @@ const CORREO = process.argv[3] || 'carlosguerra@grupogpn.com';
     // Tras Facturar sale un modal pidiendo el USO DEL CFDI. Sin elegirlo no
     // avanza, y el propio portal avisa de que un uso mal puesto obliga a
     // cancelar la factura.
+    // El aviso del Uso del CFDI es div#modal-uso-cdfi — NO lleva clase .modal
+    // ni role=dialog, así que buscarlo con '.modal, [role=dialog]' daba cero.
     const uso = await page.evaluate(() => {
-      const sel = Array.from(document.querySelectorAll('select')).find(s =>
-        s.offsetParent && Array.from(s.options).some(o => /G03/i.test(o.textContent)));
+      const sel = document.querySelector('#ClaveCDFI');
       if (!sel) return null;
-      const o = Array.from(sel.options).find(x => /^\s*G03/i.test(x.textContent));
+      const o = Array.from(sel.options).find((x) => /^\s*G03/i.test(x.textContent));
       if (!o) return null;
       sel.value = o.value;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
       return o.textContent.trim();
     });
-    console.log('uso CFDI:', uso || '(no se encontró el desplegable)');
+    console.log('uso CFDI:', uso || '(no apareció #ClaveCDFI)');
     await page.waitForTimeout(1200);
 
+    // ⚠️ El botón de confirmar del aviso se llama IGUAL y tiene el MISMO id que
+    // el "Facturar" de la tabla de fuera. Buscando por texto se cogía el de
+    // fuera, que solo reabría el aviso: por eso el intento anterior no timbró
+    // nada. Hay que anclarlo al contenedor.
     const confirmado = await page.evaluate(() => {
-      // Dentro del modal, el botón de confirmar NO es "Cancelar" ni "Modificar".
-      const modal = Array.from(document.querySelectorAll('.modal, [role=dialog]')).find(m => m.offsetParent);
-      const ambito = modal || document;
-      const b = Array.from(ambito.querySelectorAll('button, input[type=submit], a'))
-        .filter(x => x.offsetParent)
-        .find(x => /facturar|aceptar|continuar|confirmar/i.test((x.textContent || x.value || '')) &&
-                   !/cancelar|modificar|liberar|agregar/i.test((x.textContent || x.value || '')));
-      if (!b) return null;
-      const t = (b.textContent || b.value || '').trim(); b.click(); return t;
+      const b = document.querySelector('#modal-uso-cdfi button#Facturar');
+      if (!b || b.offsetParent === null) return null;
+      b.click();
+      return (b.textContent || '').trim();
     });
-    console.log('confirmado con:', confirmado || '(no se encontró botón)');
-    await page.waitForTimeout(12000);
+    console.log('confirmado con:', confirmado || '(no se encontró #modal-uso-cdfi button#Facturar)');
+    await page.waitForTimeout(15000);
 
     const r = await page.evaluate(() => ({
       url: location.href,
