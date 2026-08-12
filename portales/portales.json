@@ -1396,6 +1396,34 @@
         "nota_deteccion": "El boleto imprime DOS códigos: el de ARRIBA, junto a la palabra BOLETO (ej. I7UB8C), es el que pide el portal; el \"Turno # S-XXXXXX\" de la línea \"Vendido en\" NO sirve. Plazo de 30 días."
       },
       "notas_desarrollo": "albatrosautobuses.com solo enlaza al portal real grupoalbatros.net/facturacion/. Flujo: formulario completo → Siguiente → paso2fact.php (confirmación, botón Facturar) → paso3fact.php con enlaces directos .xml y .pdf. El boleto y el importe van en campos array boleto[] e importe[]."
+    },
+    "littlecaesars": {
+      "nombre": "Little Caesars (Cafrema / Analytix360)",
+      "bot": null,
+      "estado": "bloqueado_captcha",
+      "url_base": "https://cfdi.analytix360.cloud/cafrema/lc/",
+      "tecnologia": "Analytix360. Formulario en /lc/crear/ con reCAPTCHA v2 de Google",
+      "stealth": true,
+      "comercios": [
+        "Little Caesars",
+        "Cafrema"
+      ],
+      "deteccion": {
+        "por_portal_field": "littlecaesars",
+        "por_texto_ocr": [
+          "little caesars",
+          "analytix360",
+          "cafrema"
+        ],
+        "por_comercio": [
+          "little caesars"
+        ],
+        "por_url_qr": [
+          "cfdi.analytix360.cloud"
+        ],
+        "nota_deteccion": "La portada cfdi.analytix360.cloud/cafrema/ NO tiene formulario: el bueno está en /cafrema/lc/ → \"Crear Nueva Factura\" → /lc/crear/."
+      },
+      "notas_desarrollo": "BLOQUEADO por reCAPTCHA v2 (sitekey 6Lft1l8UAAAAAE08IIf97xe4Gam2xRRAJAS1_qpa) en /lc/crear/. Por decisión de Carlos NO se usa ningún servicio de resolución automatizada: va por el modo asistido, con una persona resolviendo el reCAPTCHA. Campos del formulario, ya reconocidos: select#ticket_cv_store (86 tiendas, formato 04123-000NN), input#ticket_cv_ticket (número), input#ticket_cv_fecha (YYYY-MM-DD), input#ticket_cv_total, input#ticket_cv_rfc, botón Enviar. También hay \"Reimprimir Factura\" para recuperar una ya emitida."
     }
   },
   "fusionados": {
