@@ -1424,6 +1424,39 @@
         "nota_deteccion": "La portada cfdi.analytix360.cloud/cafrema/ NO tiene formulario: el bueno está en /cafrema/lc/ → \"Crear Nueva Factura\" → /lc/crear/."
       },
       "notas_desarrollo": "BLOQUEADO por reCAPTCHA v2 (sitekey 6Lft1l8UAAAAAE08IIf97xe4Gam2xRRAJAS1_qpa) en /lc/crear/. Por decisión de Carlos NO se usa ningún servicio de resolución automatizada: va por el modo asistido, con una persona resolviendo el reCAPTCHA. Campos del formulario, ya reconocidos: select#ticket_cv_store (86 tiendas, formato 04123-000NN), input#ticket_cv_ticket (número), input#ticket_cv_fecha (YYYY-MM-DD), input#ticket_cv_total, input#ticket_cv_rfc, botón Enviar. También hay \"Reimprimir Factura\" para recuperar una ya emitida."
+    },
+    "pinfra": {
+      "nombre": "PINFRA — casetas (Promotora y Operadora de Infraestructura)",
+      "bot": "pinfra.js",
+      "estado": "activo",
+      "url_base": "https://www.pinfrafacturacion.com.mx",
+      "tecnologia": "ASP.NET MVC. Entrada con RFC + correo ya asociado (sin contraseña). 27 autopistas.",
+      "stealth": true,
+      "comercios": [
+        "Concesionaria Santa Ana-Altar",
+        "Autopista Santa Ana - Altar",
+        "PINFRA",
+        "Promotora y Operadora de Infraestructura"
+      ],
+      "deteccion": {
+        "por_portal_field": "pinfra",
+        "por_texto_ocr": [
+          "concesionaria santa ana",
+          "santa ana-altar",
+          "pinfra",
+          "pinfrafacturacion"
+        ],
+        "por_comercio": [
+          "santa ana-altar",
+          "santa ana altar",
+          "pinfra"
+        ],
+        "por_url_qr": [
+          "pinfrafacturacion.com.mx"
+        ],
+        "nota_deteccion": "⚠️ NO es CAPUFE aunque el ticket diga \"PLAZA DE COBRO\": esa frase la usan todas las casetas. Los tickets de concesionaria (Santa Ana-Altar y demás de PINFRA) NO llevan el código de 18 caracteres de CAPUFE. Hace falta la HORA además de la fecha, y el CARRIL."
+      },
+      "notas_desarrollo": "CUATRO TRAMPAS medidas en vivo: (1) dos formatos de fecha en el MISMO portal — Facturar/GenerarFactura usa M/D/YYYY y Consultar/GenerarConsultas usa D/M/YYYY; con el equivocado la consulta dice \"Nada Encontrado\" y parece que la factura no existe. (2) No se puede click+type: #Fecha abre un datepicker que tapa el resto y los demás campos se quedan vacíos. (3) El botón de confirmar del aviso de Uso de CFDI es #modal-uso-cdfi button#Facturar, con el MISMO id y texto que el \"Facturar\" de la tabla: buscarlo por texto coge el de fuera y solo reabre el aviso. Y ese aviso no lleva clase .modal ni role=dialog. (4) El resultado viene en la query string: MensajeError / MensajeSuccess. Mapeo: FOLIO \"2-0000983716\" → NumeroId=2 (máx 7) + Consecutivo=0000983716 (máx 10); CARRIL 2B → Máquina 02B (con cero delante). \"Agregar Ticket\" es reversible (hay \"Liberar Ticket Seleccionado\"); \"Facturar\" no. Entrega: Consultar Facturas → poner #Correo (campo de PÁGINA) y pulsar #btnSendEmail de la fila."
     }
   },
   "fusionados": {

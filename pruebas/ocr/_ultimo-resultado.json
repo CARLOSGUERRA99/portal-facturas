@@ -1,23 +1,15 @@
 {
- "fecha": "2026-08-12T08:11:15.463Z",
- "pct": "95.6",
- "perfectos": 21,
+ "fecha": "2026-08-12T08:46:28.842Z",
+ "pct": "97.1",
+ "perfectos": 22,
  "total": 24,
  "fallidos": [
-  {
-   "caso": "0166_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
-   "aciertos": 2,
-   "total": 3,
-   "fallos": [
-    "folio: esperaba \"7540670\" y salió \"7540070\""
-   ]
-  },
   {
    "caso": "0150_Analizando.jpeg",
    "aciertos": 3,
    "total": 4,
    "fallos": [
-    "referencia: esperaba \"0498471292208AE\" y salió \"049847129220BAE\""
+    "portal: esperaba \"enerfueltech\" y salió \"desconocido\""
    ]
   },
   {

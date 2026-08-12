@@ -10,6 +10,7 @@ const { facturarCarlsJr } = require('./carljr');
 const { facturarSushito } = require('./sushito');
 const { facturarAutoZone } = require('./autozone');
 const { facturarAlbatros } = require('./albatros');
+const { facturarPinfra } = require('./pinfra');
 const { facturarDana } = require('./dana');
 const { facturarTufesa } = require('./tufesa');
 const { facturarBodegaAurrera } = require('./bodegaaurrera');
@@ -203,6 +204,18 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log("🎯 Portal detectado: Carl's Jr (ICR S.A. de C.V.)");
     return await facturarCarlsJr(datos);
+  }
+
+  if (
+    portal === 'pinfra' ||
+    comercio.includes('pinfra') ||
+    comercio.includes('santa ana-altar') ||
+    comercio.includes('santa ana altar') ||
+    portalUrl.includes('pinfrafacturacion')
+  ) {
+    console.log('🎯 Portal detectado: PINFRA (casetas)');
+    // El correo del login tiene que ser uno ya asociado al RFC en el portal.
+    return await facturarPinfra({ ...datos, email: datos.email });
   }
 
   if (
