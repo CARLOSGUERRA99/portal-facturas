@@ -531,8 +531,38 @@ async function facturarAutoZone({
 
         if (ctrl.esSelect) {
           // Un mat-select no acepta escritura: se abre y se elige la opción.
-          await page.mouse.click(ctrl.x, ctrl.y);
+          //
+          // ⚠️ NO se puede clicar en ctrl.x/ctrl.y: esas coordenadas son de
+          // cuando se leyó la pantalla, ANTES de rellenar los campos de arriba.
+          // Al escribir el correo y el RFC el formulario crece y el régimen baja
+          // varias decenas de píxeles, así que el clic caía en el vacío, el
+          // panel no llegaba a abrirse y el bot listaba como "opciones
+          // disponibles" el texto suelto de la página ("Anterior | Siguiente |
+          // 45% | …"). Tumbó los tickets #215 ($2,456) y #228 ($399).
+          // Se vuelve a localizar el control por su índice justo antes de
+          // pulsarlo, y se lleva a la vista por si quedó fuera de pantalla.
+          const punto = await page.evaluate((idx) => {
+            const nodos = Array.from(document.querySelectorAll('input, mat-select, .mat-select'))
+              .filter(i => i.offsetParent !== null && i.type !== 'hidden' && i.getBoundingClientRect().width > 40);
+            const el = nodos[idx];
+            if (!el) return null;
+            el.scrollIntoView({ block: 'center' });
+            const r = el.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+          }, ctrl.idx);
+          if (!punto) { console.log(`   ⚠️ el control "${pista}" desapareció de la pantalla`); continue; }
+          await page.mouse.click(punto.x, punto.y);
           await page.waitForTimeout(800);
+
+          // Si el panel no abrió, el clic no llegó: sin esto el bot se conforma
+          // y culpa al portal de no tener la opción.
+          const abierto = await page.evaluate(() =>
+            !!document.querySelector('mat-option, .mat-option, .cdk-overlay-pane'));
+          if (!abierto) {
+            console.log(`   ↻ el panel de "${pista}" no abrió — reintento con teclado`);
+            await page.keyboard.press('Enter').catch(() => {});
+            await page.waitForTimeout(700);
+          }
           const elegido = await elegirDeLista(r.buscar || r.texto, false);
           if (!elegido) {
             const disponibles = (await opcionesEnPantalla()).slice(0, 12).join(' | ');
