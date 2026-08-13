@@ -1,19 +1,11 @@
 {
- "fecha": "2026-08-12T08:46:28.842Z",
- "pct": "97.1",
- "perfectos": 22,
+ "fecha": "2026-08-13T03:26:46.551Z",
+ "pct": "98.5",
+ "perfectos": 23,
  "total": 24,
  "fallidos": [
   {
    "caso": "0150_Analizando.jpeg",
-   "aciertos": 3,
-   "total": 4,
-   "fallos": [
-    "portal: esperaba \"enerfueltech\" y salió \"desconocido\""
-   ]
-  },
-  {
-   "caso": "0163_GRUPO-INNO-SA-DE-CV.jpeg",
    "aciertos": 3,
    "total": 4,
    "fallos": [

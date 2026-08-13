@@ -1418,7 +1418,8 @@
         "por_texto_ocr": [
           "little caesars",
           "analytix360",
-          "cafrema"
+          "cafrema",
+          "cafrema foods"
         ],
         "por_comercio": [
           "little caesars"
@@ -1426,7 +1427,7 @@
         "por_url_qr": [
           "cfdi.analytix360.cloud"
         ],
-        "nota_deteccion": "La portada cfdi.analytix360.cloud/cafrema/ NO tiene formulario: el bueno está en /cafrema/lc/ → \"Crear Nueva Factura\" → /lc/crear/."
+        "nota_deteccion": "La portada cfdi.analytix360.cloud/cafrema/ NO tiene formulario: el bueno está en /cafrema/lc/ → \"Crear Nueva Factura\" → /lc/crear/. El emisor es CAFREMA FOODS S.A. DE C.V., RFC CFO080121U8A. Plazo: \"Facturación disponible dentro del mes de consumo\"."
       },
       "notas_desarrollo": "BLOQUEADO por reCAPTCHA v2 (sitekey 6Lft1l8UAAAAAE08IIf97xe4Gam2xRRAJAS1_qpa) en /lc/crear/. Por decisión de Carlos NO se usa ningún servicio de resolución automatizada: va por el modo asistido, con una persona resolviendo el reCAPTCHA. Campos del formulario, ya reconocidos: select#ticket_cv_store (86 tiendas, formato 04123-000NN), input#ticket_cv_ticket (número), input#ticket_cv_fecha (YYYY-MM-DD), input#ticket_cv_total, input#ticket_cv_rfc, botón Enviar. También hay \"Reimprimir Factura\" para recuperar una ya emitida."
     },
