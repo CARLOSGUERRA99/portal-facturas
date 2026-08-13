@@ -1006,15 +1006,15 @@
         "por_texto_ocr": [
           "igasfac.com.mx",
           "igasfac",
-          "folioweb",
-          "facture en linea"
+          "folioweb"
         ],
         "por_comercio": [],
         "por_url_qr": [
           "igasfac.com.mx",
           "1gasfac.com.mx",
           "lgasfac.com.mx"
-        ]
+        ],
+        "nota_deteccion": "Solo es IGasFac si el ticket nombra igasfac.com.mx (o sus variantes 1gasfac/lgasfac) o imprime un FOLIOWEB con formato 4-8-8 entre guiones. ⚠️ NO basta con \"facture en línea\" ni con que sea una gasolinera: hay muchas otras plataformas (migasolinera.net, indian.mx, ecsamexico, grupocentro, gasolineros.mx, estacionpaloverde, controlnet, petrosistemas, g500network, topgasmexico, svgasolineras, grupomaba) y sus tickets NO llevan Folioweb — piden un CÓDIGO distinto. Detectarlos como igasfac hace que el OCR busque un folio que no existe y el ticket se quede sin dato."
       },
       "notas_desarrollo": "El folio que pide el portal es el FOLIOWEB largo (formato 4-8-8 con guiones) impreso DEBAJO de \"Facturacion en: www.igasfac.com.mx\", NO el \"Folio:\" corto de arriba. Ventana: hasta el ultimo dia del mes."
     },
