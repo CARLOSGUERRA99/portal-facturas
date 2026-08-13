@@ -156,7 +156,19 @@ async function facturarGasmaz({ referencia, folio, total, rfc, razonSocial, regi
   console.log("🤖 Iniciando bot Gasmaz/NexusFuel...");
   console.log(`   Referencia: ${referencia} | Folio: ${folio} | Total: ${total} | RFC: ${rfc}`);
 
-  const url = (portalUrl && portalUrl.startsWith("http")) ? portalUrl : "https://redmaxfactura.nexusfuel.mx/";
+  // NexusFuel da un subdominio por marca: gasmazfactura., redmaxfactura.,
+  // petrofiguesfactura.… todo junto, sin punto entre el nombre y "factura".
+  // El OCR mete un punto de más al leerlo ("gasmaz.factura.nexusfuel.mx") y ese
+  // host NO existe: el ticket #243 murió con ERR_NAME_NOT_RESOLVED, que parece
+  // un portal caído cuando en realidad es una letra mal leída.
+  const arreglarNexus = (u) => String(u || "")
+    .replace(/([a-z0-9]+)\.factura\.nexusfuel\.mx/i, "$1factura.nexusfuel.mx")
+    .replace(/([a-z0-9]+)factura\.\s*nexusfuel/i, "$1factura.nexusfuel");
+
+  let url = (portalUrl && portalUrl.startsWith("http")) ? portalUrl : "https://redmaxfactura.nexusfuel.mx/";
+  const urlArreglada = arreglarNexus(url);
+  if (urlArreglada !== url) console.log(`🔧 URL corregida: ${url} → ${urlArreglada}`);
+  url = urlArreglada;
   console.log("🌐 URL portal:", url);
 
   const token = process.env.BROWSERLESS_TOKEN;
