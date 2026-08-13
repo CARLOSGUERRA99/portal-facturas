@@ -1465,33 +1465,36 @@
       "notas_desarrollo": "CUATRO TRAMPAS medidas en vivo: (1) dos formatos de fecha en el MISMO portal — Facturar/GenerarFactura usa M/D/YYYY y Consultar/GenerarConsultas usa D/M/YYYY; con el equivocado la consulta dice \"Nada Encontrado\" y parece que la factura no existe. (2) No se puede click+type: #Fecha abre un datepicker que tapa el resto y los demás campos se quedan vacíos. (3) El botón de confirmar del aviso de Uso de CFDI es #modal-uso-cdfi button#Facturar, con el MISMO id y texto que el \"Facturar\" de la tabla: buscarlo por texto coge el de fuera y solo reabre el aviso. Y ese aviso no lleva clase .modal ni role=dialog. (4) El resultado viene en la query string: MensajeError / MensajeSuccess. Mapeo: FOLIO \"2-0000983716\" → NumeroId=2 (máx 7) + Consecutivo=0000983716 (máx 10); CARRIL 2B → Máquina 02B (con cero delante). \"Agregar Ticket\" es reversible (hay \"Liberar Ticket Seleccionado\"); \"Facturar\" no. Entrega: Consultar Facturas → poner #Correo (campo de PÁGINA) y pulsar #btnSendEmail de la fila."
     },
     "similares": {
-      "nombre": "Farmacias Similares (Simifactura)",
+      "nombre": "Farmacias Similares — franquicia (SimiFactura → Factura-T)",
       "bot": null,
-      "estado": "pendiente_url",
-      "url_base": "https://www.farmaciasdesimilares.com",
+      "estado": "pendiente_clave_sucursal",
+      "url_base": "https://facturacion.gpupm.com/simifactura/portal",
       "stealth": true,
       "comercios": [
         "Farmacias Similares",
         "Comercializadora Freyman",
-        "Dr. Simi"
+        "Dr. Simi",
+        "Similares"
       ],
       "deteccion": {
         "por_portal_field": "similares",
         "por_texto_ocr": [
           "farmacias similares",
-          "farmaciasdesimilares",
-          "simifactura"
+          "comercializadora freyman",
+          "simifactura",
+          "referencia de facturacion franquicia"
         ],
         "por_comercio": [
           "similares",
           "freyman"
         ],
         "por_url_qr": [
-          "farmaciasdesimilares.com"
+          "farmaciasdesimilares.com",
+          "facturacion.gpupm.com"
         ],
-        "nota_deteccion": "⚠️ farmaciasdesimilares.com/facturacion NO es el formulario: es una página de preguntas frecuentes, y además lleva CAPTCHA. El portal real (Simifactura) se llega desde el enlace \"Facturación electrónica\" de la home; los subdominios simifactura.farmaciasdesimilares.com y simifactura.com.mx NO resuelven."
+        "nota_deteccion": "⚠️ farmaciasdesimilares.com/facturacion es una página de preguntas frecuentes CON CAPTCHA, no el formulario. El bueno es facturacion.gpupm.com/simifactura/portal, y ese SOLO ENRUTA: pide la \"Referencia de Facturación FRANQUICIA\" del ticket y redirige al portal de esa franquicia."
       },
-      "notas_desarrollo": "Pide Referencia de facturación (la del ticket) + total + RFC. Ventana: desde 24 h tras la compra y hasta 30 días naturales. Falta dar con la URL real del formulario siguiendo el enlace desde la home."
+      "notas_desarrollo": "CADENA DE DOS PORTALES, verificada en vivo el 13/08/2026 con el ticket #212. (1) SimiFactura (facturacion.gpupm.com/simifactura/portal) pide un único campo, input#Referencia = la \"Referencia de Facturación FRANQUICIA\" del pie del ticket (en el #212: 7324). Avisa de \"página externa\" y redirige. (2) Para la franquicia 7324 el destino es Factura-T, facturacion.appskurigage.com (KURIGAGE S.A. DE C.V.), SIN CAPTCHA, con estos campos en la portada y sin necesidad de login: input#inputSucursalClave (ph FX8888), input#inputVentaEnLinea [checkbox], input#inputVentaTotal, input#inputVentaId (ph 0675249000014, 13 dígitos = el CÓDIGO DE BARRAS del ticket), botón Verificar. FALTA: la CLAVE DE SUCURSAL. Se probó FX7324 (FX + los 4 dígitos de la franquicia) con total 322.00 y venta 2799853000012, y la pantalla no avanzó, así que ese formato NO es el correcto. Hay que averiguar de dónde sale esa clave — puede estar en otra parte del ticket o darla la farmacia. OJO: appskurigage.com tiene también /usuario-login con usuario y contraseña; ese es otro camino que SÍ requiere cuenta registrada."
     }
   },
   "fusionados": {
