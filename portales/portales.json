@@ -1502,11 +1502,15 @@
     "grupocentra": {
       "nombre": "Grupo Centra (Karmi FacturacionWeb)",
       "bot": null,
-      "estado": "plazo_3_dias",
+      "estado": "pendiente_bot",
       "url_base": "https://facturacion.grupocentra.mx/Karmi_FacturacionWeb",
       "stealth": true,
       "comercios": [
-        "Grupo Centra"
+        "Grupo Centra",
+        "Vip Market",
+        "Vip Gas",
+        "Ondacel",
+        "Asian Express"
       ],
       "deteccion": {
         "por_portal_field": "grupocentra",
@@ -1520,9 +1524,9 @@
         "por_url_qr": [
           "facturacion.grupocentra.mx"
         ],
-        "nota_deteccion": "⚠️ PLAZO DE SOLO 3 DÍAS desde la compra. Es el más corto de todos los portales del sistema — un ticket de este comercio que no se suba en 3 días se pierde."
+        "nota_deteccion": "Franquicias: Vip Market, bp, Vip Gas, PEMEX, 76, Ondacel y Asian Express. Pide DIRECCIÓN de la estación, FECHA, HORA y No.Ticket."
       },
-      "notas_desarrollo": "Portal SIN login y SIN CAPTCHA. La portada avisa: \"Tiene 3 dias para realizar su factura a partir de la fecha de su compra.\" Tiene seis vías por línea de negocio: Facturar GAS (la nuestra), SP, TH, OC, VIP y AE; los campos salen al pulsar la que toque. NO se llegó a mapear el formulario porque los cuatro tickets disponibles (#260 #264 #267 #272, $4,706) estaban vencidos: 11-14 días. Escribir el bot requiere un ticket dentro del plazo."
+      "notas_desarrollo": "Sin login y SIN CAPTCHA. ⚠️ EL PLAZO SON 30 DÍAS, NO 3. La portada avisa \"Tiene 3 dias para realizar su factura\" y es FALSO: Carlos ha facturado allí dentro del mes, y el ticket de ejemplo de la propia guía del portal dice \"Le recordamos que tiene 30 dias a partir del dia de hoy para realizar su factura\". No fiarse de ese banner. Flujo: botón \"Facturar GAS\" (hay seis vías: GAS, SP, TH, OC, VIP, AE) → formulario. Los ids son de WEBDEV/Karmi y NO son descriptivos (A110, A31, A6…), así que hay que localizarlos por su rótulo o por su placeholder: A47 lleva ph DD/MM/AAAA (fecha) y A48 ph HH:MM (hora). Hay casillas Gasolina/Aceites y \"Desglosar IEPS\", un RFC + botón Buscar que carga los datos fiscales, y botones Cargar/Agregar/Borrar Ticket/Facturar. Su guía \"Ubicar informacion en TICKET\" marca en rojo los CUATRO datos que pide: dirección de la estación, fecha, hora y No.Ticket. Soporte: soportefactura@grupocentra.mx · 653 517 2121."
     }
   },
   "fusionados": {
