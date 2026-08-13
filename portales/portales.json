@@ -1498,6 +1498,31 @@
         "nota_deteccion": "⚠️ farmaciasdesimilares.com/facturacion es una página de preguntas frecuentes CON CAPTCHA, no el formulario. El bueno es facturacion.gpupm.com/simifactura/portal, y ese SOLO ENRUTA: pide la \"Referencia de Facturación FRANQUICIA\" del ticket y redirige al portal de esa franquicia."
       },
       "notas_desarrollo": "CADENA DE DOS PORTALES, verificada en vivo el 13/08/2026 con el ticket #212 ($322).\n\n(1) SimiFactura — facturacion.gpupm.com/simifactura/portal — solo ENRUTA. input#Referencia = la \"Referencia de Facturación FRANQUICIA\" del pie del ticket. Avisa de página externa y redirige al portal de esa franquicia.\n\n(2) Para la franquicia 7324 el destino es Factura-T, facturacion.appskurigage.com (KURIGAGE), SIN CAPTCHA y SIN cuenta.\n  Paso A · Datos del ticket: input#inputSucursalClave, input#inputVentaEnLinea [checkbox], input#inputVentaTotal, input#inputVentaId, botón Verificar.\n  Paso B · Datos personales: input#inputReceptorRFC, input#inputReceptorCodigoPostal, input#inputReceptorNombre, select#selectReceptorRegimenFiscal, select#selectReceptorUsoCFDI, botón Envíar.\n\n⚠️ CLAVE DE SUCURSAL: es el valor LITERAL del ticket, sin prefijo. La guía del portal (images/ticket/principal.png) usa un ejemplo cuyo valor es \"FX8888\", y yo tomé el \"FX\" por un formato obligatorio y probé FX7324 → \"No se encontró la sucursal\". Con 7324 a secas SÍ encuentra la venta. El mismo valor aparece dos veces en el ticket: en la línea \"Sucursal:\" de arriba y en \"Referencia de Facturación FRANQUICIA:\" del pie.\n\n⚠️ inputVentaId = el CÓDIGO DE BARRAS impreso abajo (13 dígitos). NO el \"TC Ticket\", que es un UUID interno.\n\n⚠️ select#selectReceptorUsoCFDI se rellena por AJAX DESPUÉS de elegir el régimen: hay que esperar a que deje de decir \"Cargando. Por favor espere…\" o se envía vacío.\n\nDÓNDE SE QUEDÓ: con sucursal 7324, total 322.00, código 2799853000012, RFC GPR110128QD8, CP 80140, nombre GPN PINTURAS Y RECUBRIMIENTOS, régimen 601 y uso G03, el portal responde \"Por favor verifica que los datos ingresados coinciden con los de tu constancia de situación fiscal\". La búsqueda del ticket SÍ funciona; falla la validación fiscal. Esos mismos datos los aceptan otros portales (ver los CFDI emitidos), así que hay que comparar letra por letra contra la constancia de GPN — probablemente la razón social."
+    },
+    "grupocentra": {
+      "nombre": "Grupo Centra (Karmi FacturacionWeb)",
+      "bot": null,
+      "estado": "plazo_3_dias",
+      "url_base": "https://facturacion.grupocentra.mx/Karmi_FacturacionWeb",
+      "stealth": true,
+      "comercios": [
+        "Grupo Centra"
+      ],
+      "deteccion": {
+        "por_portal_field": "grupocentra",
+        "por_texto_ocr": [
+          "grupocentra",
+          "facturacion.grupocentra.mx"
+        ],
+        "por_comercio": [
+          "centra"
+        ],
+        "por_url_qr": [
+          "facturacion.grupocentra.mx"
+        ],
+        "nota_deteccion": "⚠️ PLAZO DE SOLO 3 DÍAS desde la compra. Es el más corto de todos los portales del sistema — un ticket de este comercio que no se suba en 3 días se pierde."
+      },
+      "notas_desarrollo": "Portal SIN login y SIN CAPTCHA. La portada avisa: \"Tiene 3 dias para realizar su factura a partir de la fecha de su compra.\" Tiene seis vías por línea de negocio: Facturar GAS (la nuestra), SP, TH, OC, VIP y AE; los campos salen al pulsar la que toque. NO se llegó a mapear el formulario porque los cuatro tickets disponibles (#260 #264 #267 #272, $4,706) estaban vencidos: 11-14 días. Escribir el bot requiere un ticket dentro del plazo."
     }
   },
   "fusionados": {

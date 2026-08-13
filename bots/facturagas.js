@@ -102,6 +102,14 @@ async function facturarFacturaGAS({ estacionNombre, folio, webId, rfc, razonSoci
     partes.push(limpio);
     const m = limpio.match(/^\s*([A-Z]?\d{3,6})\s*[-–]\s*(.+)$/i);
     if (m) { partes.push(m[1].trim()); partes.push(m[2].trim()); }
+    // Sin clave numérica lo de arriba no parte nada, y quedaba un solo intento:
+    // pasó con "EST. DIMAS - ESTACION DIMAS", donde el autocompletado no
+    // devolvió ninguna opción. Se añaden los trozos del guion y las palabras
+    // largas sueltas ("DIMAS"), que es como se busca a mano.
+    limpio.split(/\s*[-–]\s*/).forEach(t => { if (t.trim().length > 2) partes.push(t.trim()); });
+    limpio.replace(/[.,]/g, " ").split(/\s+/)
+      .filter(w => w.length >= 4 && !/^(EST|ESTACION|ESTACIÓN|SERVICIO|GASOLINERA)$/i.test(w))
+      .forEach(w => partes.push(w));
 
     let seleccionado = false, vistas = [];
     for (const intento of [...new Set(partes)].filter(Boolean)) {
