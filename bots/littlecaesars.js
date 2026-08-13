@@ -296,8 +296,15 @@ async function enviarYLeer(page, browser, snap, ticketId) {
 }
 
 // Browserless publica una URL de sesión en vivo para que una persona vea y
-// maneje el navegador remoto. Si esta versión no lo soporta, se devuelve null y
-// el modo asistido lo dice en el mensaje en vez de fallar en silencio.
+// maneje el navegador remoto.
+//
+// ⚠️ COMPROBADO EL 13/08/2026 CON LA CUENTA REAL: el plan gratuito NO lo
+// soporta. El comando responde {"error":"Live URLs are not supported.",
+// "liveURL":null}. O sea que HOY el modo asistido no puede funcionar aquí, por
+// bien escrito que esté: no hay forma de enseñarle el reCAPTCHA a una persona.
+// Queda escrito para cuando se suba de plan; mientras tanto, el camino que sí
+// funciona es el modo desatendido, que deja el formulario listo y devuelve el
+// dosier para terminarlo en el navegador de uno.
 async function sesionEnVivo(browser) {
   try {
     const cdp = await browser.target().createCDPSession();
