@@ -16,7 +16,20 @@ async function goto(page, params) {
   if (!url) throw new Error('[goto] url requerida');
 
   // Chrome HTTPS-First mode bloquea http:// con ERR_BLOCKED_BY_CLIENT
-  const safeUrl = url.replace(/^http:\/\//, 'https://');
+  let safeUrl = url.replace(/^http:\/\//, 'https://');
+
+  // NexusFuel da un subdominio por marca, todo junto: gasmazfactura.,
+  // redmaxfactura., petrofiguesfactura.… El OCR mete un punto de más al leerlo
+  // ("gasmaz.factura.nexusfuel.mx") y ese host NO existe — el ticket #243 murió
+  // dos veces con ERR_NAME_NOT_RESOLVED, que parece un portal caído cuando es
+  // una letra mal leída. Se corrige aquí, en el engine, porque gasmaz corre por
+  // el motor declarativo y NO por bots/gasmaz.js: puse el arreglo en el bot y
+  // nunca llegó a ejecutarse.
+  const corregido = safeUrl.replace(/([a-z0-9]+)\.factura\.nexusfuel\.mx/i, '$1factura.nexusfuel.mx');
+  if (corregido !== safeUrl) {
+    console.log(`[goto] 🔧 subdominio NexusFuel corregido: ${safeUrl} → ${corregido}`);
+    safeUrl = corregido;
+  }
 
   try {
     await page.goto(safeUrl, { waitUntil: 'load' });
