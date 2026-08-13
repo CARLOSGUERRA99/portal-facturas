@@ -1467,8 +1467,8 @@
     "similares": {
       "nombre": "Farmacias Similares — franquicia (SimiFactura → Factura-T)",
       "bot": null,
-      "estado": "pendiente_clave_sucursal",
-      "url_base": "https://facturacion.gpupm.com/simifactura/portal",
+      "estado": "pendiente_datos_fiscales",
+      "url_base": "https://facturacion.appskurigage.com/",
       "stealth": true,
       "comercios": [
         "Farmacias Similares",
@@ -1494,7 +1494,7 @@
         ],
         "nota_deteccion": "⚠️ farmaciasdesimilares.com/facturacion es una página de preguntas frecuentes CON CAPTCHA, no el formulario. El bueno es facturacion.gpupm.com/simifactura/portal, y ese SOLO ENRUTA: pide la \"Referencia de Facturación FRANQUICIA\" del ticket y redirige al portal de esa franquicia."
       },
-      "notas_desarrollo": "CADENA DE DOS PORTALES, verificada en vivo el 13/08/2026 con el ticket #212. (1) SimiFactura (facturacion.gpupm.com/simifactura/portal) pide un único campo, input#Referencia = la \"Referencia de Facturación FRANQUICIA\" del pie del ticket (en el #212: 7324). Avisa de \"página externa\" y redirige. (2) Para la franquicia 7324 el destino es Factura-T, facturacion.appskurigage.com (KURIGAGE S.A. DE C.V.), SIN CAPTCHA, con estos campos en la portada y sin necesidad de login: input#inputSucursalClave (ph FX8888), input#inputVentaEnLinea [checkbox], input#inputVentaTotal, input#inputVentaId (ph 0675249000014, 13 dígitos = el CÓDIGO DE BARRAS del ticket), botón Verificar. FALTA: la CLAVE DE SUCURSAL. Se probó FX7324 (FX + los 4 dígitos de la franquicia) con total 322.00 y venta 2799853000012, y la pantalla no avanzó, así que ese formato NO es el correcto. Hay que averiguar de dónde sale esa clave — puede estar en otra parte del ticket o darla la farmacia. OJO: appskurigage.com tiene también /usuario-login con usuario y contraseña; ese es otro camino que SÍ requiere cuenta registrada."
+      "notas_desarrollo": "CADENA DE DOS PORTALES, verificada en vivo el 13/08/2026 con el ticket #212 ($322).\n\n(1) SimiFactura — facturacion.gpupm.com/simifactura/portal — solo ENRUTA. input#Referencia = la \"Referencia de Facturación FRANQUICIA\" del pie del ticket. Avisa de página externa y redirige al portal de esa franquicia.\n\n(2) Para la franquicia 7324 el destino es Factura-T, facturacion.appskurigage.com (KURIGAGE), SIN CAPTCHA y SIN cuenta.\n  Paso A · Datos del ticket: input#inputSucursalClave, input#inputVentaEnLinea [checkbox], input#inputVentaTotal, input#inputVentaId, botón Verificar.\n  Paso B · Datos personales: input#inputReceptorRFC, input#inputReceptorCodigoPostal, input#inputReceptorNombre, select#selectReceptorRegimenFiscal, select#selectReceptorUsoCFDI, botón Envíar.\n\n⚠️ CLAVE DE SUCURSAL: es el valor LITERAL del ticket, sin prefijo. La guía del portal (images/ticket/principal.png) usa un ejemplo cuyo valor es \"FX8888\", y yo tomé el \"FX\" por un formato obligatorio y probé FX7324 → \"No se encontró la sucursal\". Con 7324 a secas SÍ encuentra la venta. El mismo valor aparece dos veces en el ticket: en la línea \"Sucursal:\" de arriba y en \"Referencia de Facturación FRANQUICIA:\" del pie.\n\n⚠️ inputVentaId = el CÓDIGO DE BARRAS impreso abajo (13 dígitos). NO el \"TC Ticket\", que es un UUID interno.\n\n⚠️ select#selectReceptorUsoCFDI se rellena por AJAX DESPUÉS de elegir el régimen: hay que esperar a que deje de decir \"Cargando. Por favor espere…\" o se envía vacío.\n\nDÓNDE SE QUEDÓ: con sucursal 7324, total 322.00, código 2799853000012, RFC GPR110128QD8, CP 80140, nombre GPN PINTURAS Y RECUBRIMIENTOS, régimen 601 y uso G03, el portal responde \"Por favor verifica que los datos ingresados coinciden con los de tu constancia de situación fiscal\". La búsqueda del ticket SÍ funciona; falla la validación fiscal. Esos mismos datos los aceptan otros portales (ver los CFDI emitidos), así que hay que comparar letra por letra contra la constancia de GPN — probablemente la razón social."
     }
   },
   "fusionados": {
