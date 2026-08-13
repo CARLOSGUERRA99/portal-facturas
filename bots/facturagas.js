@@ -53,6 +53,20 @@ const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
 async function facturarFacturaGAS({ estacionNombre, folio, webId, rfc, razonSocial, codigoPostal, regimenFiscal, usoCfdi, ticketId }) {
+  // ⚠️ Comprobar ANTES de abrir el navegador. Sin esto, un estacionNombre
+  // undefined llegaba hasta page.keyboard.type() y reventaba con
+  // "text is not iterable" — un mensaje que no dice nada, tras gastar una
+  // sesión de Browserless. Pasó con los tickets #241 y #257: facturagas tenía
+  // bot pero NO prompt de OCR, así que caían en el genérico y llegaban sin
+  // estación ni webId.
+  const faltan = [];
+  if (!String(estacionNombre || "").trim()) faltan.push("nombre de la estación (el portal la busca por autocompletado)");
+  if (!String(folio || "").trim()) faltan.push("folio/despacho");
+  if (!String(webId || "").trim()) faltan.push("WebID");
+  if (faltan.length) {
+    return { ok: false, error_code: "datos_invalidos", msg: `FacturaGAS: faltan datos del ticket — ${faltan.join(", ")}` };
+  }
+
   console.log("🤖 Iniciando bot FacturaGAS...");
   console.log(`   Estación: ${estacionNombre} | Folio: ${folio} | WebID: ${webId} | RFC: ${rfc}`);
 
@@ -78,16 +92,39 @@ async function facturarFacturaGAS({ estacionNombre, folio, webId, rfc, razonSoci
   async function consultarTicket() {
     await page.goto("https://app.facturagas.net/generar_factura.aspx", { waitUntil: "load", timeout: 30000 });
     await page.waitForSelector("#rstation_Input", { timeout: 15000 });
-    await page.click("#rstation_Input");
-    await page.keyboard.type(estacionNombre, { delay: 25 });
-    await page.waitForTimeout(1800);
-    const seleccionado = await page.evaluate((nombre) => {
-      const items = Array.from(document.querySelectorAll("li, .dx-item, [role=\"option\"]"));
-      const el = items.find(i => i.textContent.toUpperCase().includes(nombre.toUpperCase()) && i.offsetParent !== null);
-      if (el) { el.click(); return true; }
-      return false;
-    }, estacionNombre);
-    if (!seleccionado) throw new Error(`FacturaGAS: no se encontró la estación "${estacionNombre}" en el autocomplete`);
+    // El autocompletado no lista la estación con el mismo texto que la imprime
+    // el ticket. Buscando "E12430 - FRESNO" entero no encontraba nada, aunque
+    // la estación exista (tickets #241 y #257). Se prueba de más específico a
+    // menos: la cadena completa, luego solo la clave (E12430) y luego solo el
+    // nombre (FRESNO). El primero que devuelva opciones, gana.
+    const partes = [];
+    const limpio = String(estacionNombre).trim();
+    partes.push(limpio);
+    const m = limpio.match(/^\s*([A-Z]?\d{3,6})\s*[-–]\s*(.+)$/i);
+    if (m) { partes.push(m[1].trim()); partes.push(m[2].trim()); }
+
+    let seleccionado = false, vistas = [];
+    for (const intento of [...new Set(partes)].filter(Boolean)) {
+      await page.click("#rstation_Input", { clickCount: 3 });
+      await page.keyboard.press("Backspace");
+      await page.keyboard.type(intento, { delay: 25 });
+      await page.waitForTimeout(2000);
+      const r = await page.evaluate((nombre) => {
+        const items = Array.from(document.querySelectorAll("li, .dx-item, [role=\"option\"]"))
+          .filter(i => i.offsetParent !== null && (i.textContent || "").trim());
+        const norm = (s) => s.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const buscado = norm(nombre);
+        const el = items.find(i => norm(i.textContent).includes(buscado) || buscado.includes(norm(i.textContent)));
+        if (el) { el.click(); return { ok: true, texto: el.textContent.trim() }; }
+        return { ok: false, opciones: items.map(i => i.textContent.trim().slice(0, 40)).slice(0, 12) };
+      }, intento);
+      if (r.ok) { console.log(`   estación: "${intento}" → ${r.texto}`); seleccionado = true; break; }
+      vistas = r.opciones;
+      console.log(`   ⤳ "${intento}" no casó (${vistas.length} opciones en pantalla)`);
+    }
+    // Si falla, se dice QUÉ ofrecía el portal: sin eso el siguiente intento es
+    // otra adivinanza.
+    if (!seleccionado) throw new Error(`FacturaGAS: la estación "${estacionNombre}" no aparece en el autocomplete. Se probó con "${[...new Set(partes)].join('", "')}". Lo que ofrecía el portal: ${vistas.length ? vistas.join(" | ") : "(ninguna opción)"}`);
     await page.waitForTimeout(1000);
 
     await page.click("#despacho"); await page.keyboard.type(String(folio), { delay: 20 });

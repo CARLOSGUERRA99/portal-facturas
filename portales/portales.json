@@ -1305,14 +1305,17 @@
           "facturagas",
           "controlgas",
           "controlgasfe",
-          "webid"
+          "webid",
+          "migasolina",
+          "facturagas.net",
+          "web id"
         ],
         "por_comercio": [],
         "por_url_qr": [
           "facturagas.net",
           "controlgasfe"
         ],
-        "nota_deteccion": "NO navegar a la URL DDNS impresa en el ticket: suele venir mal transcrita. Usar SIEMPRE app.facturagas.net."
+        "nota_deteccion": "Pide TRES datos: estación (clave+nombre, ej. \"E12430 - FRESNO\"), FOLIO y WEB ID. El WEB ID va en su propia línea del ticket y sin él el portal no busca."
       },
       "notas_desarrollo": "El ticket imprime una URL propia del negocio (ej. sumeca.ddns.net:83) que a menudo no resuelve. El WebID es el dato clave."
     },
