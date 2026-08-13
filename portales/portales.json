@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-08-12",
+  "actualizado": "2026-08-13",
   "portales": {
     "bodegaaurrera": {
       "nombre": "Walmart de México (Bodega Aurrera / Mi Bodega Aurrera / Walmart / Sam's Club / Superama)",
@@ -926,28 +926,33 @@
       "notas_desarrollo": "Bot pendiente. Analizar formulario de facturación de boletos de autobús."
     },
     "puentecolorado": {
-      "nombre": "Puente Colorado",
+      "nombre": "Fideicomiso Puente Colorado (Sonora)",
       "bot": null,
-      "estado": "pendiente",
-      "url_base": "https://www.puentecoloradofacturacion.com.mx",
-      "tecnologia": "Por determinar",
+      "estado": "pendiente_bot",
+      "url_base": "https://puentecolorado.com/prefacturacion/",
+      "tecnologia": "WordPress + Elementor. Formulario de PRE-facturación, sin login ni CAPTCHA.",
       "stealth": true,
       "comercios": [
-        "Puente Colorado"
+        "Caseta Puente Colorado",
+        "Fideicomiso Puente Colorado",
+        "Puente del Río Colorado"
       ],
       "deteccion": {
         "por_portal_field": "puentecolorado",
         "por_texto_ocr": [
-          "puente colorado"
+          "puente colorado",
+          "puentecoloradofacturacion"
         ],
         "por_comercio": [
           "puente colorado"
         ],
         "por_url_qr": [
-          "puentecoloradofacturacion.com.mx"
-        ]
+          "puentecoloradofacturacion.com.mx",
+          "puentecolorado.com"
+        ],
+        "nota_deteccion": "El dominio que imprime el ticket (puentecoloradofacturacion.com.mx) está CAÍDO: rechaza la conexión por HTTPS. El portal vivo es puentecolorado.com/prefacturacion/."
       },
-      "notas_desarrollo": "Bot pendiente. Analizar portal de facturación."
+      "notas_desarrollo": "NO timbra al momento: es una SOLICITUD. Se envía el formulario y la factura llega por correo en un plazo de hasta 48 h → el bot debe devolver {ok:true, procesandoCorreo:true} y dejar que el IMAP la recoja. Campos (ids de Elementor, poco estables — mejor localizarlos por su placeholder): correo [email], teléfono [tel], razón social (ph \"Empresa S.A. DE C.V.\"), RFC (ojo: su id es form-field-email pero el placeholder es \"EMR781210TVC\", o sea que ahí va el RFC), CP [number], un <select>, folios (ph \"03976843, 0397898…\" — admite VARIOS separados por coma), fecha y un [file] para adjuntar la foto del ticket. Botón Enviar. Contacto: puente.colorado@sonora.gob.mx · 653 534 9694."
     },
     "littlecaesarsnavojoa": {
       "nombre": "Little Caesars Navojoa",
@@ -1457,6 +1462,35 @@
         "nota_deteccion": "⚠️ NO es CAPUFE aunque el ticket diga \"PLAZA DE COBRO\": esa frase la usan todas las casetas. Los tickets de concesionaria (Santa Ana-Altar y demás de PINFRA) NO llevan el código de 18 caracteres de CAPUFE. Hace falta la HORA además de la fecha, y el CARRIL."
       },
       "notas_desarrollo": "CUATRO TRAMPAS medidas en vivo: (1) dos formatos de fecha en el MISMO portal — Facturar/GenerarFactura usa M/D/YYYY y Consultar/GenerarConsultas usa D/M/YYYY; con el equivocado la consulta dice \"Nada Encontrado\" y parece que la factura no existe. (2) No se puede click+type: #Fecha abre un datepicker que tapa el resto y los demás campos se quedan vacíos. (3) El botón de confirmar del aviso de Uso de CFDI es #modal-uso-cdfi button#Facturar, con el MISMO id y texto que el \"Facturar\" de la tabla: buscarlo por texto coge el de fuera y solo reabre el aviso. Y ese aviso no lleva clase .modal ni role=dialog. (4) El resultado viene en la query string: MensajeError / MensajeSuccess. Mapeo: FOLIO \"2-0000983716\" → NumeroId=2 (máx 7) + Consecutivo=0000983716 (máx 10); CARRIL 2B → Máquina 02B (con cero delante). \"Agregar Ticket\" es reversible (hay \"Liberar Ticket Seleccionado\"); \"Facturar\" no. Entrega: Consultar Facturas → poner #Correo (campo de PÁGINA) y pulsar #btnSendEmail de la fila."
+    },
+    "similares": {
+      "nombre": "Farmacias Similares (Simifactura)",
+      "bot": null,
+      "estado": "pendiente_url",
+      "url_base": "https://www.farmaciasdesimilares.com",
+      "stealth": true,
+      "comercios": [
+        "Farmacias Similares",
+        "Comercializadora Freyman",
+        "Dr. Simi"
+      ],
+      "deteccion": {
+        "por_portal_field": "similares",
+        "por_texto_ocr": [
+          "farmacias similares",
+          "farmaciasdesimilares",
+          "simifactura"
+        ],
+        "por_comercio": [
+          "similares",
+          "freyman"
+        ],
+        "por_url_qr": [
+          "farmaciasdesimilares.com"
+        ],
+        "nota_deteccion": "⚠️ farmaciasdesimilares.com/facturacion NO es el formulario: es una página de preguntas frecuentes, y además lleva CAPTCHA. El portal real (Simifactura) se llega desde el enlace \"Facturación electrónica\" de la home; los subdominios simifactura.farmaciasdesimilares.com y simifactura.com.mx NO resuelven."
+      },
+      "notas_desarrollo": "Pide Referencia de facturación (la del ticket) + total + RFC. Ventana: desde 24 h tras la compra y hasta 30 días naturales. Falta dar con la URL real del formulario siguiendo el enlace desde la home."
     }
   },
   "fusionados": {
