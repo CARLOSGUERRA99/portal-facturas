@@ -132,6 +132,7 @@ function fechaISO(f) {
 
 async function facturarLittleCaesars({
   folio, ticketNumero, tienda, fecha, total, rfc,
+  razonSocial, regimenFiscal, codigoPostal, usoCfdi, email,
   ticketId, modo = "desatendido", esperaAsistidaMs = 5 * 60 * 1000,
 }) {
   const numTicket = String(ticketNumero || folio || "").replace(/\D/g, "");
@@ -145,6 +146,12 @@ async function facturarLittleCaesars({
   if (!total) faltan.push("total");
   if (!rfc) faltan.push("RFC");
   if (!String(tienda || "").trim()) faltan.push("número de tienda (el portal tiene 86 y no se puede adivinar)");
+  // Paso 2 (/lc/validar/): el portal pide los datos fiscales DESPUÉS del ticket.
+  // Sin ellos no tiene caso quemar navegador ni captcha.
+  if (!String(razonSocial || "").trim()) faltan.push("razón social (perfil fiscal)");
+  if (!String(regimenFiscal || "").trim()) faltan.push("régimen fiscal (perfil fiscal)");
+  if (!String(codigoPostal || "").trim()) faltan.push("código postal fiscal (perfil fiscal)");
+  if (!String(email || "").trim()) faltan.push("email (a donde el portal envía la factura)");
   if (faltan.length) {
     return { ok: false, error_code: "datos_invalidos", msg: `Little Caesars: faltan datos del ticket — ${faltan.join(", ")}` };
   }
@@ -264,7 +271,7 @@ async function facturarLittleCaesars({
     // el que este archivo llega a Enviar sin una persona delante.
     if (!hayCaptcha) {
       console.log("   ℹ️ no hay reCAPTCHA en esta carga — se envía directamente");
-      return await enviarYLeer(page, browser, snap, ticketId);
+      return await enviarYLeer(page, browser, snap, ticketId, { rfc, razonSocial, regimenFiscal, codigoPostal, usoCfdi, email });
     }
 
     const captura = await snap("listo_falta_captcha");
@@ -280,7 +287,7 @@ async function facturarLittleCaesars({
         if (!inj.areas || inj.largo < 30) {
           throw new Error(`el token no prendió en la página (getResponse=${inj.largo} chars)`);
         }
-        return await enviarYLeer(page, browser, snap, ticketId);
+        return await enviarYLeer(page, browser, snap, ticketId, { rfc, razonSocial, regimenFiscal, codigoPostal, usoCfdi, email });
       } catch (e) {
         // CapSolver falló o el token no prendió: NO se tira el trabajo. Se cae
         // al dosier de siempre para que una persona lo termine a mano.
@@ -335,7 +342,7 @@ async function facturarLittleCaesars({
       };
     }
     console.log("   ✅ una persona resolvió el reCAPTCHA — enviando");
-    return await enviarYLeer(page, browser, snap, ticketId);
+    return await enviarYLeer(page, browser, snap, ticketId, { rfc, razonSocial, regimenFiscal, codigoPostal, usoCfdi, email });
   } catch (e) {
     await snap("excepcion").catch(() => {});
     await browser.close().catch(() => {});
@@ -348,7 +355,12 @@ async function facturarLittleCaesars({
 // errores de validación salen en sweetAlert (.sweet-alert) y los de servidor en
 // .alert de Bootstrap. La portada avisa que la factura llega por correo, así
 // que el éxito más probable es un texto de confirmación, no un enlace directo.
-async function enviarYLeer(page, browser, snap, ticketId) {
+// El flujo real del portal (comprobado en vivo el 15/08/2026) tiene DOS pasos:
+//   1. /lc/crear/    → datos del ticket + reCAPTCHA
+//   2. /lc/validar/  → datos fiscales del receptor (RFC, nombre, régimen, CP,
+//                      email, uso CFDI). Aquí es donde de verdad se timbra.
+// fiscales = { rfc, razonSocial, regimenFiscal, codigoPostal, usoCfdi, email }
+async function enviarYLeer(page, browser, snap, ticketId, fiscales = {}) {
   await page.evaluate(() => {
     const b = Array.from(document.querySelectorAll("button, input[type=submit]"))
       .find((x) => /enviar/i.test(x.textContent || x.value || "") && x.offsetParent);
@@ -359,6 +371,73 @@ async function enviarYLeer(page, browser, snap, ticketId) {
   // de error que leer. No se trata como fallo: la lectura de abajo decide.
   await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(12000);
+
+  // ── Paso 2: pantalla "Validar RFC" ──────────────────────────────────────
+  // Se detecta por la URL o por el campo del formulario Symfony.
+  const enValidar = page.url().includes("/validar/") ||
+    (await page.evaluate(() => !!document.querySelector("#appbundle_financial_clientes_rfc")));
+  if (enValidar) {
+    console.log("   📋 paso 2: datos fiscales del receptor (/lc/validar/)");
+    await snap("paso2_validar");
+
+    const soloCodigo = (v) => (String(v || "").match(/\d{3}/) || [""])[0];
+    const soloUso = (v) => (String(v || "").match(/[A-Z]\d{2}/) || ["G03"])[0];
+
+    const llenado = await page.evaluate((f) => {
+      const poner = (sel, val) => {
+        const e = document.querySelector(sel);
+        if (!e) return false;
+        e.value = val;
+        ["input", "change", "keyup", "blur"].forEach((ev) => e.dispatchEvent(new Event(ev, { bubbles: true })));
+        return true;
+      };
+      const elegir = (sel, val) => {
+        const s = document.querySelector(sel);
+        if (!s) return false;
+        const o = Array.from(s.options).find((x) => x.value === val) ||
+                  Array.from(s.options).find((x) => x.value.startsWith(val));
+        if (!o) return false;
+        s.value = o.value;
+        s.dispatchEvent(new Event("change", { bubbles: true }));
+        return true;
+      };
+      return {
+        rfc: poner("#appbundle_financial_clientes_rfc", f.rfc),
+        nombre: poner("#appbundle_financial_clientes_nombre", f.razonSocial),
+        regimen: elegir("#appbundle_financial_clientes_regimenFiscal", f.regimenFiscal),
+        cp: poner("#appbundle_financial_clientes_domicilioFiscalReceptor", f.codigoPostal),
+        email: poner("#appbundle_financial_clientes_email", f.email),
+        uso: elegir("#appbundle_financial_clientes_usoCfdi", f.usoCfdi),
+      };
+    }, {
+      rfc: String(fiscales.rfc || "").toUpperCase(),
+      razonSocial: String(fiscales.razonSocial || "").trim(),
+      regimenFiscal: soloCodigo(fiscales.regimenFiscal),
+      codigoPostal: String(fiscales.codigoPostal || "").trim(),
+      email: String(fiscales.email || "").trim(),
+      usoCfdi: soloUso(fiscales.usoCfdi),
+    });
+
+    const noLleno = Object.entries(llenado).filter(([, ok]) => !ok).map(([k]) => k);
+    if (noLleno.length) {
+      const cap = await snap("paso2_campos");
+      await browser.close();
+      return {
+        ok: false, error_code: "datos_invalidos",
+        msg: `Little Caesars: en la pantalla de datos fiscales no se pudieron llenar: ${noLleno.join(", ")}. Captura: ${cap || "no disponible"}`,
+      };
+    }
+    console.log("   📋 paso 2 llenado:", JSON.stringify(llenado));
+
+    await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button, input[type=submit]"))
+        .find((x) => /enviar/i.test(x.textContent || x.value || "") && x.offsetParent);
+      if (b) b.click();
+    });
+    await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 25000 }).catch(() => {});
+    await page.waitForTimeout(12000);
+  }
+
   const captura = await snap("tras_enviar");
 
   const r = await page.evaluate(() => ({
