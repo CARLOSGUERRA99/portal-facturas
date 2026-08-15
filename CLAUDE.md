@@ -95,6 +95,7 @@ scripts/                   — herramientas de prueba/sondeo local (test-*, prob
 | **Dana Comida Mexicana** | `dana.js` | ✅ Alta hoy (verificado en vivo) |
 | **TUFESA** | `tufesa.js` | ✅ Alta hoy (verificado en vivo) |
 | **7-Eleven** | `7elevenmexicosadecv.js` | ✅ Verificado en vivo. CapSolver + dialog handler + recupera CFDI ya facturado |
+| **Little Caesars** | `littlecaesars.js` | 🔶 CapSolver reCAPTCHA v2 integrado (15/08). Flujo validado hasta el captcha con Chromium local; falta corrida en vivo con CAPSOLVER_API_KEY + Browserless. Gate de cola reparado (faltaba en PORTALES_FACTURABLES) |
 | KFC (PRB) | — | ⏸️ Portal `facturacion.prb.com.mx:444` en MANTENIMIENTO |
 | Farmacias Guadalajara | `farmaciaguadalajara.js` | ⚠️ Datos (folio factura) |
 

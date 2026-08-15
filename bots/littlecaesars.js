@@ -152,12 +152,21 @@ async function facturarLittleCaesars({
   console.log("🤖 Little Caesars (Cafrema)");
   console.log(`   tienda ${tienda} · ticket ${numTicket} · ${fIso} · $${total} · ${rfc} · modo ${modo}`);
 
-  const token = process.env.BROWSERLESS_TOKEN;
-  if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
-
+  // PUPPETEER_LOCAL=1 lanza un Chromium local (pruebas fuera de Railway);
+  // en producción siempre se conecta a Browserless.
   let browser;
   try {
-    browser = await puppeteer.connect({ browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true` });
+    if (process.env.PUPPETEER_LOCAL === "1") {
+      browser = await puppeteer.launch({
+        headless: "new",
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+      });
+    } else {
+      const token = process.env.BROWSERLESS_TOKEN;
+      if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
+      browser = await puppeteer.connect({ browserWSEndpoint: `wss://production-sfo.browserless.io?token=${token}&stealth=true` });
+    }
   } catch (e) {
     return { ok: false, msg: `Little Caesars: no se pudo conectar al browser — ${e.message}` };
   }
