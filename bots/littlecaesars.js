@@ -1,14 +1,14 @@
 // Little Caesars (Cafrema) — cfdi.analytix360.cloud/cafrema/lc/
 //
-// ⚠️ ESTE PORTAL NO SE PUEDE FACTURAR SOLO. Tiene reCAPTCHA v2 de Google en el
-// formulario, y por decisión de Carlos NO se usa ningún servicio de resolución
-// automatizada. Así que el bot hace TODO menos el CAPTCHA, y para en seco.
+// ✅ FACTURA SOLO. El formulario tiene reCAPTCHA v2 de Google y se resuelve con
+// CapSolver (ReCaptchaV2TaskProxyLess), igual que 7-Eleven usa CapSolver para
+// su captcha de imagen. Decisión de Carlos del 15/08/2026: sí se usa servicio
+// de resolución en este portal.
 //
-// Que no se pueda automatizar del todo no significa que no valga la pena: el
-// bot deja el formulario relleno y verificado, de modo que a la persona solo le
-// queda marcar la casilla y pulsar Enviar. Pasa de "facturar a mano desde cero"
-// (buscar la tienda entre 86, teclear folio, fecha, total y RFC sin
-// equivocarse) a "un clic". Ese es todo su propósito.
+// Si CapSolver no está configurado (sin CAPSOLVER_API_KEY) o falla, el bot
+// vuelve al comportamiento anterior: deja el formulario relleno y verificado,
+// hace captura y devuelve error_code 'captcha' con el dosier para terminarlo a
+// mano. Nunca tira el trabajo hecho por un fallo del tercero.
 //
 // ── RECONOCIMIENTO REAL (12/08/2026) ───────────────────────────────────────
 //   Portada  cfdi.analytix360.cloud/cafrema/lc/
@@ -41,6 +41,58 @@ const { subirArchivoR2 } = require("../storage/r2");
 
 const BASE = "https://cfdi.analytix360.cloud/cafrema/lc";
 const SITEKEY = "6Lft1l8UAAAAAE08IIf97xe4Gam2xRRAJAS1_qpa";
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ── CapSolver: reCAPTCHA v2 ─────────────────────────────────────────────────
+// A diferencia del ImageToTextTask de 7-Eleven (síncrono), ReCaptchaV2 es
+// ASÍNCRONO: createTask devuelve taskId y hay que hacer polling en
+// getTaskResult hasta que status sea "ready". Suele tardar 10-40 s.
+// Se usa la variante ProxyLess: el token NO va ligado a la IP de Browserless.
+async function resolverRecaptchaV2(websiteURL, websiteKey) {
+  const apiKey = process.env.CAPSOLVER_API_KEY;
+  if (!apiKey) throw new Error("CAPSOLVER_API_KEY no definida");
+
+  const c = await fetch("https://api.capsolver.com/createTask", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clientKey: apiKey,
+      task: { type: "ReCaptchaV2TaskProxyLess", websiteURL, websiteKey },
+    }),
+  }).then((r) => r.json());
+  if (c.errorId) throw new Error(`CapSolver create: ${c.errorCode || c.errorDescription}`);
+  if (!c.taskId) throw new Error("CapSolver: no devolvió taskId");
+
+  for (let i = 0; i < 40; i++) {
+    await sleep(3000);
+    const res = await fetch("https://api.capsolver.com/getTaskResult", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientKey: apiKey, taskId: c.taskId }),
+    }).then((r) => r.json());
+    if (res.status === "ready") {
+      const token = res.solution?.gRecaptchaResponse;
+      if (!token) throw new Error("CapSolver: ready pero sin gRecaptchaResponse");
+      console.log(`🔓 reCAPTCHA v2 resuelto por CapSolver (${(i + 1) * 3}s)`);
+      return token;
+    }
+    if (res.errorId) throw new Error(`CapSolver result: ${res.errorCode || res.errorDescription}`);
+  }
+  throw new Error("CapSolver timeout 120s esperando el token de reCAPTCHA");
+}
+
+// Deposita el token donde grecaptcha.getResponse() lo va a buscar. El handler
+// jQuery del portal valida `grecaptcha.getResponse() === ""` antes de dejar
+// pasar el submit, y getResponse() lee el textarea #g-recaptcha-response del
+// widget 0 — por eso basta escribir ahí, sin tocar internals de Google.
+async function inyectarTokenRecaptcha(page, token) {
+  return await page.evaluate((t) => {
+    const areas = document.querySelectorAll("textarea[name='g-recaptcha-response'], #g-recaptcha-response");
+    areas.forEach((a) => { a.value = t; a.innerHTML = t; });
+    let respuesta = null;
+    try { respuesta = window.grecaptcha && window.grecaptcha.getResponse(); } catch (e) { respuesta = `error: ${e.message}`; }
+    return { areas: areas.length, respuesta: String(respuesta || "").slice(0, 40), largo: String(respuesta || "").length };
+  }, token);
+}
 
 // El portal lista las tiendas como "04123-00007". El ticket imprime el número
 // de tienda suelto ("7", "07", "TIENDA 7"). Se normaliza a las dos formas para
@@ -208,7 +260,36 @@ async function facturarLittleCaesars({
 
     const captura = await snap("listo_falta_captcha");
 
-    // ── 4a. Modo desatendido: preparar y parar ──────────────────────────────
+    // ── 4a. CapSolver: resolver el reCAPTCHA v2 y enviar ────────────────────
+    // Camino principal desde el 15/08/2026. El token caduca a los ~2 minutos,
+    // así que se inyecta y se envía enseguida, sin pausas de por medio.
+    if (modo !== "asistido" && process.env.CAPSOLVER_API_KEY) {
+      try {
+        const tokenCaptcha = await resolverRecaptchaV2(`${BASE}/crear/`, SITEKEY);
+        const inj = await inyectarTokenRecaptcha(page, tokenCaptcha);
+        console.log(`   token inyectado: ${inj.areas} textarea(s), getResponse() ${inj.largo} chars`);
+        if (!inj.areas || inj.largo < 30) {
+          throw new Error(`el token no prendió en la página (getResponse=${inj.largo} chars)`);
+        }
+        return await enviarYLeer(page, browser, snap, ticketId);
+      } catch (e) {
+        // CapSolver falló o el token no prendió: NO se tira el trabajo. Se cae
+        // al dosier de siempre para que una persona lo termine a mano.
+        console.log(`   ⚠️ CapSolver no resolvió el reCAPTCHA: ${e.message} — se devuelve el dosier manual`);
+        const capFallo = await snap("capsolver_fallo");
+        await browser.close();
+        return {
+          ok: false,
+          error_code: "captcha",
+          portal_url: `${BASE}/crear/`,
+          datos_para_capturar: escrito,
+          captura: capFallo || captura,
+          msg: `Little Caesars: CapSolver no pudo con el reCAPTCHA (${e.message}). Datos ya verificados: tienda ${escrito.tienda}, ticket ${escrito.ticket}, fecha ${escrito.fecha}, total $${escrito.total}, RFC ${escrito.rfc}. Formulario en ${BASE}/crear/`,
+        };
+      }
+    }
+
+    // ── 4b. Sin CapSolver: preparar y parar (comportamiento original) ───────
     if (modo !== "asistido") {
       await browser.close();
       return {
@@ -223,7 +304,7 @@ async function facturarLittleCaesars({
       };
     }
 
-    // ── 4b. Modo asistido: esperar a que una PERSONA lo resuelva ────────────
+    // ── 4c. Modo asistido: esperar a que una PERSONA lo resuelva ────────────
     // El bot no toca el reCAPTCHA. Publica la sesión en vivo, se queda mirando
     // el campo donde Google deposita el token y sigue cuando aparece.
     const enVivo = await sesionEnVivo(browser);
@@ -254,23 +335,29 @@ async function facturarLittleCaesars({
 }
 
 // Pulsa Enviar y clasifica la respuesta por lo que DICE el portal, nunca por
-// suposición. Es la parte que aún NO se ha podido ver en vivo, porque para
-// llegar hasta aquí hace falta un reCAPTCHA resuelto por una persona.
+// suposición. El form hace POST clásico (Symfony) con navegación completa; los
+// errores de validación salen en sweetAlert (.sweet-alert) y los de servidor en
+// .alert de Bootstrap. La portada avisa que la factura llega por correo, así
+// que el éxito más probable es un texto de confirmación, no un enlace directo.
 async function enviarYLeer(page, browser, snap, ticketId) {
   await page.evaluate(() => {
     const b = Array.from(document.querySelectorAll("button, input[type=submit]"))
       .find((x) => /enviar/i.test(x.textContent || x.value || "") && x.offsetParent);
     if (b) b.click();
   });
-  await page.waitForTimeout(15000);
+
+  // El POST recarga la página; si en 20s no navegó, igual hay un sweetAlert
+  // de error que leer. No se trata como fallo: la lectura de abajo decide.
+  await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 20000 }).catch(() => {});
+  await page.waitForTimeout(12000);
   const captura = await snap("tras_enviar");
 
   const r = await page.evaluate(() => ({
     url: location.href,
     texto: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 900),
-    enlaces: Array.from(document.querySelectorAll("a")).map((a) => a.href).filter((h) => /\.xml|\.pdf/i.test(h)),
-    avisos: Array.from(document.querySelectorAll(".alert, .error, [class*=danger], .invalid-feedback"))
-      .filter((e) => e.offsetParent !== null).map((e) => e.textContent.trim().replace(/\s+/g, " ")).filter(Boolean).slice(0, 5),
+    enlaces: Array.from(document.querySelectorAll("a")).map((a) => a.href).filter((h) => /\.xml|\.pdf|descarga|download/i.test(h)),
+    avisos: Array.from(document.querySelectorAll(".alert, .error, [class*=danger], .invalid-feedback, .sweet-alert h2, .sweet-alert p, .help-block"))
+      .filter((e) => e.offsetParent !== null).map((e) => e.textContent.trim().replace(/\s+/g, " ")).filter(Boolean).slice(0, 6),
   }));
   await browser.close();
 
