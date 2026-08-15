@@ -10,11 +10,23 @@
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
-const BASE_URL = "https://valerogdl.facturacionestacion.com";
+// La plataforma NexusFuel da UN SUBDOMINIO/TENANT POR ESTACIÓN:
+// valerogdl., lacandelaria., lasconchas. — y la misma plantilla vive también
+// bajo petrosistemas.com.mx (facturagruposanpedro.). Buscar el folio en el
+// tenant equivocado devuelve "Folio no encontrado" aunque el dato sea
+// correcto — eso atoró los tickets #240 y #255 (15/08/2026).
+const BASE_URL_DEFECTO = "https://valerogdl.facturacionestacion.com";
 
-async function facturarGASHR({ referencia, folio, importe, rfc, ticketId }) {
+function resolverBaseUrl(portalUrl = "") {
+  const u = (portalUrl || "").toLowerCase();
+  const m = u.match(/([a-z0-9-]+\.(?:facturacionestacion\.com|petrosistemas\.com\.mx))/);
+  return m ? `https://${m[1]}` : BASE_URL_DEFECTO;
+}
+
+async function facturarGASHR({ referencia, folio, importe, rfc, ticketId, portalUrl }) {
+  const BASE_URL = resolverBaseUrl(portalUrl);
   console.log("🤖 Iniciando bot Grupo GASHR...");
-  console.log(`   Referencia: ${referencia} | Folio: ${folio} | Importe: ${importe} | RFC: ${rfc}`);
+  console.log(`   Tenant: ${BASE_URL} | Referencia: ${referencia} | Folio: ${folio} | Importe: ${importe} | RFC: ${rfc}`);
 
   const token = process.env.BROWSERLESS_TOKEN;
   if (!token) throw new Error("BROWSERLESS_TOKEN no definido");
