@@ -23,7 +23,8 @@ function esCFDI(subject, from) {
     f.includes('factura') ||
     f.includes('pade.mx') ||           // Rendichicas y Caffenio
     f.includes('e-facturate')  ||      // Benavides (plataforma RetailEDX)
-    f.includes('retailedx')    ||      // Carl's Jr (plataforma RetailEDX)
+    f.includes('retailedx')    ||      // Benavides y ex-Carl's Jr (plataforma RetailEDX)
+    f.includes('egrid')        ||      // Carl's Jr / ICR — portal nuevo (ago-2026)
     f.includes('edxsolutions') ||      // EDX Retail portal — "Solicitud de ayuda Retail"
     f.includes('mefacturo')    ||      // SushiO, El Caporal, Allegro Caffe (mefacturo.mx)
     f.includes('farmaciasguadalajara') // Farmacias Guadalajara

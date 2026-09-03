@@ -57,7 +57,9 @@ bots/
   index.js                 — router: engine-first → legacy → bot dinámico (slug)
   oxxo.js / buzonfacturas.js / gasmaz.js / homedepot.js
   rendichicasestacionpirusadecv.js / benavides.js / panama.js / farmaciaguadalajara.js
-  carljr.js                — ✅ Carl's Jr (ICR/RetailEDX). Maneja modal "ya generada" → #txt_dcorreopet/#btn_denviarpet
+  carljr.js                — ✅ Carl's Jr (ICR). ⚠️ Portal NUEVO desde ago-2026: Egrid
+                             (egridhub.com:6027/icr/autofactura, Next.js + shadcn). Ya NO es RetailEDX.
+                             Captura el PDF/XML hookeando el <a download> del blob
   sushito.js               — ✅ SushiO/mefacturo (SoftRestaurant). Botón Facturar es <a id="btn_facturar">. Detecta vencido
   autozone.js              — ✅ AutoZone (origon.cloud, Angular). Usa el CÓDIGO DE BARRAS, no el folio corto
   dana.js                  — ✅ Dana Comida Mexicana (SoftRestaurant variante: #unicCode/#folio/#RFC)
@@ -89,7 +91,7 @@ scripts/                   — herramientas de prueba/sondeo local (test-*, prob
 | Gasmaz / RAMSA | engine | ✅ Validación |
 | Home Depot | `homedepot.js` | ✅ Producción |
 | Rendichicas | `rendichicas...js` | ✅ Producción |
-| Carl's Jr (ICR) | `carljr.js` | ✅ Verificado (incl. "ya generada"→correo) |
+| Carl's Jr (ICR) | `carljr.js` | ✅ Reescrito 29-ago-2026 para el portal Egrid (tickets #206 y #273 timbrados en vivo) |
 | SushiO/El Caporal/Allegro | `sushito.js` | ✅ Verificado (vencido→ventana correo) |
 | **AutoZone** | `autozone.js` | ✅ Alta hoy (OCR código de barras) |
 | **Dana Comida Mexicana** | `dana.js` | ✅ Alta hoy (verificado en vivo) |

@@ -25,6 +25,7 @@ const { facturarCaffenio } = require('./caffenio');
 const { facturarCapufe } = require('./capufe');
 const { facturarIGasFac } = require('./igasfac');
 const { facturarOxxoGas } = require('./oxxogas');
+const { facturarLittleCaesars } = require('./littlecaesars');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -148,6 +149,15 @@ async function detectarYFacturar(datosCrudos, db = null) {
     }
   }
 
+  // LITTLE CAESARS (Cafrema) — ⚠️ NO enrutar por el comercio "little caesars"
+  // a secas: hay un SEGUNDO Little Caesars, el de Navojoa (CAFRENA,
+  // /cafrena/lc/crear-cvo/), con su propio bot que entra por el fallback
+  // dinámico. Se distinguen por la clave de portal y por /cafrema/ en la URL.
+  if (portal === 'littlecaesars' || portalUrl.includes('/cafrema/')) {
+    console.log('🎯 Portal detectado: Little Caesars (Cafrema)');
+    return await facturarLittleCaesars(datos);
+  }
+
   if (
     portal === 'homedepot' ||
     texto.includes('home depot') ||
@@ -199,6 +209,7 @@ async function detectarYFacturar(datosCrudos, db = null) {
     comercio.includes('carls jr') ||
     comercio.includes("carl's jr") ||
     comercio.includes('icr s.a') ||
+    portalUrl.includes('egridhub') ||            // portal nuevo (ago-2026)
     portalUrl.includes('facturacion4.icr.mx') ||
     portalUrl.includes('icr.mx')
   ) {
