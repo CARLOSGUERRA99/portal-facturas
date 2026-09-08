@@ -138,7 +138,18 @@ async function facturarFacturaGAS({ estacionNombre, folio, webId, rfc, razonSoci
     await page.click("#despacho"); await page.keyboard.type(String(folio), { delay: 20 });
     await page.click("#webId"); await page.keyboard.type(String(webId), { delay: 20 });
     await page.click("#btnSerchTk");
-    await page.waitForTimeout(3000);
+    // El portal tapa la pantalla con "Consultando, espere..." mientras pega al
+    // backend de la estación. Con un sleep fijo de 3s el bot leía la pantalla
+    // TODAVÍA bloqueada y reportaba "no se validó el ticket" con los datos
+    // correctos ya escritos (pasó con el #319: estación, folio y WebID bien,
+    // pero la captura mostraba el overlay todavía puesto). Se espera a que el
+    // overlay se vaya, no a que pase un tiempo arbitrario.
+    for (let i = 0; i < 14; i++) {
+      await page.waitForTimeout(1500);
+      const ocupado = await page.evaluate(() => /Consultando,\s*espere/i.test(document.body.innerText));
+      if (!ocupado) break;
+    }
+    await page.waitForTimeout(1200);
     return page.evaluate(() => document.body.innerText);
   }
 
@@ -151,6 +162,20 @@ async function facturarFacturaGAS({ estacionNombre, folio, webId, rfc, razonSoci
       console.log("♻️ Folio ya facturado anteriormente — la factura real ya se envió por correo (IMAP la recogerá)");
       await browser.close();
       return { ok: true, procesandoCorreo: true };
+    }
+    // app.facturagas.net NO guarda los consumos: es una fachada que consulta
+    // en vivo el servidor de cada gasolinera. Cuando ese servidor está caído
+    // devuelve "Error en el servicio, intente más tarde." — el ticket y los
+    // datos están BIEN, no hay nada que corregir, solo hay que reintentar.
+    // Sin esta rama caía en el genérico de abajo y el error_msg decía "no se
+    // validó el ticket", que hacía pensar en folio equivocado (caso #319).
+    if (/Error en el servicio, intente m[aá]s tarde/i.test(texto)) {
+      await browser.close();
+      return {
+        ok: false,
+        error_code: "reintentar_despues",
+        msg: `FacturaGAS: el servidor de la estación "${estacionNombre}" no está respondiendo ("Error en el servicio, intente más tarde"). Los datos del ticket son correctos; hay que reintentar más tarde.`,
+      };
     }
     if (/no se encontr[oó]|folio inv[aá]lido|datos incorrectos/i.test(texto)) {
       await browser.close();

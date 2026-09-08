@@ -1128,10 +1128,10 @@
     },
     "enerser": {
       "nombre": "Enerser",
-      "bot": null,
-      "estado": "pendiente",
-      "url_base": "http://facturacion.enerser.com.mx/",
-      "tecnologia": "misma plataforma que Enerfuel Tech, otro dominio",
+      "bot": "enerser.js",
+      "estado": "activo",
+      "url_base": "https://facturacion.enerser.com.mx/invitado/facturacion-lote",
+      "tecnologia": "Angular SPA, sin captcha — \"Facturar sin registro\" → wizard de 4 pasos con lote de hasta 20 referencias",
       "stealth": true,
       "comercios": [
         "Petroliferos La Territorial S de RL de CV",
@@ -1152,7 +1152,7 @@
         ],
         "nota_deteccion": "El dato de facturación es la \"Referencia:\" del PIE del ticket (15-16 caracteres sin guiones), NO el \"Folio:\" con guiones de la terminal bancaria."
       },
-      "notas_desarrollo": "Mismo formato de ticket y mismo campo Referencia que enerfueltech, pero OTRO dominio: falta confirmar en vivo que bots/enerfueltech.js sirva tal cual antes de marcarlo activo."
+      "notas_desarrollo": "Bot propio desde el 08-sep-2026 (NO reusa enerfueltech.js: otro DOM). Verificado en vivo con los tickets #335 (099335237417FFA0, $1,500) y #338 (1092619957771F6E, $2,000). El RFC autocompleta razón social/CP/régimen/uso CFDI desde el SAT. CRÍTICO: \"El servicio no está disponible, intente de nuevo\" + Reintentar es el estado NORMAL del primer intento, no un fallo. Entrega por correo al buzón (los botones PDF/XML son blobs del SPA, sin href)."
     },
     "gashr": {
       "nombre": "NexusFuel / facturacionestacion.com (Grupo GASHR y estaciones asociadas)",
@@ -1179,7 +1179,7 @@
         ],
         "nota_deteccion": "El bot pide DOS datos: folio = el número de \"Ticket:\", referencia = la \"Referencia para facturar\" (que coincide con el número de \"Estación:\"). No confundirlos."
       },
-      "notas_desarrollo": "El subdominio cambia por estación (valerogdl., lasconchas., …): reconocer el DOMINIO, no el subdominio. Ventana corta: el ticket avisa 24 hrs."
+      "notas_desarrollo": "El subdominio cambia por estación (valerogdl., lasconchas., …): reconocer el DOMINIO, no el subdominio. Ventana corta: el ticket avisa 24 hrs.\n\nFAMILIA NEXUSFUEL — MULTIESTACIÓN (15/08/2026). Es UNA plataforma con un subdominio por gasolinera, y cada subdominio solo conoce SUS tickets. bots/gashr.js tenía clavado valerogdl.facturacionestacion.com, así que el ticket de La Candelaria (#252) se buscaba en el portal de Valero GDL y el portal respondía, con razón, \"no se agregó el ticket\". Ahora baseDelTicket() saca el subdominio del propio ticket. Dominios confirmados de la familia: *.facturacionestacion.com y *.petrosistemas.com.mx (facturagruposanpedro sirve el mismo #txtReferencia/#txtFolio/#txtAmount y el mismo DownloadInvoice.aspx). Al dar de alta una gasolinera nueva: huellear primero el portal buscando #txtReferencia — si aparece, NO hace falta bot nuevo, basta con enrutarla a gashr con su URL."
     },
     "petrofigues": {
       "nombre": "Petrofigues",
@@ -1204,7 +1204,7 @@
         ],
         "nota_deteccion": "El bot pide DOS datos: folio = el número de \"Ticket:\", referencia = la \"Referencia para facturar\" (que coincide con el número de \"Estación:\"). No confundirlos."
       },
-      "notas_desarrollo": "Otro tenant NexusFuel. Cada tenant guarda su propio registro de cliente aunque el RFC sea el mismo."
+      "notas_desarrollo": "Otro tenant NexusFuel. Cada tenant guarda su propio registro de cliente aunque el RFC sea el mismo.\n\nFAMILIA NEXUSFUEL — MULTIESTACIÓN (15/08/2026). Es UNA plataforma con un subdominio por gasolinera, y cada subdominio solo conoce SUS tickets. bots/gashr.js tenía clavado valerogdl.facturacionestacion.com, así que el ticket de La Candelaria (#252) se buscaba en el portal de Valero GDL y el portal respondía, con razón, \"no se agregó el ticket\". Ahora baseDelTicket() saca el subdominio del propio ticket. Dominios confirmados de la familia: *.facturacionestacion.com y *.petrosistemas.com.mx (facturagruposanpedro sirve el mismo #txtReferencia/#txtFolio/#txtAmount y el mismo DownloadInvoice.aspx). Al dar de alta una gasolinera nueva: huellear primero el portal buscando #txtReferencia — si aparece, NO hace falta bot nuevo, basta con enrutarla a gashr con su URL."
     },
     "capufe": {
       "nombre": "CAPUFE — Caminos y Puentes Federales",
@@ -1317,7 +1317,7 @@
         ],
         "nota_deteccion": "Pide TRES datos: estación (clave+nombre, ej. \"E12430 - FRESNO\"), FOLIO y WEB ID. El WEB ID va en su propia línea del ticket y sin él el portal no busca."
       },
-      "notas_desarrollo": "El ticket imprime una URL propia del negocio (ej. sumeca.ddns.net:83) que a menudo no resuelve. El WebID es el dato clave."
+      "notas_desarrollo": "El ticket imprime una URL propia del negocio (ej. sumeca.ddns.net:83) que a menudo no resuelve. El WebID es el dato clave.\n\n15/08/2026: la entrega es POR CORREO y el bot pone buzonfacturas@serviciosga.site en el formulario, así que un CFDI generado entra solo por IMAP aunque la sesión se caiga después. El intento de #241 llegó a \"Generar Factura\" y murió en la re-consulta con \"Target closed\": si timbró, el CFDI llega al buzón. Antes de reintentar este ticket hay que consultarlo en el portal, no relanzarlo a ciegas."
     },
     "orler": {
       "nombre": "Casetas de Sinaloa (Orler)",
@@ -1407,10 +1407,10 @@
     },
     "littlecaesars": {
       "nombre": "Little Caesars (Cafrema / Analytix360)",
-      "bot": null,
-      "estado": "bloqueado_captcha",
+      "bot": "bots/littlecaesars.js",
+      "estado": "en_desarrollo",
       "url_base": "https://cfdi.analytix360.cloud/cafrema/lc/",
-      "tecnologia": "Analytix360. Formulario en /lc/crear/ con reCAPTCHA v2 de Google",
+      "tecnologia": "Analytix360 (Symfony). Tres pantallas: /lc/crear/ (con reCAPTCHA v2) → /lc/validar/ (Validar RFC) → /lc/resultados (descargas). La reimpresión /lc/imprimir/ NO tiene reCAPTCHA.",
       "stealth": true,
       "comercios": [
         "Little Caesars",
@@ -1432,7 +1432,7 @@
         ],
         "nota_deteccion": "La portada cfdi.analytix360.cloud/cafrema/ NO tiene formulario: el bueno está en /cafrema/lc/ → \"Crear Nueva Factura\" → /lc/crear/. El emisor es CAFREMA FOODS S.A. DE C.V., RFC CFO080121U8A. Plazo: \"Facturación disponible dentro del mes de consumo\"."
       },
-      "notas_desarrollo": "BLOQUEADO por reCAPTCHA v2 (sitekey 6Lft1l8UAAAAAE08IIf97xe4Gam2xRRAJAS1_qpa) en /lc/crear/. Por decisión de Carlos NO se usa ningún servicio de resolución automatizada: va por el modo asistido, con una persona resolviendo el reCAPTCHA. Campos del formulario, ya reconocidos: select#ticket_cv_store (86 tiendas, formato 04123-000NN), input#ticket_cv_ticket (número), input#ticket_cv_fecha (YYYY-MM-DD), input#ticket_cv_total, input#ticket_cv_rfc, botón Enviar. También hay \"Reimprimir Factura\" para recuperar una ya emitida."
+      "notas_desarrollo": "reCAPTCHA v2 (sitekey 6Lft1l8UAAAAAE08IIf97xe4Gam2xRRAJAS1_qpa) en /lc/crear/, resuelto con CapSolver desde el 13/08/2026. Pantalla 1: select#ticket_cv_store (86 tiendas, formato 04123-000NN), input#ticket_cv_ticket, input#ticket_cv_fecha (YYYY-MM-DD), input#ticket_cv_total, input#ticket_cv_rfc, botón Enviar. Pantalla 2 \"Validar RFC\": RFC, Nombre o Razón Social, Régimen Fiscal Receptor, Código Postal, Email, Uso CFDI — el bot la rellena POR ETIQUETA porque sus id no están reconocidos (para verla hay que pasar el reCAPTCHA). Pantalla 3 \"Correo Eletrónico\": enlaces /descargar/xml/{uuid} y /descargar/pdf/{uuid} — SIN extensión y atados a la sesión, hay que bajarlos y archivarlos en el momento. La reimpresión /lc/imprimir/ no tiene reCAPTCHA y busca por tienda+ticket+fecha+total: es la red de seguridad cuando el alta acaba en 'ya facturado' o de forma ambigua (verificada en vivo con los tickets 218, 220 y 227 el 15/08/2026). Pendiente: ver el alta completa en vivo, que la pantalla 2 nunca se ha ejecutado con este código."
     },
     "pinfra": {
       "nombre": "PINFRA — casetas (Promotora y Operadora de Infraestructura)",
@@ -1470,7 +1470,7 @@
     "similares": {
       "nombre": "Farmacias Similares — franquicia (SimiFactura → Factura-T)",
       "bot": null,
-      "estado": "pendiente_datos_fiscales",
+      "estado": "pendiente_bot",
       "url_base": "https://facturacion.appskurigage.com/",
       "stealth": true,
       "comercios": [
@@ -1497,7 +1497,7 @@
         ],
         "nota_deteccion": "⚠️ farmaciasdesimilares.com/facturacion es una página de preguntas frecuentes CON CAPTCHA, no el formulario. El bueno es facturacion.gpupm.com/simifactura/portal, y ese SOLO ENRUTA: pide la \"Referencia de Facturación FRANQUICIA\" del ticket y redirige al portal de esa franquicia."
       },
-      "notas_desarrollo": "CADENA DE DOS PORTALES, verificada en vivo el 13/08/2026 con el ticket #212 ($322).\n\n(1) SimiFactura — facturacion.gpupm.com/simifactura/portal — solo ENRUTA. input#Referencia = la \"Referencia de Facturación FRANQUICIA\" del pie del ticket. Avisa de página externa y redirige al portal de esa franquicia.\n\n(2) Para la franquicia 7324 el destino es Factura-T, facturacion.appskurigage.com (KURIGAGE), SIN CAPTCHA y SIN cuenta.\n  Paso A · Datos del ticket: input#inputSucursalClave, input#inputVentaEnLinea [checkbox], input#inputVentaTotal, input#inputVentaId, botón Verificar.\n  Paso B · Datos personales: input#inputReceptorRFC, input#inputReceptorCodigoPostal, input#inputReceptorNombre, select#selectReceptorRegimenFiscal, select#selectReceptorUsoCFDI, botón Envíar.\n\n⚠️ CLAVE DE SUCURSAL: es el valor LITERAL del ticket, sin prefijo. La guía del portal (images/ticket/principal.png) usa un ejemplo cuyo valor es \"FX8888\", y yo tomé el \"FX\" por un formato obligatorio y probé FX7324 → \"No se encontró la sucursal\". Con 7324 a secas SÍ encuentra la venta. El mismo valor aparece dos veces en el ticket: en la línea \"Sucursal:\" de arriba y en \"Referencia de Facturación FRANQUICIA:\" del pie.\n\n⚠️ inputVentaId = el CÓDIGO DE BARRAS impreso abajo (13 dígitos). NO el \"TC Ticket\", que es un UUID interno.\n\n⚠️ select#selectReceptorUsoCFDI se rellena por AJAX DESPUÉS de elegir el régimen: hay que esperar a que deje de decir \"Cargando. Por favor espere…\" o se envía vacío.\n\nDÓNDE SE QUEDÓ: con sucursal 7324, total 322.00, código 2799853000012, RFC GPR110128QD8, CP 80140, nombre GPN PINTURAS Y RECUBRIMIENTOS, régimen 601 y uso G03, el portal responde \"Por favor verifica que los datos ingresados coinciden con los de tu constancia de situación fiscal\". La búsqueda del ticket SÍ funciona; falla la validación fiscal. Esos mismos datos los aceptan otros portales (ver los CFDI emitidos), así que hay que comparar letra por letra contra la constancia de GPN — probablemente la razón social."
+      "notas_desarrollo": "CADENA DE DOS PORTALES, verificada en vivo el 13/08/2026 con el ticket #212 ($322).\n\n(1) SimiFactura — facturacion.gpupm.com/simifactura/portal — solo ENRUTA. input#Referencia = la \"Referencia de Facturación FRANQUICIA\" del pie del ticket. Avisa de página externa y redirige al portal de esa franquicia.\n\n(2) Para la franquicia 7324 el destino es Factura-T, facturacion.appskurigage.com (KURIGAGE), SIN CAPTCHA y SIN cuenta.\n  Paso A · Datos del ticket: input#inputSucursalClave, input#inputVentaEnLinea [checkbox], input#inputVentaTotal, input#inputVentaId, botón Verificar.\n  Paso B · Datos personales: input#inputReceptorRFC, input#inputReceptorCodigoPostal, input#inputReceptorNombre, select#selectReceptorRegimenFiscal, select#selectReceptorUsoCFDI, botón Envíar.\n\n⚠️ CLAVE DE SUCURSAL: es el valor LITERAL del ticket, sin prefijo. La guía del portal (images/ticket/principal.png) usa un ejemplo cuyo valor es \"FX8888\", y yo tomé el \"FX\" por un formato obligatorio y probé FX7324 → \"No se encontró la sucursal\". Con 7324 a secas SÍ encuentra la venta. El mismo valor aparece dos veces en el ticket: en la línea \"Sucursal:\" de arriba y en \"Referencia de Facturación FRANQUICIA:\" del pie.\n\n⚠️ inputVentaId = el CÓDIGO DE BARRAS impreso abajo (13 dígitos). NO el \"TC Ticket\", que es un UUID interno.\n\n⚠️ select#selectReceptorUsoCFDI se rellena por AJAX DESPUÉS de elegir el régimen: hay que esperar a que deje de decir \"Cargando. Por favor espere…\" o se envía vacío.\n\nCORRECCIÓN DEL 15/08/2026 — EL FLUJO COMPLETO FUNCIONA Y EL TICKET #212 QUEDÓ TIMBRADO.\n\n❌ Lo que se dio por bloqueante el 13/08 era falso: \"Por favor verifica que los datos ingresados coinciden con los de tu constancia de situación fiscal\" NO es un rechazo. Es un modal de aviso titulado \"Antes de continuar\", con botones CONTINUAR y CANCELAR. Los datos fiscales de GPN estaban bien todo el tiempo (los mismos —GPN PINTURAS Y RECUBRIMIENTOS / 80140 / 601 / G03— aparecen en CFDI ya timbrados por otros portales).\n\nEl flujo real tiene DOS pantallas más de las que estaban documentadas:\n  Paso C · modal \"Antes de continuar\" → botón CONTINUAR.\n  Paso D · modal \"Detalle de compra\" (enseña productos y total para cotejar) → botón Facturar. AQUÍ ocurre el timbrado.\n  Paso E · modal \"Sus archivos están listos para ser descargados\" → \"Descargar zip\" o \"Enviar por correo\".\n\n⚠️ Antes de nada hay que cerrar el modal promocional \"Nueva funcionalidad\", que tapa el formulario.\n\n✅ RECUPERACIÓN SIN VOLVER A FACTURAR (verificada el 15/08/2026). Con la clave de sucursal + total + código de barras de un ticket YA facturado, el botón Verificar del paso A no vuelve a pedir datos: devuelve directamente el modal \"Sus archivos están listos para ser descargados\", y dentro va un <a href=\"/download/{RFC_EMISOR}-{SERIE_FOLIO}-{UUID}\"> con el ZIP (XML + PDF). Se baja con la cookie de la sesión y ya. Está implementado en scripts/similares-recuperar-cfdi.js, que además lo archiva en R2 y lo registra en BD.\n\n⚠️ AL ESCRIBIR EL BOT: capturar el ZIP en el paso E, y si algo se tuerce, usar esa recuperación como red de seguridad —igual que hace littlecaesars.js con /lc/imprimir/—. La otra salida del modal es \"Enviar por correo\" (#btnEnviarPorCorreo), que serviría para mandarlo a buzonfacturas@serviciosga.site y dejar que lo recoja el IMAP.\n\n⚠️ El OCR guarda como folio el \"TC Ticket\" (UUID interno). El portal pide el CÓDIGO DE BARRAS de 13 dígitos del pie: para #212 era 2799853000012."
     },
     "grupocentra": {
       "nombre": "Grupo Centra (Karmi FacturacionWeb)",
@@ -1526,7 +1526,7 @@
         ],
         "nota_deteccion": "Franquicias: Vip Market, bp, Vip Gas, PEMEX, 76, Ondacel y Asian Express. Pide DIRECCIÓN de la estación, FECHA, HORA y No.Ticket."
       },
-      "notas_desarrollo": "Sin login y SIN CAPTCHA. ⚠️ EL PLAZO SON 30 DÍAS, NO 3. La portada avisa \"Tiene 3 dias para realizar su factura\" y es FALSO: Carlos ha facturado allí dentro del mes, y el ticket de ejemplo de la propia guía del portal dice \"Le recordamos que tiene 30 dias a partir del dia de hoy para realizar su factura\". No fiarse de ese banner. Flujo: botón \"Facturar GAS\" (hay seis vías: GAS, SP, TH, OC, VIP, AE) → formulario. Los ids son de WEBDEV/Karmi y NO son descriptivos (A110, A31, A6…), así que hay que localizarlos por su rótulo o por su placeholder: A47 lleva ph DD/MM/AAAA (fecha) y A48 ph HH:MM (hora). Hay casillas Gasolina/Aceites y \"Desglosar IEPS\", un RFC + botón Buscar que carga los datos fiscales, y botones Cargar/Agregar/Borrar Ticket/Facturar. Su guía \"Ubicar informacion en TICKET\" marca en rojo los CUATRO datos que pide: dirección de la estación, fecha, hora y No.Ticket. Soporte: soportefactura@grupocentra.mx · 653 517 2121."
+      "notas_desarrollo": "Sin login y SIN CAPTCHA. ⚠️ EL PLAZO SON 30 DÍAS, NO 3. La portada avisa \"Tiene 3 dias para realizar su factura\" y es FALSO: Carlos ha facturado allí dentro del mes, y el ticket de ejemplo de la propia guía del portal dice \"Le recordamos que tiene 30 dias a partir del dia de hoy para realizar su factura\". No fiarse de ese banner. Flujo: botón \"Facturar GAS\" (hay seis vías: GAS, SP, TH, OC, VIP, AE) → formulario. Los ids son de WEBDEV/Karmi y NO son descriptivos (A110, A31, A6…), así que hay que localizarlos por su rótulo o por su placeholder: A47 lleva ph DD/MM/AAAA (fecha) y A48 ph HH:MM (hora). Hay casillas Gasolina/Aceites y \"Desglosar IEPS\", un RFC + botón Buscar que carga los datos fiscales, y botones Cargar/Agregar/Borrar Ticket/Facturar. Su guía \"Ubicar informacion en TICKET\" marca en rojo los CUATRO datos que pide: dirección de la estación, fecha, hora y No.Ticket. Soporte: soportefactura@grupocentra.mx · 653 517 2121.\n\nRECONOCIMIENTO DEL 15/08/2026 (formulario \"Facturar GAS\", #M16):\n  #A4 RFC + #A1 Buscar → rellena #A3 Nombre, #A71 Régimen, #A117 CP, #A7 Correo. GPN YA ESTÁ DADA DE ALTA: devuelve GPN PINTURAS Y RECUBRIMIENTOS / 601 / 80140 / fernandoramos@grupogpn.com.\n  #A15 Ciudad (16 plazas) → #A14 Sucursal (carga por AJAX) → #A41 Empresa y #A13 Dirección se autocompletan.\n  #A95_1 Gasolina · #A12 No.Ticket · #A47 Fecha DD/MM/AAAA · #A48 Hora HH:MM · #A17 Cargar (trae #A18 Combustible, #A19 Litros, #A21 Precio, #A23 Importe, #A26/#A27/#A28 totales).\n  #A33 Forma de Pago · #A45 Uso de CFDI · #A24 Agregar · #A40 Facturar · #A25 Borrar Ticket.\n\n⚠️ LA PLAZA NO SE DEDUCE DEL TICKET. La dirección impresa es la del OPERADOR (todas dicen San Luis Río Colorado). El número \"E.S. NNNNN\" del ticket SÍ coincide con el \"#NNNNN\" del portal, así que hay que recorrer las 16 plazas buscando ese número. Comprobado: #11024 TERAN TERAN y #11055 EJIDO PUEBLA están en MEXICALI, y #7870 en SONOYTA — ninguno en SAN LUIS.\n\n🛑 BLOQUEANTE ABIERTO: al elegir la sucursal (#A14) la pestaña de Browserless muere con \"Requesting main frame too early\" / \"Session closed\", de forma reproducible. Probado sin éxito: click y change desde page.evaluate, page.select fuera de banda, waitForNavigation alrededor del select, y con y sin stealth. El handler de page.on(dialog) está puesto y NO se dispara, así que no es el alert de siempre. Siguiente idea: mirar qué petición lanza el select (Network) y reproducirla con fetch, saltándose el formulario, o probar otra región de Browserless."
     }
   },
   "fusionados": {

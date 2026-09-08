@@ -1,11 +1,11 @@
 {
- "fecha": "2026-08-13T04:31:33.535Z",
- "pct": "95.6",
- "perfectos": 21,
+ "fecha": "2026-09-08T07:09:16.980Z",
+ "pct": "97.1",
+ "perfectos": 22,
  "total": 24,
  "fallidos": [
   {
-   "caso": "0151_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
+   "caso": "0166_OXXO-GAS-Estacion-Galerias-BJX-Leon-Gu.jpeg",
    "aciertos": 2,
    "total": 3,
    "fallos": [
@@ -17,15 +17,7 @@
    "aciertos": 3,
    "total": 4,
    "fallos": [
-    "referencia: esperaba \"0498471292208AE\" y salió \"049847129220BAE\""
-   ]
-  },
-  {
-   "caso": "0163_GRUPO-INNO-SA-DE-CV.jpeg",
-   "aciertos": 3,
-   "total": 4,
-   "fallos": [
-    "referencia: esperaba \"0498471292208AE\" y salió \"049847129220BAE\""
+    "referencia: esperaba \"0498471292208AE\" y salió \"049847129228CE1\""
    ]
   }
  ]

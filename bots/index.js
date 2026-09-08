@@ -22,6 +22,7 @@ const { facturarFacturaGAS } = require('./facturagas');
 const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
 const { facturarEnerfuelTech } = require('./enerfueltech');
+const { facturarEnerser } = require('./enerser');
 const { facturarRAMCAL } = require('./ramcal');
 const { facturarCaffenio } = require('./caffenio');
 const { facturarCapufe } = require('./capufe');
@@ -479,6 +480,19 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Enerfuel Tech');
     return await facturarEnerfuelTech(datos);
+  }
+
+  // Enerser comparte el formato de referencia NetPay con Enerfuel Tech (y por
+  // eso el mismo prompt de OCR), pero es OTRO portal: Angular con lote de
+  // hasta 20 tickets. Tenía prompt desde julio y nunca bot ni routing, así que
+  // sus tickets caían en "portal no reconocido" (casos #335 y #338).
+  if (
+    portal === 'enerser' ||
+    portalUrl.includes('enerser.com.mx') ||
+    texto.includes('enerser')
+  ) {
+    console.log('🎯 Portal detectado: Enerser');
+    return await facturarEnerser(datos);
   }
 
   if (
