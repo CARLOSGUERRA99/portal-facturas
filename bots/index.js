@@ -16,6 +16,7 @@ const { facturarTufesa } = require('./tufesa');
 const { facturarBodegaAurrera } = require('./bodegaaurrera');
 const { facturarPetrofigues } = require('./petrofigues');
 const { facturarGASHR } = require('./gashr');
+const { facturarGasolineros } = require('./gasolineros');
 const { facturarFacturaGAS } = require('./facturagas');
 const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
@@ -97,6 +98,17 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: OXXO GAS (requiere sesión manual)');
     return await facturarOxxoGas(datos);
+  }
+
+  // NexusFuel tiene DOS plantillas distintas y el TLD es lo único que las
+  // separa: nexusfuel.mx (gasmazfactura./redmaxfactura., formulario del engine)
+  // y nexusfuel.com.mx (un subdominio POR ESTACIÓN — lugasa., … — con el mismo
+  // formulario "Ingrese sus datos / (N) Ticket Agregado" de petrosistemas, que
+  // maneja gashr.js). Mandar los segundos al engine cargaba el tenant genérico
+  // equivocado y el portal se quedaba sin responder (ticket #347).
+  if (portalUrl.includes('nexusfuel.com.mx')) {
+    console.log('🎯 Portal detectado: NexusFuel por estación (nexusfuel.com.mx) → bot GASHR');
+    return await facturarGASHR(datos);
   }
 
   // ── ENGINE EXPERIMENTAL — intenta primero con el portal declarativo ───────
@@ -249,6 +261,22 @@ async function detectarYFacturar(datosCrudos, db = null) {
     return await facturarAutoZone(datos);
   }
 
+  // Gasolineros.mx (Grupo Timex) — plataforma compartida: una sola URL, la
+  // estación se elige por número. Cubre La Cuesta/Grupo Hispánica (13236),
+  // MABA San Francisco/Mobil (2380) y cualquier otra que use el mismo portal.
+  if (
+    portal === 'gasolineros' ||
+    portalUrl.includes('gasolineros.mx') ||
+    portalUrl.includes('hercorgas.com') ||   // el ticket de La Cuesta imprime esta URL
+    portalUrl.includes('grupomaba.com') ||   // el de MABA imprime esta otra
+    comercio.includes('la cuesta') ||
+    comercio.includes('grupo hispanica') ||
+    comercio.includes('maba san francisco')
+  ) {
+    console.log('🎯 Portal detectado: Gasolineros.mx (Grupo Timex)');
+    return await facturarGasolineros(datos);
+  }
+
   if (
     portal === 'dana' ||
     comercio.includes('dana comida') ||
@@ -256,6 +284,17 @@ async function detectarYFacturar(datosCrudos, db = null) {
     portalUrl.includes('danacomidamexicana')
   ) {
     console.log('🎯 Portal detectado: Dana Comida Mexicana (SoftRestaurant)');
+    return await facturarDana(datos);
+  }
+
+  if (
+    portal === 'pollofeliz' ||
+    comercio.includes('pollo feliz') ||
+    portalUrl.includes('mefacturo.com/pollofelizfact')
+  ) {
+    // Mismo SoftRestaurant que Dana (#unicCode/#folio/#RFC), confirmado en vivo
+    // el 08-sep-2026 inspeccionando el DOM real del portal.
+    console.log('🎯 Portal detectado: Pollo Feliz (SoftRestaurant, variante Dana)');
     return await facturarDana(datos);
   }
 
@@ -376,10 +415,15 @@ async function detectarYFacturar(datosCrudos, db = null) {
     comercio.includes('gashr') ||
     portalUrl.includes('grupogashr') ||
     portalUrl.includes('facturacionestacion.com') ||
+    // petrosistemas.com.mx es el OTRO dominio de la misma plataforma NexusFuel
+    // (facturagruposanpedro., facturadieselmax., …). resolverBaseUrl() en
+    // gashr.js ya lo resolvía, pero el router nunca llegaba aquí y los tickets
+    // caían al agente de altas como si fuera un portal nuevo (#325/#326/#332).
+    portalUrl.includes('petrosistemas.com.mx') ||
     texto.includes('grupogashr.com.mx') ||
     texto.includes('gashr')
   ) {
-    console.log('🎯 Portal detectado: Grupo GASHR / facturacionestacion');
+    console.log('🎯 Portal detectado: Grupo GASHR / NexusFuel (facturacionestacion o petrosistemas)');
     return await facturarGASHR(datos);
   }
 

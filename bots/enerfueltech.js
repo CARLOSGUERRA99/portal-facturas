@@ -83,8 +83,13 @@ async function facturarEnerfuelTech({ referencia, razonSocial, rfc, codigoPostal
   }
 
   try {
-    await page.goto("https://factura.enerfueltech.com/", { waitUntil: "networkidle2", timeout: 30000 });
+    // Se entra DIRECTO al flujo de invitado (/NoUserInvoice) en vez de cargar
+    // la portada y buscar el botón "Facturar sin registro": ese click a veces no
+    // encontraba el botón y el portal terminaba mandando a la pantalla de login
+    // justo al pulsar FACTURAR, tirando el intento a la basura (ticket #336).
+    await page.goto("https://factura.enerfueltech.com/NoUserInvoice", { waitUntil: "networkidle2", timeout: 30000 });
     await page.waitForTimeout(2500);
+    // Por si la ruta directa redirige a la portada, se conserva el camino viejo.
     await page.evaluate(() => {
       const b = Array.from(document.querySelectorAll("button, a")).find(x => /facturar sin registro/i.test(x.textContent || ""));
       if (b) b.click();
@@ -108,6 +113,15 @@ async function facturarEnerfuelTech({ referencia, razonSocial, rfc, codigoPostal
       await browser.close();
       return { ok: false, error_code: "datos_invalidos", msg: `Enerfuel Tech: no se encontró el consumo para la referencia ${referencia} (ticket vencido o ya facturado a público en general)` };
     }
+    // "El consumo no es facturable" — mensaje DISTINTO al de arriba, visto en
+    // vivo en el ticket #324. El portal deja el panel "Mis datos fiscales" con
+    // los campos deshabilitados (ni siquiera son <input> reales mientras tanto),
+    // así que sin este chequeo el bot seguía adelante y moría con "Cannot read
+    // properties of null (reading 'click')" al buscar esos campos.
+    if (/consumo no es facturable/i.test(texto)) {
+      await browser.close();
+      return { ok: false, error_code: "datos_invalidos", msg: `Enerfuel Tech: el portal dice que el consumo de la referencia ${referencia} NO es facturable (fuera de plazo, ya facturado a público en general, o dato incorrecto).` };
+    }
 
     const yaFacturado = /facturado/i.test(texto) && /100 ?%/i.test(texto);
     if (!yaFacturado) {
@@ -121,9 +135,19 @@ async function facturarEnerfuelTech({ referencia, razonSocial, rfc, codigoPostal
         const heading = Array.from(document.querySelectorAll("*")).find(el => el.children.length === 0 && el.textContent.trim() === "Mis datos fiscales");
         return heading ? heading.closest(".mud-paper") || heading.parentElement.parentElement : null;
       });
+      const panelEl = panelHandle.asElement();
+      if (!panelEl) {
+        await screenshot("sin_panel_datos_fiscales");
+        throw new Error('Enerfuel Tech: no se encontró el panel "Mis datos fiscales" tras Continuar');
+      }
       const nombreInput = (await panelHandle.evaluateHandle(panel => panel.querySelectorAll('input[type="text"]')[0])).asElement();
       const rfcInput = (await panelHandle.evaluateHandle(panel => panel.querySelectorAll('input[type="text"]')[1])).asElement();
       const cpInput = (await panelHandle.evaluateHandle(panel => panel.querySelectorAll('input[type="text"]')[2])).asElement();
+      if (!nombreInput || !rfcInput || !cpInput) {
+        await screenshot("faltan_inputs_datos_fiscales");
+        const nInputs = await panelHandle.evaluate(panel => panel.querySelectorAll('input[type="text"]').length).catch(() => -1);
+        throw new Error(`Enerfuel Tech: el panel "Mis datos fiscales" solo trae ${nInputs} input(s) de texto visibles — se esperaban 3 (nombre, RFC, CP). El portal pudo haber cambiado el formulario, o ya traía algún dato prellenado.`);
+      }
 
       await nombreInput.click({ clickCount: 3 });
       await page.keyboard.type(razonSocial, { delay: 20 });
@@ -141,11 +165,29 @@ async function facturarEnerfuelTech({ referencia, razonSocial, rfc, codigoPostal
       await seleccionarPorLabel(page, "Uso CFDI", usoCodigo);
       await screenshot("p2_form_listo");
 
-      const facturarHandle = await page.evaluateHandle(() =>
-        Array.from(document.querySelectorAll("button")).find(x => x.textContent.trim() === "FACTURAR") || null
-      );
-      const facturarEl = facturarHandle.asElement();
-      if (!facturarEl) throw new Error("Enerfuel Tech: botón FACTURAR no disponible (¿faltó algún campo obligatorio?)");
+      // ⚠️ La comparación exacta `textContent.trim() === "FACTURAR"` fallaba con
+      // el botón A LA VISTA y habilitado (capturas de #262 y #265 del
+      // 15/08/2026): es un botón de Angular Material y su textContent trae el
+      // rótulo dentro de un <span> junto a nodos de ripple, con espacios duros.
+      // Se normaliza el texto y se espera un poco, que el panel fiscal termina
+      // de montarse después de elegir el Uso CFDI.
+      let facturarEl = null;
+      for (let i = 0; i < 10 && !facturarEl; i++) {
+        const h = await page.evaluateHandle(() => {
+          const norm = (s) => (s || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim().toUpperCase();
+          return Array.from(document.querySelectorAll("button, a[role=button]"))
+            .find((x) => norm(x.textContent) === "FACTURAR" && x.offsetParent !== null && !x.disabled) || null;
+        });
+        facturarEl = h.asElement();
+        if (!facturarEl) await page.waitForTimeout(1000);
+      }
+      if (!facturarEl) {
+        const botones = await page.evaluate(() =>
+          Array.from(document.querySelectorAll("button"))
+            .filter((b) => b.offsetParent !== null)
+            .map((b) => `"${b.textContent.replace(/\s+/g, " ").trim()}"${b.disabled ? " (deshabilitado)" : ""}`));
+        throw new Error(`Enerfuel Tech: botón FACTURAR no disponible. Botones visibles: ${botones.join(", ")}`);
+      }
 
       console.log("🧾 Click FACTURAR (emisión real)...");
       await facturarEl.click();

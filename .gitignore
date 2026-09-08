@@ -2,3 +2,5 @@ node_modules/
 uploads/
 .env
 .mcp.json
+.aider*
+docs/_tmp-server-endpoints-tickets.js

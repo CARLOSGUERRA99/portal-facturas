@@ -2,7 +2,7 @@
   "id": "gasmaz",
   "nombre": "Gasmaz / NexusFuel / RedMax",
   "url_base": "https://gasmazfactura.nexusfuel.mx/",
-  "dominio": "nexusfuel.mx",
+  "dominio": "nexusfuel",
   "stealth": true,
   "timeout": 30000,
   "datos_fijos": {

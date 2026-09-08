@@ -160,10 +160,32 @@ async function facturarIGasFac(datos = {}) {
         msg: `IGasFac: el portal dice que el folio web ${folio} YA ESTÁ FACTURADO. El CFDI existe pero no lo tenemos: hay que pedírselo a la estación o buscarlo en el buzón del SAT.`,
       };
     }
-    if (/no (se encontr|existe)|inv[aá]lid|incorrect/i.test(trasAgregar)) {
+    // "no encontrado" (sin "se") también es forma válida del portal — visto en
+    // vivo en el ticket #331: "Ticket no encontrado." se colaba porque el regex
+    // exigía "no SE encontr" y por eso caía al catch-all genérico de más abajo.
+    if (/no (se )?encontr|no existe|inv[aá]lid|incorrect/i.test(trasAgregar)) {
       await shot("folio_rechazado");
       await browser.close();
-      return { ok: false, error_code: "datos_invalidos", msg: `IGasFac: el portal rechazó el folio ${folio} — ${(trasAgregar.match(/[^\n]*(?:no se encontr|inv[aá]lid|incorrect)[^\n]*/i) || [""])[0].trim().slice(0, 120)}` };
+      return { ok: false, error_code: "datos_invalidos", msg: `IGasFac: el portal rechazó el folio ${folio} — ${(trasAgregar.match(/[^\n]*(?:no (?:se )?encontr|inv[aá]lid|incorrect)[^\n]*/i) || [""])[0].trim().slice(0, 120)}` };
+    }
+    // "Error de conexión" — el backend de IGasFac no puede alcanzar el sistema
+    // DE LA ESTACIÓN para validar el ticket. No es un dato mal capturado ni un
+    // bug nuestro: la estación está caída de su lado. El modal trae hasta el
+    // contacto de la estación para reclamar. Visto en vivo con folios #322/#331
+    // (ambos con Total: $0.00 y "Ningún dato disponible en esta tabla" — el
+    // "Agregar" nunca llega a insertar la fila porque la validación remota falla).
+    if (/error de conexi[oó]n|no es posible conectar con la estaci[oó]n/i.test(trasAgregar)) {
+      // El correo de la ESTACIÓN sale en el modal, después del aviso — buscarlo
+      // en TODO el texto agarraría primero el nuestro (el de la cuenta logueada,
+      // que aparece arriba en "Registro de factura carlosguerra@...").
+      const desdeAviso = trasAgregar.slice(trasAgregar.search(/error de conexi[oó]n/i));
+      const contacto = (desdeAviso.match(/[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}/) || [""])[0];
+      await shot("error_conexion_estacion");
+      await browser.close();
+      return {
+        ok: false, error_code: "reintentar_despues",
+        msg: `IGasFac: la estación no responde del lado del portal ("no es posible conectar con la estación en la cual realizó su carga"). No es un dato mal leído — hay que reintentar más tarde.${contacto ? ` Contacto de la estación: ${contacto}.` : ""}`,
+      };
     }
     if (/ya (fue|ha sido) facturad|previamente facturad/i.test(trasAgregar)) {
       await browser.close();
@@ -172,6 +194,29 @@ async function facturarIGasFac(datos = {}) {
 
     // ── Forma de pago (se resetea en cada solicitud: siempre hay que ponerla) ──
     console.log("➡️ Forma de pago y datos fiscales...");
+
+    // Si el portal se quedó en otra pantalla, `page.select` revienta con
+    // "No element found for selector: #ClaveFormaPago" y no dice NADA de lo
+    // que pasó (le costó a #246 quince reintentos así). Antes de rendirse hay
+    // que esperar el campo y, si no llega, contar qué hay en pantalla.
+    const hayFormaPago = await page.waitForSelector("#ClaveFormaPago", { timeout: 8000 })
+      .then(() => true).catch(() => false);
+    if (!hayFormaPago) {
+      await shot("sin_forma_pago");
+      const avisos = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".modal, .alert, .swal2-html-container, .validation-summary-errors, [class*=danger]"))
+          .filter((e) => e.offsetParent !== null)
+          .map((e) => e.textContent.replace(/\s+/g, " ").trim())
+          .filter(Boolean).slice(0, 4)).catch(() => []);
+      const pantalla = (await texto()).replace(/\s+/g, " ").slice(0, 400);
+      await browser.close();
+      return {
+        ok: false, error_code: "reintentar_despues",
+        msg: `IGasFac: no apareció la forma de pago tras agregar el folio ${folio}. `
+           + `${avisos.length ? `El portal dice: "${avisos.join(" | ")}". ` : ""}Pantalla: ${pantalla}`,
+      };
+    }
+
     await page.select("#ClaveFormaPago", formaPago);
     await page.waitForTimeout(400);
 

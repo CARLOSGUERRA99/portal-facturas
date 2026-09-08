@@ -17,13 +17,19 @@ const { subirArchivoR2 } = require("../storage/r2");
 // correcto — eso atoró los tickets #240 y #255 (15/08/2026).
 const BASE_URL_DEFECTO = "https://valerogdl.facturacionestacion.com";
 
+// nexusfuel.com.mx es el TERCER dominio de la misma plantilla (lugasa.…), y su
+// formulario es idéntico al de petrosistemas/facturacionestacion: "Ingrese sus
+// datos" + referencia/folio/importe + "(N) Ticket Agregado". Ojo con el TLD:
+// conviven nexusfuel.mx (el genérico de gasmaz, que va por el engine) y
+// nexusfuel.com.mx (tenants por estación, que vienen aquí).
 function resolverBaseUrl(portalUrl = "") {
   const u = (portalUrl || "").toLowerCase();
-  const m = u.match(/([a-z0-9-]+\.(?:facturacionestacion\.com|petrosistemas\.com\.mx))/);
+  const m = u.match(/([a-z0-9-]+\.(?:facturacionestacion\.com|petrosistemas\.com\.mx|nexusfuel\.com\.mx))/);
   return m ? `https://${m[1]}` : BASE_URL_DEFECTO;
 }
 
-async function facturarGASHR({ referencia, folio, importe, rfc, ticketId, portalUrl }) {
+async function facturarGASHR({ referencia, folio, importe, rfc, ticketId, portalUrl,
+                               codigoPostal, calle, ext, colonia, municipio, estado }) {
   const BASE_URL = resolverBaseUrl(portalUrl);
   console.log("🤖 Iniciando bot Grupo GASHR...");
   console.log(`   Tenant: ${BASE_URL} | Referencia: ${referencia} | Folio: ${folio} | Importe: ${importe} | RFC: ${rfc}`);
@@ -77,6 +83,52 @@ async function facturarGASHR({ referencia, folio, importe, rfc, ticketId, portal
         return { ok: false, msg: `GASHR: no se agregó el ticket. Texto: ${textoActual.slice(0, 200)}` };
       }
 
+      // ⚠️ Cada tenant NexusFuel guarda SU PROPIO registro del cliente, y puede
+      // estar viejo: LUGASA tenía a GPN con CP 85080 / Sonora / Cd. Obregón
+      // (datos de otra época). El SAT rechaza el timbrado con
+      // "CFDI40148 - El campo DomicilioFiscalReceptor ... debe pertenecer al
+      // nombre asociado al RFC", porque el CP no es el que el RFC tiene
+      // registrado. Por eso se sobrescribe el domicilio con el del cliente en
+      // vez de confiar en lo que el portal traiga guardado. Solo se pisan los
+      // campos para los que SÍ tenemos dato (nunca se vacía nada).
+      const domicilio = await page.evaluate((d) => {
+        const set = (id, val) => {
+          const el = document.querySelector(id);
+          if (!el || !val) return null;
+          const antes = el.value;
+          el.value = String(val);
+          ["input", "change", "blur"].forEach(ev => el.dispatchEvent(new Event(ev, { bubbles: true })));
+          return antes === String(val) ? null : `${id}: "${antes}" → "${val}"`;
+        };
+        const cambios = [
+          set("#txtZipcode", d.cp),
+          set("#txtAddress", d.calle),
+          set("#txtCity", d.municipio),
+          set("#txtNeighborhood", d.colonia),
+        ].filter(Boolean);
+        // El estado es un <select> con los nombres completos.
+        if (d.estado) {
+          const sel = document.querySelector("#selState");
+          if (sel) {
+            const opt = Array.from(sel.options).find(o => o.text.trim().toLowerCase() === String(d.estado).trim().toLowerCase());
+            if (opt && sel.value !== opt.value) {
+              const antes = sel.options[sel.selectedIndex]?.text;
+              sel.value = opt.value;
+              ["input", "change"].forEach(ev => sel.dispatchEvent(new Event(ev, { bubbles: true })));
+              cambios.push(`#selState: "${antes}" → "${opt.text}"`);
+            }
+          }
+        }
+        return cambios;
+      }, {
+        cp: codigoPostal, calle: [calle, ext].filter(Boolean).join(" ").trim() || null,
+        municipio, colonia, estado,
+      });
+      if (domicilio.length) {
+        console.log(`🏠 Domicilio fiscal corregido (el tenant lo tenía viejo): ${domicilio.join(" | ")}`);
+        await page.waitForTimeout(600);
+      }
+
       const usoOk = await page.evaluate(() => {
         const sels = Array.from(document.querySelectorAll("select"));
         const sel = sels.find(s => Array.from(s.options).some(o => /gastos en general/i.test(o.text)));
@@ -103,13 +155,25 @@ async function facturarGASHR({ referencia, folio, importe, rfc, ticketId, portal
         const b = Array.from(document.querySelectorAll("button")).find(x => /^facturar$/i.test((x.textContent || "").trim()));
         if (b) b.click();
       });
-      await page.waitForTimeout(4500);
+      // Espera PACIENTE en vez de un único chequeo a los 4.5s: el tenant
+      // valerogdl confirmaba rapidísimo, pero facturadieselmax.petrosistemas.com.mx
+      // tarda bastante más — en el ticket #326 la captura mostraba el spinner
+      // todavía girando y el bot ya había dictaminado "no se confirmó la emisión"
+      // con la factura probablemente generándose. Se sondea hasta ~42s.
+      let confirmado = false;
+      for (let intento = 0; intento < 12; intento++) {
+        await page.waitForTimeout(3500);
+        textoActual = await page.evaluate(() => document.body.innerText).catch(() => "");
+        if (/enviada al correo|ya fue facturado/i.test(textoActual)) {
+          confirmado = true;
+          console.log(`✅ Emisión confirmada (intento ${intento + 1})`);
+          break;
+        }
+      }
       await screenshot("p3_post_facturar");
-
-      textoActual = await page.evaluate(() => document.body.innerText);
       console.log(`📋 CreateInvoice → ${createResp ? createResp.slice(0, 300) : "(sin respuesta capturada)"}`);
 
-      if (!/enviada al correo|ya fue facturado/i.test(textoActual)) {
+      if (!confirmado) {
         await browser.close();
         return { ok: false, msg: `GASHR: no se confirmó la emisión. Texto: ${textoActual.slice(0, 300)}` };
       }
