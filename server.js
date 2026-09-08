@@ -1450,6 +1450,11 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
   }
 });
 
+// Copia de TODA solicitud de factura por correo. Se deja configurable por
+// entorno para que un cliente distinto de GPN pueda apuntar a su propio
+// administrador sin tocar código.
+const COPIA_SOLICITUDES = process.env.COPIA_SOLICITUDES || 'carlosguerra@grupogpn.com';
+
 async function enviarSolicitudPorCorreo(ticket) {
   const { id: ticketId, comercio, email_contacto, user_nombre, user_email,
           rfc, razon_social, constancia_url, ocr_json, formaPago, ruta_archivo,
@@ -1515,6 +1520,11 @@ async function enviarSolicitudPorCorreo(ticket) {
   const mailOptions = {
     from: `"${marca} — Facturación" <${process.env.SMTP_USER || 'buzonfacturas@serviciosga.site'}>`,
     to: email_contacto,
+    // Copia al administrador: estas solicitudes las contesta el COMERCIO por
+    // fuera del sistema (manda el CFDI cuando quiere, o pide algo más), así que
+    // sin copia nadie del lado de GPN se entera de que salió ni puede darle
+    // seguimiento. El buzón de captura no sirve para esto: solo mira adjuntos.
+    cc: COPIA_SOLICITUDES,
     replyTo: user_email || undefined,
     subject: `Solicitud de factura — ${rfc || 'Cliente'} — ${comercio || 'Ticket'}`,
     html: `
@@ -1540,9 +1550,12 @@ async function enviarSolicitudPorCorreo(ticket) {
     attachments,
   };
 
-  // Verificar SMTP disponible antes de intentar
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) {
-    const errMsg = 'SMTP no configurado — no se puede enviar correo';
+  // El correo sale por Brevo (Railway bloquea SMTP); SMTP solo es el fallback
+  // local. Esta guarda exigía SMTP_HOST/SMTP_USER aunque hubiera BREVO_API_KEY,
+  // así que en un entorno con Brevo pero sin las variables SMTP legacy la
+  // solicitud se descartaba antes de intentarlo.
+  if (!process.env.BREVO_API_KEY && (!process.env.SMTP_HOST || !process.env.SMTP_USER)) {
+    const errMsg = 'Sin BREVO_API_KEY ni SMTP configurado — no se puede enviar correo';
     console.log(`⚠️ ${errMsg}`);
     await db.query(
       "UPDATE tickets SET solicitud_correo_error = ? WHERE id = ?",
