@@ -23,6 +23,7 @@ const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
 const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarEnerser } = require('./enerser');
+const { facturarGrupoCentra } = require('./grupocentra');
 const { facturarRAMCAL } = require('./ramcal');
 const { facturarCaffenio } = require('./caffenio');
 const { facturarCapufe } = require('./capufe');
@@ -493,6 +494,17 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Enerser');
     return await facturarEnerser(datos);
+  }
+
+  if (
+    portal === 'grupocentra' ||
+    portalUrl.includes('grupocentra.mx') ||
+    texto.includes('grupocentra') ||
+    texto.includes('operadora rio colorado') ||
+    texto.includes('operadora río colorado')
+  ) {
+    console.log('🎯 Portal detectado: Grupo Centra (Karmi)');
+    return await facturarGrupoCentra(datos);
   }
 
   if (

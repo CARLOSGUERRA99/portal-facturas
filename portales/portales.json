@@ -1501,8 +1501,8 @@
     },
     "grupocentra": {
       "nombre": "Grupo Centra (Karmi FacturacionWeb)",
-      "bot": null,
-      "estado": "pendiente_bot",
+      "bot": "grupocentra.js",
+      "estado": "activo",
       "url_base": "https://facturacion.grupocentra.mx/Karmi_FacturacionWeb",
       "stealth": true,
       "comercios": [
@@ -1510,23 +1510,29 @@
         "Vip Market",
         "Vip Gas",
         "Ondacel",
-        "Asian Express"
+        "Asian Express",
+        "Operadora Rio Colorado, S. de R.L. de C.V.",
+        "estaciones E.S. #### de Sonora y BC"
       ],
       "deteccion": {
         "por_portal_field": "grupocentra",
         "por_texto_ocr": [
           "grupocentra",
-          "facturacion.grupocentra.mx"
+          "facturacion.grupocentra.mx",
+          "operadora rio colorado",
+          "soportefactura@grupocentra.mx"
         ],
         "por_comercio": [
-          "centra"
+          "centra",
+          "operadora rio colorado"
         ],
         "por_url_qr": [
           "facturacion.grupocentra.mx"
         ],
         "nota_deteccion": "Franquicias: Vip Market, bp, Vip Gas, PEMEX, 76, Ondacel y Asian Express. Pide DIRECCIÓN de la estación, FECHA, HORA y No.Ticket."
       },
-      "notas_desarrollo": "Sin login y SIN CAPTCHA. ⚠️ EL PLAZO SON 30 DÍAS, NO 3. La portada avisa \"Tiene 3 dias para realizar su factura\" y es FALSO: Carlos ha facturado allí dentro del mes, y el ticket de ejemplo de la propia guía del portal dice \"Le recordamos que tiene 30 dias a partir del dia de hoy para realizar su factura\". No fiarse de ese banner. Flujo: botón \"Facturar GAS\" (hay seis vías: GAS, SP, TH, OC, VIP, AE) → formulario. Los ids son de WEBDEV/Karmi y NO son descriptivos (A110, A31, A6…), así que hay que localizarlos por su rótulo o por su placeholder: A47 lleva ph DD/MM/AAAA (fecha) y A48 ph HH:MM (hora). Hay casillas Gasolina/Aceites y \"Desglosar IEPS\", un RFC + botón Buscar que carga los datos fiscales, y botones Cargar/Agregar/Borrar Ticket/Facturar. Su guía \"Ubicar informacion en TICKET\" marca en rojo los CUATRO datos que pide: dirección de la estación, fecha, hora y No.Ticket. Soporte: soportefactura@grupocentra.mx · 653 517 2121.\n\nRECONOCIMIENTO DEL 15/08/2026 (formulario \"Facturar GAS\", #M16):\n  #A4 RFC + #A1 Buscar → rellena #A3 Nombre, #A71 Régimen, #A117 CP, #A7 Correo. GPN YA ESTÁ DADA DE ALTA: devuelve GPN PINTURAS Y RECUBRIMIENTOS / 601 / 80140 / fernandoramos@grupogpn.com.\n  #A15 Ciudad (16 plazas) → #A14 Sucursal (carga por AJAX) → #A41 Empresa y #A13 Dirección se autocompletan.\n  #A95_1 Gasolina · #A12 No.Ticket · #A47 Fecha DD/MM/AAAA · #A48 Hora HH:MM · #A17 Cargar (trae #A18 Combustible, #A19 Litros, #A21 Precio, #A23 Importe, #A26/#A27/#A28 totales).\n  #A33 Forma de Pago · #A45 Uso de CFDI · #A24 Agregar · #A40 Facturar · #A25 Borrar Ticket.\n\n⚠️ LA PLAZA NO SE DEDUCE DEL TICKET. La dirección impresa es la del OPERADOR (todas dicen San Luis Río Colorado). El número \"E.S. NNNNN\" del ticket SÍ coincide con el \"#NNNNN\" del portal, así que hay que recorrer las 16 plazas buscando ese número. Comprobado: #11024 TERAN TERAN y #11055 EJIDO PUEBLA están en MEXICALI, y #7870 en SONOYTA — ninguno en SAN LUIS.\n\n🛑 BLOQUEANTE ABIERTO: al elegir la sucursal (#A14) la pestaña de Browserless muere con \"Requesting main frame too early\" / \"Session closed\", de forma reproducible. Probado sin éxito: click y change desde page.evaluate, page.select fuera de banda, waitForNavigation alrededor del select, y con y sin stealth. El handler de page.on(dialog) está puesto y NO se dispara, así que no es el alert de siempre. Siguiente idea: mirar qué petición lanza el select (Network) y reproducirla con fetch, saltándose el formulario, o probar otra región de Browserless."
+      "notas_desarrollo": "Sin login y SIN CAPTCHA. ⚠️ EL PLAZO SON 30 DÍAS, NO 3. La portada avisa \"Tiene 3 dias para realizar su factura\" y es FALSO: Carlos ha facturado allí dentro del mes, y el ticket de ejemplo de la propia guía del portal dice \"Le recordamos que tiene 30 dias a partir del dia de hoy para realizar su factura\". No fiarse de ese banner. Flujo: botón \"Facturar GAS\" (hay seis vías: GAS, SP, TH, OC, VIP, AE) → formulario. Los ids son de WEBDEV/Karmi y NO son descriptivos (A110, A31, A6…), así que hay que localizarlos por su rótulo o por su placeholder: A47 lleva ph DD/MM/AAAA (fecha) y A48 ph HH:MM (hora). Hay casillas Gasolina/Aceites y \"Desglosar IEPS\", un RFC + botón Buscar que carga los datos fiscales, y botones Cargar/Agregar/Borrar Ticket/Facturar. Su guía \"Ubicar informacion en TICKET\" marca en rojo los CUATRO datos que pide: dirección de la estación, fecha, hora y No.Ticket. Soporte: soportefactura@grupocentra.mx · 653 517 2121.\n\nRECONOCIMIENTO DEL 15/08/2026 (formulario \"Facturar GAS\", #M16):\n  #A4 RFC + #A1 Buscar → rellena #A3 Nombre, #A71 Régimen, #A117 CP, #A7 Correo. GPN YA ESTÁ DADA DE ALTA: devuelve GPN PINTURAS Y RECUBRIMIENTOS / 601 / 80140 / fernandoramos@grupogpn.com.\n  #A15 Ciudad (16 plazas) → #A14 Sucursal (carga por AJAX) → #A41 Empresa y #A13 Dirección se autocompletan.\n  #A95_1 Gasolina · #A12 No.Ticket · #A47 Fecha DD/MM/AAAA · #A48 Hora HH:MM · #A17 Cargar (trae #A18 Combustible, #A19 Litros, #A21 Precio, #A23 Importe, #A26/#A27/#A28 totales).\n  #A33 Forma de Pago · #A45 Uso de CFDI · #A24 Agregar · #A40 Facturar · #A25 Borrar Ticket.\n\n⚠️ LA PLAZA NO SE DEDUCE DEL TICKET. La dirección impresa es la del OPERADOR (todas dicen San Luis Río Colorado). El número \"E.S. NNNNN\" del ticket SÍ coincide con el \"#NNNNN\" del portal, así que hay que recorrer las 16 plazas buscando ese número. Comprobado: #11024 TERAN TERAN y #11055 EJIDO PUEBLA están en MEXICALI, y #7870 en SONOYTA — ninguno en SAN LUIS.\n\n🛑 BLOQUEANTE ABIERTO: al elegir la sucursal (#A14) la pestaña de Browserless muere con \"Requesting main frame too early\" / \"Session closed\", de forma reproducible. Probado sin éxito: click y change desde page.evaluate, page.select fuera de banda, waitForNavigation alrededor del select, y con y sin stealth. El handler de page.on(dialog) está puesto y NO se dispara, así que no es el alert de siempre. Siguiente idea: mirar qué petición lanza el select (Network) y reproducirla con fetch, saltándose el formulario, o probar otra región de Browserless.\n\n✅ DESBLOQUEADO Y FACTURADO EN VIVO (08-sep-2026), con el navegador integrado (NO Browserless): #320 (E.S. 7870 Sonoyta, folio 7828808, 30/08 20:31, $1,067.18) -> factura 4292 serie GGW; #343 (E.S. 8394 Obregon y Cuauhtemoc, folio 4317853, 31/08 07:40, $700.07) -> factura 12163 serie GHW. Se confirma de forma independiente que el plazo NO son 3 dias: los dos tickets tenian 8 y 9 dias y el portal los acepto sin chistar.\n\n⚠️ LA SERIE ES POR ESTACION, no correlativa global (Sonoyta GGW, Obregon y Cuauhtemoc GHW). Buscar una factura con la serie de otra estacion no encuentra nada y hace creer que no se timbro — me paso. Hay que leer la serie del propio mensaje de exito (\"La Factura folio NNNN serie XXX se Genero Exitosamente\", pantalla con title \"Si/No\").\n\nEntrega: Reimpresiones (#A60) -> #A4 folio + #A2 serie -> \"Consultar Factura\" -> #A14 correo -> clWDUtil.pfGetTraitement('A10',0)() -> \"El correo fue enviado con exito\". Los botones Descargar XML/PDF son _JSL() de GeneXus, sin href, asi que el correo es la unica via fiable.\n\n🛑 EL BLOQUEANTE DE BROWSERLESS SIGUE SIN VERIFICAR: bots/grupocentra.js esta escrito con el mapa completo del flujo, pero el flujo se probo en el navegador integrado. La caida \"Requesting main frame too early\" al elegir sucursal era especifica de Browserless y NO se ha vuelto a probar ahi. Antes de fiarse del bot en produccion hay que correr scripts/probe-grupocentra-browserless.js.",
+      "tecnologia": "GeneXus/WEBDEV (\"Karmi_FacturacionWeb\"), sin captcha. Ids autogenerados A##/M##."
     }
   },
   "fusionados": {
