@@ -17,6 +17,7 @@ const { facturarBodegaAurrera } = require('./bodegaaurrera');
 const { facturarPetrofigues } = require('./petrofigues');
 const { facturarGASHR } = require('./gashr');
 const { facturarGasolineros } = require('./gasolineros');
+const { facturarG500 } = require('./g500');
 const { facturarFacturaGAS } = require('./facturagas');
 const { facturarERFC } = require('./erfc');
 const { facturarOrler } = require('./orler');
@@ -259,6 +260,19 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: AutoZone (CDC Origon Cloud)');
     return await facturarAutoZone(datos);
+  }
+
+  // G500 Network — ControlGAS con login; la estación va en el PermisoCRE de
+  // la URL, no por autocompletado como facturagas.net.
+  if (
+    portal === 'g500' ||
+    portalUrl.includes('g500facturagas') ||
+    portalUrl.includes('g500network.com') ||
+    comercio.includes('g500') ||
+    comercio.includes('servicio gastur')
+  ) {
+    console.log('🎯 Portal detectado: G500 Network (ControlGAS con login)');
+    return await facturarG500(datos);
   }
 
   // Gasolineros.mx (Grupo Timex) — plataforma compartida: una sola URL, la
