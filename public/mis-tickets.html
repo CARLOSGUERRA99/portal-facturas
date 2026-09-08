@@ -401,11 +401,17 @@
           pendiente_confirmacion: '<span class="badge" style="background:#FFF7ED;color:#F97316;">Confirmar datos</span>',
           pendiente: '<span class="badge badge-pending">Pendiente</span>',
           procesando: '<span class="badge badge-processing">Procesando</span>',
-          procesando_correo: '<span class="badge" style="background:#fff8e6;color:#c97b00;">Procesando</span>',
+          procesando_correo: '<span class="badge" style="background:#fff8e6;color:#c97b00;">Esperando correo</span>',
           procesado: '<span class="badge badge-success">Facturado</span>',
           error: '<span class="badge badge-error">Error</span>',
         };
-        const badge = statusMap[t.status] || `<span class="badge badge-pending">${t.status}</span>`;
+        // El backend (enmascararParaResidente en server.js) le cambia el status
+        // real (error / pendiente_confirmacion) a "procesando" para el residente
+        // -no puede hacer nada con un fallo técnico- y manda _enRevision para que
+        // aquí se distinga de un ticket que de verdad está en curso normal.
+        const badge = t._enRevision
+          ? '<span class="badge" style="background:#FFF7ED;color:#F97316;">En revisión</span>'
+          : (statusMap[t.status] || `<span class="badge badge-pending">${t.status}</span>`);
 
         const datosStr = datos.fecha
           ? `${datos.fecha}${datos.total ? ' · $' + datos.total : ''}${datos.folio ? ' · Folio ' + datos.folio : ''}`

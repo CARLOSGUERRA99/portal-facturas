@@ -886,6 +886,18 @@ app.post("/upload-tickets", auth, upload.array("tickets", MAX_TICKETS_LOTE), asy
 // ── ESTADO DEL OCR (el frontend hace polling tras subir) ─────────────────────
 // Devuelve la misma información que antes entregaba la respuesta síncrona de
 // /upload-ticket: duplicado | agenteActivado | necesitaConfirmacion | autoFacturando.
+// El residente no debe ver el texto crudo que devuelve el portal del comercio
+// (viene en el idioma/formato del portal, pensado para debug, no para él) —
+// mismo criterio que enmascararParaResidente más abajo (ver VISIBILIDAD POR
+// ROL), pero hacía falta aquí también: este endpoint es el único que seguía
+// mandando error_msg tal cual, apenas el residente sube la foto.
+function mensajeAmigablePara(errorMsg) {
+  if (errorMsg === 'ticket_vencido') {
+    return 'Este ticket ya venció el plazo del portal para facturar automáticamente. Puedes solicitar la factura por correo directamente al comercio desde "Mis Tickets".';
+  }
+  return 'No pudimos facturar este ticket automáticamente. Nuestro equipo lo va a revisar — lo verás actualizado en "Mis Tickets" en cuanto haya novedades.';
+}
+
 app.get("/api/tickets/:id/estado-ocr", auth, async (req, res) => {
   try {
     const [[t]] = await db.query(
@@ -907,7 +919,7 @@ app.get("/api/tickets/:id/estado-ocr", auth, async (req, res) => {
       });
     }
     if (t.status === 'error') {
-      return res.json({ ok: true, listo: true, error: true, ticketId: t.id, msg: t.error_msg || 'No se pudo leer el ticket' });
+      return res.json({ ok: true, listo: true, error: true, ticketId: t.id, msg: mensajeAmigablePara(t.error_msg) });
     }
 
     const portal = (datos.portal || 'desconocido').toLowerCase();
@@ -1396,8 +1408,10 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
       `SELECT t.id, t.comercio, t.email_contacto, t.solicitud_correo_enviada,
               t.ocr_json, t.nombre_archivo, t.ruta_archivo, t.user_id,
               u.nombre AS user_nombre, u.email AS user_email,
-              u.rfc, u.razon_social, u.constancia_url
+              u.rfc, u.razon_social, u.constancia_url,
+              c.nombre AS cliente_nombre
        FROM tickets t JOIN users u ON t.user_id = u.id
+       LEFT JOIN clientes c ON c.id = u.cliente_id
        WHERE t.id = ? AND t.user_id = ?`,
       [ticketId, userId]
     );
@@ -1438,7 +1452,12 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
 
 async function enviarSolicitudPorCorreo(ticket) {
   const { id: ticketId, comercio, email_contacto, user_nombre, user_email,
-          rfc, razon_social, constancia_url, ocr_json, formaPago, ruta_archivo } = ticket;
+          rfc, razon_social, constancia_url, ocr_json, formaPago, ruta_archivo,
+          cliente_nombre } = ticket;
+  // El sistema es multi-cliente (GPN, DGA, ...) pero este correo lo recibe el
+  // COMERCIO, no el residente — si siempre dice "GPN" para un cliente distinto
+  // confunde al comercio sobre a nombre de quién está facturando.
+  const marca = cliente_nombre || 'GPN Pinturas y Recubrimientos';
 
   console.log(`📨 Enviando solicitud de factura por correo — ticket #${ticketId} → ${email_contacto}`);
 
@@ -1494,7 +1513,7 @@ async function enviarSolicitudPorCorreo(ticket) {
   }
 
   const mailOptions = {
-    from: `"GPN Pinturas — Facturación" <${process.env.SMTP_USER || 'buzonfacturas@serviciosga.site'}>`,
+    from: `"${marca} — Facturación" <${process.env.SMTP_USER || 'buzonfacturas@serviciosga.site'}>`,
     to: email_contacto,
     replyTo: user_email || undefined,
     subject: `Solicitud de factura — ${rfc || 'Cliente'} — ${comercio || 'Ticket'}`,
@@ -1515,7 +1534,7 @@ async function enviarSolicitudPorCorreo(ticket) {
             <tr><td style="padding:8px 12px;font-weight:bold;">Correo de respuesta</td><td style="padding:8px 12px;">${user_email || 'Ver en adjunto'}</td></tr>
           </table>
           <p>Adjunto mi constancia de situación fiscal del SAT${ticketAdjuntado ? ' y la imagen del ticket de compra' : ''}.</p>
-          <p style="color:#666;font-size:0.85rem;">Este correo fue generado automáticamente por GPN Pinturas y Recubrimientos — Portal de Facturación.</p>
+          <p style="color:#666;font-size:0.85rem;">Este correo fue generado automáticamente por ${marca} — Portal de Facturación.</p>
         </div>
       </div>`,
     attachments,
