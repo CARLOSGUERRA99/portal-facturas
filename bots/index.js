@@ -24,6 +24,7 @@ const { facturarOrler } = require('./orler');
 const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarEnerser } = require('./enerser');
 const { facturarGrupoCentra } = require('./grupocentra');
+const { facturarTopGas } = require('./topgas');
 const { facturarRAMCAL } = require('./ramcal');
 const { facturarCaffenio } = require('./caffenio');
 const { facturarCapufe } = require('./capufe');
@@ -505,6 +506,23 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Grupo Centra (Karmi)');
     return await facturarGrupoCentra(datos);
+  }
+
+  // TopGas va ANTES que IGasFac a propósito: sus tickets no nombran su portal
+  // (dicen "www.topgasmexico.com", que es la web comercial, no el de
+  // facturación), así que con portal='desconocido' caían en IGasFac por
+  // parecido del folio y el portal respondía "Ticket no encontrado" — que
+  // suena a dato mal leído cuando en realidad era el portal equivocado
+  // (tickets #331 y #339).
+  if (
+    portal === 'topgas' ||
+    portalUrl.includes('topgasmexico') ||
+    portalUrl.includes('topgas.kernotek') ||
+    comercio.includes('topgas') ||
+    texto.includes('topgas')
+  ) {
+    console.log('🎯 Portal detectado: TopGas (Kernotek)');
+    return await facturarTopGas(datos);
   }
 
   if (
