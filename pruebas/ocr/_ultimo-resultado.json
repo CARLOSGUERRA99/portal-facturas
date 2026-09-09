@@ -1,16 +1,7 @@
 {
- "fecha": "2026-09-08T07:38:59.035Z",
- "pct": "98.5",
- "perfectos": 23,
+ "fecha": "2026-09-09T01:44:15.804Z",
+ "pct": "100.0",
+ "perfectos": 24,
  "total": 24,
- "fallidos": [
-  {
-   "caso": "0163_GRUPO-INNO-SA-DE-CV.jpeg",
-   "aciertos": 3,
-   "total": 4,
-   "fallos": [
-    "referencia: esperaba \"0498471292208AE\" y salió \"049847129228CE1\""
-   ]
-  }
- ]
+ "fallidos": []
 }

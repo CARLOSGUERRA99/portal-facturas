@@ -25,6 +25,7 @@ const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarEnerser } = require('./enerser');
 const { facturarGrupoCentra } = require('./grupocentra');
 const { facturarTopGas } = require('./topgas');
+const { facturarCadisa } = require('./cadisa');
 const { facturarRAMCAL } = require('./ramcal');
 const { facturarCaffenio } = require('./caffenio');
 const { facturarCapufe } = require('./capufe');
@@ -523,6 +524,25 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: TopGas (Kernotek)');
     return await facturarTopGas(datos);
+  }
+
+  // Grupo CADISA "AutoFacturas RADEC": la misma app desplegada una vez por
+  // gasolinera, cada una en su propio DDNS (rindemas*.dyndns.org,
+  // palov966facturas.ddns.net…). El ticket dice "RADEC" arriba y publica la
+  // web comercial de la estación, no el DDNS — bots/cadisa.js lo resuelve.
+  if (
+    portal === 'cadisa' ||
+    portal === 'radec' ||
+    portalUrl.includes('rindemas') ||
+    portalUrl.includes('estacionpaloverde') ||
+    portalUrl.includes('palov966facturas') ||
+    /dyndns\.org|ddns\.net/.test(portalUrl) && /facturas|autofactura/.test(portalUrl) ||
+    comercio.includes('radec') ||
+    texto.includes('autofacturas radec') ||
+    texto.includes('grupo cadisa')
+  ) {
+    console.log('🎯 Portal detectado: Grupo CADISA / AutoFacturas RADEC');
+    return await facturarCadisa(datos);
   }
 
   if (
