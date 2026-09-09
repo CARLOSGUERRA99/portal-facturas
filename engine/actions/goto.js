@@ -35,6 +35,21 @@ async function goto(page, params) {
     await page.goto(safeUrl, { waitUntil: 'load' });
     return;
   } catch (firstErr) {
+    // 'load' espera TODOS los subrecursos (imágenes, iframes, analítica). Un
+    // portal que sirve su HTML rápido pero arrastra un recurso lento agota el
+    // timeout aunque la página ya sea perfectamente usable: el ticket #330 de
+    // ARCO moría así dos veces seguidas con "Navigation timeout of 30000 ms",
+    // mientras el #327 —mismo portal, mismo flujo— pasaba. Antes de darlo por
+    // fallido se comprueba si el documento ya está listo; si lo está, se sigue
+    // y que sea el waitFor del flujo quien decida si la página sirve.
+    if (/Navigation timeout|net::ERR_TIMED_OUT/i.test(firstErr.message)) {
+      const listo = await page.evaluate(() => document.readyState !== 'loading' && !!document.body)
+        .catch(() => false);
+      if (listo) {
+        console.log(`[goto] ⚠️ 'load' agotó el tiempo pero el documento ya está listo — se continúa (${safeUrl})`);
+        return;
+      }
+    }
     if (!firstErr.message.includes('ERR_NAME_NOT_RESOLVED')) throw firstErr;
     console.log(`[goto] DNS falló en Browserless (${safeUrl}) — intentando fallback via IP...`);
   }
