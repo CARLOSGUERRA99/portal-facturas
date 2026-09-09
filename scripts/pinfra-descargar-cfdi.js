@@ -14,9 +14,20 @@ const { leerCFDI, verificarCFDI } = require('../lib/cfdi');
 
 const TRANSACCION = process.argv[2];
 const TICKET_ID = Number(process.argv[3]);
-const RFC = process.argv[4] || 'GPR110128QD8';
-const CORREO = process.argv[5] || 'carlosguerra@grupogpn.com';
-if (!TRANSACCION || !TICKET_ID) { console.error('uso: node scripts/pinfra-descargar-cfdi.js <transaccion> <ticketId> [rfc] [correo]'); process.exit(1); }
+const RFC = process.argv[4] || process.env.PINFRA_USER || 'GPR110128QD8';
+const CORREO = process.argv[5] || process.env.PINFRA_EMAIL || 'buzonfacturas@serviciosga.site';
+// ⚠️ El rango de fechas ESTABA CLAVADO a 01/07–12/08/2026, así que cualquier
+// ticket fuera de ese par de meses devolvía "Nada Encontrado" — o, si la página
+// no llegaba a cargar, un "Cannot set properties of null" que no dice nada.
+// Ahora se pasa por argumento y, si no, cubre los últimos 90 días.
+const ddmmyyyy = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+const DESDE = process.argv[6] || ddmmyyyy(new Date(Date.now() - 90 * 864e5));
+const HASTA = process.argv[7] || ddmmyyyy(new Date());
+if (!TRANSACCION || !TICKET_ID) {
+  console.error('uso: node scripts/pinfra-descargar-cfdi.js <transaccion> <ticketId> [rfc] [correo] [desde DD/MM/YYYY] [hasta DD/MM/YYYY]');
+  process.exit(1);
+}
+console.log(`Buscando transacción ${TRANSACCION} entre ${DESDE} y ${HASTA} (RFC ${RFC})`);
 
 (async () => {
   const browser = await puppeteer.connect({
@@ -39,10 +50,20 @@ if (!TRANSACCION || !TICKET_ID) { console.error('uso: node scripts/pinfra-descar
     await page.goto('https://www.pinfrafacturacion.com.mx/Consultar/GenerarConsultas', { waitUntil: 'load', timeout: 30000 });
     await page.waitForTimeout(4000);
 
-    await page.evaluate(() => {
-      const s = (id, v) => { const e = document.querySelector(id); e.value = v; ['input', 'change', 'blur', 'keyup'].forEach((x) => e.dispatchEvent(new Event(x, { bubbles: true }))); };
-      s('#txtDe', '01/07/2026'); s('#txtA', '12/08/2026');   // D/M/YYYY aquí; una fecha futura devuelve vacío
-    });
+    const rango = await page.evaluate((de, a) => {
+      const s = (id, v) => {
+        const e = document.querySelector(id);
+        if (!e) return false;
+        e.value = v;
+        ['input', 'change', 'blur', 'keyup'].forEach((x) => e.dispatchEvent(new Event(x, { bubbles: true })));
+        return true;
+      };
+      // D/M/YYYY aquí (en Facturar/GenerarFactura es M/D/YYYY — ver cabecera).
+      return s('#txtDe', de) && s('#txtA', a);
+    }, DESDE, HASTA);
+    if (!rango) {
+      throw new Error('no aparecieron los campos de fecha (#txtDe/#txtA) — probablemente el login no entró; revisa RFC y correo');
+    }
     await page.waitForTimeout(800);
     await page.evaluate(() => {
       const x = Array.from(document.querySelectorAll('button,input[type=submit],a')).find((e) => /buscar/i.test(e.textContent || e.value || '') && e.offsetParent);
@@ -64,7 +85,19 @@ if (!TRANSACCION || !TICKET_ID) { console.error('uso: node scripts/pinfra-descar
         })),
       };
     }, TRANSACCION);
-    if (!fila) { console.log(`❌ no aparece la transacción ${TRANSACCION}`); await browser.close(); process.exit(1); }
+    if (!fila) {
+      // Sin esto solo se sabía que "no aparece", que no distingue entre rango
+      // de fechas equivocado, cuenta equivocada y número de transacción que el
+      // portal muestra con otro formato. Se listan las filas encontradas.
+      const filas = await page.evaluate(() => Array.from(document.querySelectorAll('table tr'))
+        .map((t) => (t.innerText || '').replace(/\s+/g, ' ').trim())
+        .filter(Boolean).slice(0, 25));
+      console.log(`❌ no aparece la transacción ${TRANSACCION}`);
+      console.log(`   el portal devolvió ${filas.length} fila(s) entre ${DESDE} y ${HASTA}:`);
+      filas.forEach((f) => console.log('   · ' + f.slice(0, 150)));
+      await browser.close();
+      process.exit(1);
+    }
     console.log('fila:', fila.texto);
     console.log('acciones:'); fila.acciones.forEach((a) => console.log('   ', JSON.stringify(a)));
 
