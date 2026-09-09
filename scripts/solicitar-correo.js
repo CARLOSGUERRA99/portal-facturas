@@ -23,6 +23,10 @@ const valorDe = (f) => (idx(f) >= 0 ? args[idx(f) + 1] : null);
 const EMAIL = valorDe('--email');
 const FORMA = valorDe('--forma') || 'Efectivo';
 const SOLO_LISTA = args.includes('--pendientes');
+// El comercio no siempre contesta a la primera. --reenviar permite insistir
+// sobre una solicitud ya mandada; sin el flag se omite, para no acribillar al
+// comercio con la misma peticion por error.
+const REENVIAR = args.includes('--reenviar');
 const IDS = args.filter((a) => /^\d+$/.test(a)).map(Number);
 
 const SQL_TICKET = `
@@ -74,7 +78,8 @@ const SQL_TICKET = `
     if (!t.constancia_url) { console.log(`#${id}: ⚠️ el usuario no tiene constancia subida`); continue; }
     // La misma guarda que el endpoint: mandar dos veces la misma solicitud al
     // comercio es ruido para ellos y confusión para nosotros.
-    if (t.solicitud_correo_enviada) { console.log(`#${id} ${t.comercio}: ya se había enviado — se omite`); continue; }
+    if (t.solicitud_correo_enviada && !REENVIAR) { console.log(`#${id} ${t.comercio}: ya se había enviado — se omite (usa --reenviar para insistir)`); continue; }
+    if (t.solicitud_correo_enviada && REENVIAR) console.log(`#${id}: reenviando (ya se había mandado antes)`);
 
     if (!t.email_contacto && EMAIL) {
       await db.query('UPDATE tickets SET email_contacto = ? WHERE id = ?', [EMAIL, id]).catch(() => {});

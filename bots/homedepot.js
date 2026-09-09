@@ -533,6 +533,30 @@ async function facturarHomeDepotMexico({
     // ── PASO 4 — Llenar datos fiscales (página 2) ─────────────────────────────
     // IDs exactos del HTML: #nombre, #codigoPostal, #regimenFiscal, #usoCfdi, #correo
     console.log("📋 PASO 4 — Llenando datos fiscales...");
+
+    // ⚠️ Si el ticket no le gusta, el portal NO avanza: deja la misma pantalla
+    // y encima abre un modal "Ocurrio un error" con el motivo. El bot solo
+    // esperaba #nombre y moria con "Waiting for selector `#nombre` failed",
+    // que no dice nada del problema real — el ticket #318 llevaba semanas
+    // atascado asi cuando lo unico que pasaba era que su fecha (26/07) ya
+    // estaba fuera de plazo. Se lee el modal ANTES de esperar el formulario.
+    const modal = await page.evaluate(() => {
+      const t = document.body.innerText.replace(/\s+/g, " ");
+      const m = t.match(/Ocurrio un error\s*(.{0,140}?)\s*Aceptar/i);
+      return m ? m[1].trim() : null;
+    });
+    if (modal) {
+      await screenshot("paso4_error_portal");
+      await browser.close();
+      const vencido = /fecha del ticket es inv[aá]lida|fuera de|plazo|vencid|caduc/i.test(modal);
+      return {
+        ok: false,
+        error_code: vencido ? "ticket_vencido" : "datos_invalidos",
+        email_contacto: "callcenter@homedepot.com.mx",
+        msg: `Home Depot rechazó el ticket: "${modal}"`,
+      };
+    }
+
     await page.waitForSelector("#nombre", { timeout: 15000 });
 
     // Razón Social — sin régimen societario
