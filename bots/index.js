@@ -26,6 +26,7 @@ const { facturarEnerser } = require('./enerser');
 const { facturarGrupoCentra } = require('./grupocentra');
 const { facturarTopGas } = require('./topgas');
 const { facturarCadisa } = require('./cadisa');
+const { facturarOrsan } = require('./orsan');
 const { facturarRAMCAL } = require('./ramcal');
 const { facturarCaffenio } = require('./caffenio');
 const { facturarCapufe } = require('./capufe');
@@ -543,6 +544,15 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Grupo CADISA / AutoFacturas RADEC');
     return await facturarCadisa(datos);
+  }
+
+  if (
+    portal === 'orsan' ||
+    portalUrl.includes('orsan.com.mx') ||
+    texto.includes('mifactura.orsan')
+  ) {
+    console.log('🎯 Portal detectado: ORSAN (requiere cuenta)');
+    return await facturarOrsan(datos);
   }
 
   if (

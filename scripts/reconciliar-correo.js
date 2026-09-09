@@ -21,6 +21,14 @@ const { extraerUUIDcfdi } = require('../lib/util');
 
 const RFC_GPN = 'GPR110128QD8';
 const DIAS_ATRAS = parseInt(process.env.DIAS_ATRAS || '7', 10);
+// --emisor-ok 340,412 → salta la comprobación de que el nombre del emisor se
+// parezca al comercio, SOLO en esos tickets. Ver el comentario junto a la
+// comprobación. Todo lo demás (RFC receptor, total, UUID) se sigue exigiendo.
+const EMISOR_OK = (() => {
+  const i = process.argv.indexOf('--emisor-ok');
+  if (i < 0) return [];
+  return String(process.argv[i + 1] || '').split(',').map((n) => parseInt(n, 10)).filter(Boolean);
+})();
 
 const parseJson = (v) => {
   if (!v) return {};
@@ -126,11 +134,27 @@ const parseJson = (v) => {
                 const [yaUsado] = await db.query('SELECT ticket_id FROM facturas WHERE xml_url LIKE ?', [`%${uuidPrev}%`]);
                 if (yaUsado.length) { console.log(`   ⏭️ CFDI ${uuidPrev} ya está en el ticket #${yaUsado[0].ticket_id}`); continue; }
 
+                // El nombre del emisor debe parecerse al comercio del ticket.
+                // Es la última defensa contra pegarle a un ticket la factura de
+                // otro comercio que casualmente costó lo mismo.
+                //
+                // Da falsos positivos cuando la gasolinera factura a nombre de
+                // su DUEÑO y el ticket trae la marca: Palo Verde (#340) emite
+                // como "JUAN PEDRO RODRIGUEZ VAZQUEZ" y el ticket dice "PEMEX
+                // Palo Verde". Para esos casos existe --emisor-ok, que salta
+                // SOLO esta comprobación y solo en los tickets que se nombren:
+                // el RFC del receptor, el total y el UUID se siguen exigiendo.
+                // Usarlo únicamente con prueba independiente de que la factura
+                // es de ese ticket (p.ej. haberla timbrado uno mismo).
                 const palabras = String(cand.comercio || '').toUpperCase().split(/[^A-ZÁÉÍÓÚÑ]+/).filter((p) => p.length > 4);
                 const emisorUp = nombreEmisor.toUpperCase();
                 if (palabras.length && !palabras.some((p) => emisorUp.includes(p))) {
-                  console.log(`   ⚠️ $${total}: el emisor "${nombreEmisor.slice(0, 40)}" no se parece al comercio del ticket #${cand.id} ("${String(cand.comercio).slice(0, 40)}") — se omite por seguridad`);
-                  continue;
+                  if (EMISOR_OK.includes(cand.id)) {
+                    console.log(`   🔓 --emisor-ok: se acepta "${nombreEmisor.slice(0, 40)}" para el ticket #${cand.id} pese a no parecerse al comercio`);
+                  } else {
+                    console.log(`   ⚠️ $${total}: el emisor "${nombreEmisor.slice(0, 40)}" no se parece al comercio del ticket #${cand.id} ("${String(cand.comercio).slice(0, 40)}") — se omite por seguridad`);
+                    continue;
+                  }
                 }
 
                 const uuid = (extraerUUIDcfdi(xmlAtt.content) || '').toLowerCase();
