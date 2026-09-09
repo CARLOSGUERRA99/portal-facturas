@@ -1567,6 +1567,36 @@
         "nota_deteccion": "Pide DOS datos: Folio (el de la linea Folio:) y Codigo (el corto de 3-4 digitos). El FolioCV que va en medio NO sirve y se parece mucho al folio."
       },
       "notas_desarrollo": "Verificado en vivo el 08-sep-2026: #323 San Kisstolo (folio 5032700, codigo 2259, $2,500 -> factura SK123797) y #340 Palo Verde (folio 3846065, codigo 5459, $1,090.05 -> factura Ai176479).\n\nLA FORMA DE PAGO DEBE COINCIDIR CON LA QUE REGISTRO LA ESTACION, no con el voucher: los dos tickets traian voucher de tarjeta de debito y elegir Tarjeta de debito devolvio \"Atencion Favor de Revisar la Forma de Pago ! Not valid!\" en AMBOS; los dos decian \"VENTA DE CONTADO\" y con Efectivo timbraron a la primera. El bot intenta lo del ticket y cae a Efectivo.\n\nCADA ESTACION LLEVA SU PROPIO PADRON DE CLIENTES: estar dado de alta en una no sirve para las demas. El alta pide solo datos fiscales del receptor, sin usuario ni contrasena. Y los datos guardados pueden estar MAL — en Palo Verde GPN tenia municipio \"cajeme\" (Sonora) siendo de Culiacan, Sinaloa; el bot los corrige antes de timbrar.\n\nEntrega: el PDF queda en {base}/FE-PDF/{YYYYMM}/{RFC_EMISOR}_S{SERIE}_{FOLIO8}_{RFC_RECEPTOR}.pdf (verificado, HTTP 200) y aparece como src del iframe final. El XML NO tiene URL: solo sale por el postback de #btnXML. El CFDI se manda ademas al correo de la ficha del cliente, que NO es el buzon de captura, asi que no se puede depender de IMAP."
+    },
+    "casaley": {
+      "nombre": "Casa Ley (supermercados)",
+      "bot": null,
+      "estado": "mapeado_sin_bot",
+      "url_base": "https://aplicaciones.casaley.com.mx/facturacionelectronica/CapturaFacturacion.aspx",
+      "tecnologia": "ASP.NET WebForms. Sin captcha. Pide solo RFC + ticket de 23 digitos + total; los datos fiscales los trae del RFC.",
+      "stealth": true,
+      "comercios": [
+        "Casa Ley SAPI de CV",
+        "Ley",
+        "sucursales LEY de Sinaloa, Sonora y Baja California"
+      ],
+      "deteccion": {
+        "por_portal_field": "casaley",
+        "por_texto_ocr": [
+          "casa ley",
+          "aplicaciones.casaley.com.mx",
+          "CLE810525EA1"
+        ],
+        "por_comercio": [
+          "casa ley",
+          "ley "
+        ],
+        "por_url_qr": [
+          "casaley.com.mx"
+        ],
+        "nota_deteccion": "El unico dato de facturacion es un numero de 23 digitos que va DENTRO del codigo de barras."
+      },
+      "notas_desarrollo": "⚠️ EL DATO CLAVE SOLO EXISTE EN EL CODIGO DE BARRAS. La ayuda del portal dice que el numero de 23 digitos va \"bajo el codigo de barras\", pero en los tickets reales ESE RENGLON NO SE IMPRIME: debajo del codigo solo hay papel en blanco (comprobado en el #305 ampliando la foto). Hay que DECODIFICAR el Code 128 de la imagen. Con zxing-cpp sale a la primera. Formato verificado contra el ticket #305: sucursal(4) + transaccion(8, con cero a la izquierda) + caja(2) + ticket(4) + fecha(5) => 1051+02016392+04+0070+09051 = 10510201639204007009051.\n\nFlujo (09-sep-2026, #305 timbrado en vivo, $224.70): CapturaFacturacion.aspx pide RFC + ticket + total -> InformacionCliente.aspx trae los datos fiscales del RFC (hay que elegir Uso CFDI y CONFIRMAR el correo) -> boton Siguiente que abre el modal #Modal-Facturar -> #btnFacturar (SI) -> VistaFactura.aspx con la vista preliminar -> #btnGenerarFE -> otro modal -> \"La factura fue generada con exito\".\n\n⚠️ LOS MODALES NO SE VEN EN EL TEXTO. Me quede atorado un rato creyendo que el paso de datos fiscales fallaba en silencio: en realidad se habia abierto un modal de confirmacion que el innerText no mostraba. Con una captura de pantalla se vio al instante. En este portal, ante un paso que \"no hace nada\", mirar la pantalla antes que el DOM.\n\nEntrega: botones Descargar XML/PDF, ambos por __doPostBack (sin URL directa), y el CFDI va al correo de la ficha del cliente, que para GPN es GASTOSCULIACAN@GMAIL.COM y NO el buzon de captura.\n\nPlazo: 30 dias naturales dentro del periodo fiscal."
     }
   },
   "fusionados": {

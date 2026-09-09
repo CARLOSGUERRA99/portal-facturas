@@ -29,6 +29,34 @@ function makeLog(portal, ticketId) {
 // ─────────────────────────────────────────────
 // buildContext — toda la lógica de fallback vive aquí
 // ─────────────────────────────────────────────
+// La URL del ticket solo GANA cuando aporta algo que el config no puede saber:
+// otro host (NexusFuel da un subdominio POR ESTACIÓN y cada uno solo conoce sus
+// tickets) o una ruta propia. Si el OCR copió la portada pelona, manda el
+// url_base del config, que apunta al formulario y no a la home.
+//
+// Sin esto, el ticket #330 de ARCO traía "https://www.buzonfacturas.com/" y el
+// motor lo prefería sobre el url_base: entraba a la portada en vez de a
+// GenerarCFDI, y encima por el host con "www", que desde Browserless tarda
+// 17 s contra 2.5 s del host sin "www" — bastante para reventar el timeout de
+// 30 s del portal. Se caía cuatro veces seguidas con "Navigation timeout"
+// mientras el mismo flujo pasaba con el #327, cuya URL no traía "www".
+function elegirUrl(portalUrl, config) {
+  const base = config.url_base || '';
+  if (!portalUrl || !config.dominio || !portalUrl.includes(config.dominio)) return base;
+  if (!base) return portalUrl;
+  try {
+    const u = new URL(/^https?:\/\//i.test(portalUrl) ? portalUrl : `https://${portalUrl}`);
+    const b = new URL(base);
+    const rutaPropia = u.pathname && u.pathname !== '/' && u.pathname !== b.pathname;
+    // "www." no cuenta como host distinto: es el MISMO portal, solo que lento.
+    const host = (h) => h.replace(/^www\./i, '').toLowerCase();
+    const hostPropio = host(u.hostname) !== host(b.hostname);
+    return (rutaPropia || hostPropio) ? portalUrl : base;
+  } catch {
+    return base;
+  }
+}
+
 function buildContext(datos, config, selectors) {
   const parseFecha = (f) => {
     if (!f) return new Date().toISOString().split('T')[0];
@@ -47,9 +75,7 @@ function buildContext(datos, config, selectors) {
   return {
     ticketId:    String(datos.ticketId || ''),
     portal:      config.id || datos.portal || '',
-    url: (datos.portalUrl && config.dominio && datos.portalUrl.includes(config.dominio))
-           ? datos.portalUrl
-           : (config.url_base || ''),
+    url: elegirUrl(datos.portalUrl, config),
     rfc:           String(datos.rfc           || ''),
     razonSocial:   String(datos.razonSocial   || ''),
     regimenFiscal: String(datos.regimenFiscal || config.defaults?.regimenFiscal || '626'),

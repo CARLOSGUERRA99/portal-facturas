@@ -52,7 +52,14 @@ async function verificarCodigo(page, context) {
 
 // ── Recuperar factura existente desde /CFDI/DescargarFactura ─────────────────
 async function recuperarExistente(page, context) {
-  await page.goto('https://buzonfacturas.com/CFDI/DescargarFactura', { waitUntil: 'load', timeout: 30000 });
+  // ⚠️ 'load' + 30s NO alcanza: buzonfacturas.com responde en menos de medio
+  // segundo desde fuera, pero desde Browserless ni con 45s termina de cargar
+  // todos sus subrecursos. El ticket #330 moría aquí una y otra vez con
+  // "Navigation timeout of 30000 ms", justo DESPUÉS de que el portal ya había
+  // dicho "ya facturado" — o sea que el CFDI existía y el error hacía pensar
+  // que el portal estaba caído. Con domcontentloaded basta: lo único que se
+  // necesita de esta página es su formulario.
+  await page.goto('https://buzonfacturas.com/CFDI/DescargarFactura', { waitUntil: 'domcontentloaded', timeout: 90000 });
   await page.waitForTimeout(1500);
 
   const rfcInput = await page.$('input[name="Rfc"], input#Rfc, input[placeholder*="RFC"]');
