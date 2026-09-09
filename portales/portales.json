@@ -1597,6 +1597,35 @@
         "nota_deteccion": "El unico dato de facturacion es un numero de 23 digitos que va DENTRO del codigo de barras."
       },
       "notas_desarrollo": "⚠️ EL DATO CLAVE SOLO EXISTE EN EL CODIGO DE BARRAS. La ayuda del portal dice que el numero de 23 digitos va \"bajo el codigo de barras\", pero en los tickets reales ESE RENGLON NO SE IMPRIME: debajo del codigo solo hay papel en blanco (comprobado en el #305 ampliando la foto). Hay que DECODIFICAR el Code 128 de la imagen. Con zxing-cpp sale a la primera. Formato verificado contra el ticket #305: sucursal(4) + transaccion(8, con cero a la izquierda) + caja(2) + ticket(4) + fecha(5) => 1051+02016392+04+0070+09051 = 10510201639204007009051.\n\nFlujo (09-sep-2026, #305 timbrado en vivo, $224.70): CapturaFacturacion.aspx pide RFC + ticket + total -> InformacionCliente.aspx trae los datos fiscales del RFC (hay que elegir Uso CFDI y CONFIRMAR el correo) -> boton Siguiente que abre el modal #Modal-Facturar -> #btnFacturar (SI) -> VistaFactura.aspx con la vista preliminar -> #btnGenerarFE -> otro modal -> \"La factura fue generada con exito\".\n\n⚠️ LOS MODALES NO SE VEN EN EL TEXTO. Me quede atorado un rato creyendo que el paso de datos fiscales fallaba en silencio: en realidad se habia abierto un modal de confirmacion que el innerText no mostraba. Con una captura de pantalla se vio al instante. En este portal, ante un paso que \"no hace nada\", mirar la pantalla antes que el DOM.\n\nEntrega: botones Descargar XML/PDF, ambos por __doPostBack (sin URL directa), y el CFDI va al correo de la ficha del cliente, que para GPN es GASTOSCULIACAN@GMAIL.COM y NO el buzon de captura.\n\nPlazo: 30 dias naturales dentro del periodo fiscal."
+    },
+    "g500": {
+      "nombre": "G500 Network (Servicio Gastur y estaciones G500)",
+      "bot": "g500.js",
+      "estado": "activo_con_limitacion",
+      "url_base": "https://g500facturagas.azurewebsites.net/",
+      "tecnologia": "ControlGAS sobre Azure. Login con usuario/contraseña (G500_USER/G500_PASS/G500_PERMISO_CRE en .env).",
+      "stealth": true,
+      "comercios": [
+        "Servicio Gastur SA de CV",
+        "estaciones G500 Network"
+      ],
+      "deteccion": {
+        "por_portal_field": "g500",
+        "por_texto_ocr": [
+          "g500facturagas",
+          "g500network",
+          "servicio gastur"
+        ],
+        "por_comercio": [
+          "gastur",
+          "g500"
+        ],
+        "por_url_qr": [
+          "g500facturagas.azurewebsites.net"
+        ],
+        "nota_deteccion": "El folio NO es el de la linea \"FOLIO :\" — es el numero de 8 digitos entre parentesis despues de la hora. Lo contrario que en facturagas."
+      },
+      "notas_desarrollo": "Facturar SI esta automatizado (bots/g500.js). Consultar lo timbrado tambien: scripts/g500-descargar-cfdi.js entra a misFacturas.aspx y lista folio, monto, estatus y fecha — el monto y el estatus van en columnas display:none, asi que hay que leer textContent celda por celda y sin el monto no se puede emparejar cada factura con su ticket.\n\n🛑 BAJAR EL XML/PDF NO SE PUEDE AUTOMATIZAR, y no por un problema tecnico. El click SI llega al boton (verificado con un listener: registra \"IMG src=img/fg-nw/xml.png\"); lo que aparece despues es \"Por favor, marque la casilla para verificar que no es un robot\". Es una verificacion anti-bot delante de la descarga y no se marca. Antes de dar con esto se probaron sin exito click sintetico, click real sobre el <button> y sobre el <img>, captura de respuestas HTTP, hook de createObjectURL, vigilancia de ventanas nuevas y Browser.setDownloadBehavior por CDP: ninguna podia funcionar porque no habia descarga que capturar.\n\nEn la practica: el bot factura, el script lista, y los archivos los baja una persona (dos clicks) o se piden por correo. ⚠️ Ademas G500_USER/G500_PASS NO estan puestas en Railway — por eso en produccion el bot falla con \"faltan credenciales\" aunque localmente funcione."
     }
   },
   "fusionados": {

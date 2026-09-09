@@ -13,6 +13,23 @@
  * innerText no los trae; hay que leer textContent celda por celda. Sin el monto
  * no se puede emparejar cada factura con su ticket.
  *
+ * 🛑 LA DESCARGA NO SE PUEDE AUTOMATIZAR — Y NO ES UN PROBLEMA TECNICO.
+ * El click SI llega al boton (verificado con un listener en la pagina: registra
+ * "IMG src=img/fg-nw/xml.png"). Lo que pasa despues es que el portal muestra
+ * "Por favor, marque la casilla para verificar que no es un robot." — una
+ * verificacion anti-bot delante de la descarga. No se marca esa casilla: seria
+ * afirmar que no somos un bot, y en este proyecto eso no se hace (misma regla
+ * que con el reCAPTCHA de OXXO GAS).
+ *
+ * Antes de dar con esto se probo, sin exito y sin entender por que: click
+ * sintetico, click real de Puppeteer sobre el <button> y sobre el <img>,
+ * captura de respuestas HTTP, hook de createObjectURL, vigilancia de ventanas
+ * nuevas y Browser.setDownloadBehavior por CDP. Ninguna podia funcionar: no
+ * habia descarga que capturar, habia una casilla esperando.
+ *
+ * Asi que este script LISTA (que es lo util: folio, monto, estatus y fecha para
+ * emparejar) y los archivos los baja una persona con dos clicks.
+ *
  * Uso:
  *   node scripts/g500-descargar-cfdi.js                → solo lista
  *   node scripts/g500-descargar-cfdi.js W65440 W65441  → baja esas
