@@ -111,7 +111,23 @@ async function facturarEnerfuelTech({ referencia, razonSocial, rfc, codigoPostal
     let texto = await page.evaluate(() => document.body.innerText);
     if (/no se encontr[oó] el consumo/i.test(texto)) {
       await browser.close();
-      return { ok: false, error_code: "datos_invalidos", msg: `Enerfuel Tech: no se encontró el consumo para la referencia ${referencia} (ticket vencido o ya facturado a público en general)` };
+      // ⚠️ El mensaje ANTES decía "(ticket vencido o ya facturado a público en
+      // general)". Era una conclusión, no un hecho, y mandaba al humano por el
+      // camino equivocado: en el ticket #387 el consumo seguía vivo y lo único
+      // malo era UN par de caracteres del verificador (impreso "…14EAD", leído
+      // "…14E40"). Comprobado en vivo: con la referencia buena el portal
+      // devuelve el consumo; con la del OCR, "No hay consumo seleccionado".
+      // El portal solo dice que no lo encuentra — la causa más frecuente, con
+      // diferencia, es la lectura del dato, no el plazo.
+      const cola = String(referencia).slice(-4);
+      return {
+        ok: false,
+        error_code: "datos_invalidos",
+        msg: `Enerfuel Tech: el portal no encontró ningún consumo con la referencia ${referencia}. ` +
+             `Causa más probable: un carácter mal leído, sobre todo en el verificador final "${cola}" ` +
+             `(A↔4, D↔0/O, S↔5, B↔8, I↔1) — compáralo con la foto del ticket antes de darlo por vencido. ` +
+             `Solo si la referencia coincide letra por letra con lo impreso cabe concluir que está fuera de plazo o ya facturado a público en general.`,
+      };
     }
     // "El consumo no es facturable" — mensaje DISTINTO al de arriba, visto en
     // vivo en el ticket #324. El portal deja el panel "Mis datos fiscales" con

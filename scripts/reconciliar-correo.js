@@ -174,7 +174,30 @@ const parseJson = (v) => {
                 // razones sociales conocidas: hay cadenas que facturan a nombre
                 // de una sociedad que no lleva la marca por ningún lado, y sin
                 // esto TODAS sus facturas se quedaban fuera para siempre.
-                const palabras = String(cand.comercio || '').toUpperCase().split(/[^A-ZÁÉÍÓÚÑ]+/).filter((p) => p.length > 4);
+                // ⚠️ LAS PALABRAS GENÉRICAS NO PRUEBAN NADA, Y CASI CUESTAN CARO.
+                //
+                // El 11-sep-2026 el CFDI de "ESTACION DE SERVICIO PUERTA GRANDE"
+                // ($1,000, ticket #380) se asignó al ticket #342 de "G500 -
+                // Servicio Gastur SA de CV". Los dos importes eran $1,000 y la
+                // comprobación de parecido dio el visto bueno porque ambos
+                // nombres contienen la palabra "SERVICIO".
+                //
+                // El resultado es lo peor que puede pasar aquí: el ticket
+                // equivocado queda cerrado con la factura de otro, el de verdad
+                // sigue "pendiente", y como el importe cuadra nadie lo nota.
+                // Medio catálogo de gasolineras se llama "ESTACION DE SERVICIO
+                // X" o "SERVICIO Y", así que estas palabras emparejan cualquier
+                // cosa con cualquier cosa.
+                const GENERICAS = new Set([
+                  'SERVICIO', 'SERVICIOS', 'ESTACION', 'ESTACIONES', 'GASOLINERA', 'GASOLINERAS',
+                  'COMERCIAL', 'COMERCIALIZADORA', 'GRUPO', 'CORPORATIVO', 'OPERADORA', 'DISTRIBUIDORA',
+                  'COMBUSTIBLES', 'ENERGIA', 'ENERGETICOS', 'PETROLEOS', 'AUTOSERVICIO', 'SUPER',
+                  'CENTRO', 'NACIONAL', 'MEXICANA', 'MEXICO', 'SADECV', 'RLDECV',
+                ]);
+                const palabras = String(cand.comercio || '')
+                  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+                  .toUpperCase().split(/[^A-Z0-9]+/)
+                  .filter((p) => p.length > 4 && !GENERICAS.has(p));
                 const emisorUp = nombreEmisor.toUpperCase();
                 const comercioUp = String(cand.comercio || '').toUpperCase();
                 const aliasOk = ALIAS_EMISOR.some(([marca, razon]) =>
@@ -182,9 +205,19 @@ const parseJson = (v) => {
                 if (aliasOk) {
                   console.log(`   🏷️ alias conocido: "${nombreEmisor.slice(0, 40)}" es la razón social de "${cand.comercio}"`);
                 }
-                if (!aliasOk && palabras.length && !palabras.some((p) => emisorUp.includes(p))) {
+                // `palabras.length` en la condición era un BYPASS silencioso: si
+                // el comercio no dejaba ninguna palabra distintiva (porque todas
+                // eran genéricas, o porque el OCR solo guardó "Gasolinera"), la
+                // comprobación entera se saltaba y se aceptaba cualquier emisor.
+                // Ahora la falta de palabras distintivas NO abre la puerta: la
+                // cierra, y hace falta un alias o --emisor-ok.
+                const pareceElMismo = aliasOk || palabras.some((p) => emisorUp.includes(p));
+                if (!pareceElMismo) {
                   if (EMISOR_OK.includes(cand.id)) {
                     console.log(`   🔓 --emisor-ok: se acepta "${nombreEmisor.slice(0, 40)}" para el ticket #${cand.id} pese a no parecerse al comercio`);
+                  } else if (!palabras.length) {
+                    console.log(`   ⚠️ $${total}: el comercio del ticket #${cand.id} ("${String(cand.comercio).slice(0, 40)}") no tiene ninguna palabra distintiva con la que comparar al emisor "${nombreEmisor.slice(0, 40)}" — se omite por seguridad (usa --emisor-ok ${cand.id} si lo has verificado)`);
+                    continue;
                   } else {
                     console.log(`   ⚠️ $${total}: el emisor "${nombreEmisor.slice(0, 40)}" no se parece al comercio del ticket #${cand.id} ("${String(cand.comercio).slice(0, 40)}") — se omite por seguridad`);
                     continue;

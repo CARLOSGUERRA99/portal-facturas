@@ -7,8 +7,16 @@
 //   rindemas5.dyndns.org:86       SAN KISSTOLO ES04310
 //   rindemas6.dyndns.org:88       CEUS        ES14676
 //   palov966facturas.ddns.net     PALO VERDE  ES9666
+//   radecsalcido.dyndns.org       SUPER SERVICIO SALCIDO (Sonoyta, Son.) ES1821
 // El catálogo de las seis "rindemas" está en www.rindemas.mx; las de otros
-// dueños (Palo Verde) publican el suyo en su propia web. SIN captcha.
+// dueños (Palo Verde, Salcido) publican el suyo en su propia web. SIN captcha.
+// El de Salcido sale del <a> de www.gruposalcido.com.mx (el sitio impreso en el
+// ticket) y es el único HTTPS del catálogo.
+//
+// ⚠️ NO todas las estaciones permiten el alta por web. Salcido pinta
+// #btnAltaEmpresa con disabled="disabled" desde el servidor: hay que estar ya
+// registrado ("SOLICITE SU FACTURA EN OFICINA … SI USTED YA SE ENCUENTRA
+// REGISTRADO O UTILICE NUESTRA PAGINA", dice su propio ticket).
 //
 // Reconocimiento real (08-sep-2026, cuenta real GPN, dos tickets timbrados en
 // vivo):
@@ -63,6 +71,11 @@ const ESTACIONES = [
   { base: "http://rindemas5.dyndns.org:86", num: "04310", nombre: "SAN KISSTOLO" },
   { base: "http://rindemas6.dyndns.org:88", num: "14676", nombre: "CEUS" },
   { base: "http://palov966facturas.ddns.net", num: "9666", nombre: "PALO VERDE" },
+  // Grupo Salcido (Sonoyta, Sonora). El ticket imprime www.gruposalcido.com.mx y
+  // esa web publica el DDNS real (verificado en vivo 11-sep-2026: la portada del
+  // portal dice "SUPER SERVICIO SALCIDO (SERV. SALCIDO) — Sonoyta, Sonora —
+  // Tel.: 6515121091", los mismos datos que el ticket). Ojo: es HTTPS, no HTTP.
+  { base: "https://radecsalcido.dyndns.org", num: "1821", nombre: "SALCIDO" },
 ];
 
 function resolverBase({ portalUrl, estacion, comercio }) {
@@ -136,6 +149,13 @@ async function facturarCadisa({
   }
   const texto = () => page.evaluate(() => document.body.innerText.replace(/\s+/g, " "));
   const existe = (id) => page.evaluate((i) => !!document.getElementById(i), id);
+  // Ojo: clickId() devuelve true aunque el boton este disabled (el .click() de un
+  // input deshabilitado no hace nada y no lanza), asi que hay que preguntarlo
+  // aparte. Ver el caso de SALCIDO mas abajo.
+  const deshabilitado = (id) => page.evaluate((i) => {
+    const e = document.getElementById(i);
+    return !!e && (e.disabled === true || e.getAttribute("disabled") !== null);
+  }, id);
   const clickId = (id) => page.evaluate((i) => { const e = document.getElementById(i); if (!e) return false; e.click(); return true; }, id);
   const escribir = (id, v) => page.evaluate((i, val) => {
     const e = document.getElementById(i);
@@ -180,6 +200,24 @@ async function facturarCadisa({
     await sleep(7000);
 
     if (await existe("btnAltaEmpresa")) {
+      // No todas las estaciones dejan darse de alta desde la web. SALCIDO
+      // (ES 1821, Sonoyta) devuelve el boton con disabled="disabled" y
+      // class="aspNetDisabled" desde el SERVIDOR — es a proposito: el ticket
+      // dice "SOLICITE SU FACTURA EN OFICINA … SI USTED YA SE ENCUENTRA
+      // REGISTRADO O UTILICE NUESTRA PAGINA PARA FACTURARSE USTED MISMO". El
+      // padron se da de alta en la estacion, no aqui. Sin esta comprobacion el
+      // bot "pulsaba" el boton (clickId devuelve true igual), no pasaba nada y
+      // el error que salia era el generico "no se llegó al formulario del
+      // ticket", que no dice a nadie que hay que ir a darse de alta.
+      if (await deshabilitado("btnAltaEmpresa")) {
+        await screenshot("alta_deshabilitada");
+        await browser.close();
+        return {
+          ok: false,
+          error_code: "datos_invalidos",
+          msg: `CADISA/RADEC: el RFC ${rfc} no está dado de alta en esta estación (${comercio || estacion || base}) y ESTA estación tiene el alta por web deshabilitada (${PORTAL}). Hay que registrar al cliente en la gasolinera (tel. del ticket) antes de poder autofacturar; el bot no puede darlo de alta solo.`,
+        };
+      }
       console.log("   RFC no registrado en esta estación — dándolo de alta...");
       await clickId("btnAltaEmpresa");
       await sleep(7000);
