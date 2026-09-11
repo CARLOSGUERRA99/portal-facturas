@@ -100,6 +100,18 @@
       <select id="filtro-mes" onchange="renderFacturas()" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:0.85rem;background:white;color:var(--text);outline:none;cursor:pointer;">
         <option value="">Todos los meses</option>
       </select>
+
+      <select id="filtro-formato" style="padding:8px 14px;border:1.5px solid var(--border);border-radius:10px;font-family:inherit;font-size:0.85rem;background:white;color:var(--text);outline:none;cursor:pointer;">
+        <option value="ambos">XML y PDF</option>
+        <option value="pdf">Solo PDF</option>
+        <option value="xml">Solo XML</option>
+      </select>
+
+      <button id="btn-descargar-zip" onclick="descargarZip()"
+        style="padding:8px 16px;border:none;border-radius:10px;font-family:inherit;font-size:0.85rem;font-weight:700;background:var(--primary,#111);color:white;cursor:pointer;">
+        ⬇ Descargar ZIP
+      </button>
+      <span id="zip-estado" style="font-size:0.8rem;color:var(--text-muted);"></span>
     </div>
 
     <div class="facturas-card">
@@ -283,6 +295,10 @@
         return;
       }
 
+      // Se recuerda qué facturas se ven ahora mismo: el ZIP sin selección baja
+      // exactamente lo que hay en pantalla, no "todo". Si el usuario filtró
+      // septiembre y le da a descargar, espera septiembre.
+      _visibles = facturas.map(f => f.id);
       document.getElementById('facturas-count').textContent = `${facturas.length} factura${facturas.length !== 1 ? 's' : ''}`;
 
       lista.innerHTML = facturas.map(f => {
@@ -313,19 +329,70 @@
             ${_misResidentes.map(r => `<option value="${r.id}" ${f.residente_id == r.id ? 'selected' : ''}>${r.nombre}</option>`).join('')}
           </select>` : '';
 
+        // Aviso visible cuando falta el PDF: el CFDI válido es el XML, pero el
+        // contador pide el PDF, y sin este aviso la carencia solo se descubre al
+        // abrir el ZIP.
+        const avisoPdf = (f.xml_url && !f.pdf_url)
+          ? `<span title="Esta factura no tiene PDF. El CFDI válido es el XML." style="font-size:0.72rem;color:#b45309;font-weight:700;">sin PDF</span>`
+          : '';
+
         return `
           <div class="factura-row">
+            <label style="display:flex;align-items:center;padding:0 10px 0 2px;cursor:pointer;">
+              <input type="checkbox" class="chk-factura" value="${f.id}" onchange="actualizarSeleccion()" style="width:16px;height:16px;cursor:pointer;">
+            </label>
             <div class="factura-main">
               <div class="factura-name">${f.comercio || 'Comercio'}</div>
               <div class="factura-meta">${meta}</div>
             </div>
             <div class="factura-right">
+              ${avisoPdf}
               ${xmlBtn}
               ${pdfBtn}
               ${residenteSelect}
             </div>
           </div>`;
       }).join('');
+      actualizarSeleccion();
+    }
+
+    // ── Selección y descarga en ZIP ──────────────────────────────────────────
+    let _visibles = [];
+
+    function seleccionadas() {
+      return [...document.querySelectorAll('.chk-factura:checked')].map(c => parseInt(c.value, 10));
+    }
+
+    function actualizarSeleccion() {
+      const n = seleccionadas().length;
+      const btn = document.getElementById('btn-descargar-zip');
+      if (!btn) return;
+      btn.textContent = n ? `⬇ Descargar ${n} seleccionada${n !== 1 ? 's' : ''}` : '⬇ Descargar ZIP';
+    }
+
+    function descargarZip() {
+      const sel = seleccionadas();
+      const mes = document.getElementById('filtro-mes').value;
+      const formato = document.getElementById('filtro-formato').value;
+      const estado = document.getElementById('zip-estado');
+
+      // Sin nada marcado se baja lo que está a la vista (el filtro de mes); con
+      // algo marcado, solo eso. Es la diferencia entre "dame septiembre" y
+      // "dame estas tres".
+      const params = new URLSearchParams();
+      if (sel.length) params.set('ids', sel.join(','));
+      else if (mes) params.set('mes', mes);
+      if (formato && formato !== 'ambos') params.set('formato', formato);
+
+      if (!sel.length && !mes && _visibles.length > 40 &&
+          !confirm(`Vas a descargar ${_visibles.length} facturas (todas). ¿Continuar?`)) return;
+
+      estado.textContent = 'Preparando ZIP…';
+      // Descarga por navegación directa: el servidor va escribiendo el ZIP
+      // mientras baja cada archivo de R2, así que con muchas facturas tarda y no
+      // conviene tenerlo en memoria con fetch().
+      window.location = '/api/facturas/descargar-zip?' + params.toString();
+      setTimeout(() => { estado.textContent = ''; }, 6000);
     }
 
     initNav();

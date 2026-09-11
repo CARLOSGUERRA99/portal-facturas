@@ -1634,6 +1634,118 @@ app.get("/api/facturas", auth, async (req, res) => {
   }
 });
 
+// ── DESCARGAR FACTURAS EN ZIP ────────────────────────────────────────────────
+//
+// El contador pide "los CFDI de septiembre", no "todos los CFDI". Bajarlos de
+// uno en uno con los botones XML/PDF de la lista es lo que había, y con 30
+// facturas al mes deja de ser viable — además de que se mezclan los meses en la
+// carpeta de descargas y luego no se sabe cuáles ya se entregaron.
+//
+// Filtros (todos opcionales y combinables):
+//   ?mes=2026-09        un mes exacto
+//   ?desde=&hasta=      rango YYYY-MM-DD
+//   ?ids=12,15,18       solo esas facturas (lo que el usuario marcó a mano)
+//   ?formato=pdf|xml    por defecto los dos
+//
+// ⚠️ El mes se toma de `fecha_timbrado`, NO de `creado`. `creado` es cuándo
+// nuestro sistema guardó la fila, y una factura de agosto recuperada en
+// septiembre tiene creado=septiembre: saldría en el mes equivocado y el contador
+// la declararía fuera de periodo. Si falta fecha_timbrado (facturas viejas) se
+// cae a `creado`, que es lo único que hay.
+app.get("/api/facturas/descargar-zip", auth, async (req, res) => {
+  try {
+    const { mes, desde, hasta, ids, formato } = req.query;
+    const alcance = filtroAlcance(req, "f.user_id");
+    const cond = [alcance.sql];
+    const params = [...alcance.params];
+
+    const fechaSql = "COALESCE(f.fecha_timbrado, f.creado)";
+    if (mes && /^\d{4}-\d{2}$/.test(mes)) {
+      cond.push(`DATE_FORMAT(${fechaSql}, '%Y-%m') = ?`);
+      params.push(mes);
+    }
+    if (desde && /^\d{4}-\d{2}-\d{2}$/.test(desde)) { cond.push(`${fechaSql} >= ?`); params.push(`${desde} 00:00:00`); }
+    if (hasta && /^\d{4}-\d{2}-\d{2}$/.test(hasta)) { cond.push(`${fechaSql} <= ?`); params.push(`${hasta} 23:59:59`); }
+
+    const listaIds = String(ids || '').split(',').map((n) => parseInt(n, 10)).filter(Boolean);
+    if (listaIds.length) {
+      cond.push(`f.id IN (${listaIds.map(() => '?').join(',')})`);
+      params.push(...listaIds);
+    }
+
+    const [rows] = await db.query(
+      `SELECT f.id, f.comercio, f.xml_url, f.pdf_url, f.uuid, f.total, f.serie_folio,
+              f.fecha_timbrado, f.creado, f.emisor_nombre, f.receptor_rfc, f.ticket_id
+         FROM facturas f
+        WHERE ${cond.join(' AND ')}
+        ORDER BY ${fechaSql} ASC, f.id ASC`,
+      params
+    );
+    const conArchivo = rows.filter((f) => f.xml_url || f.pdf_url);
+    if (!conArchivo.length) return res.status(404).json({ ok: false, msg: "No hay facturas con archivos en ese periodo" });
+
+    const quiere = (ext) => !formato || formato === 'ambos' || formato === ext;
+
+    // archiver fijado a la 7.x — ver la nota en /api/tickets/descargar-todos.
+    const archiver = require('archiver');
+    const zip = archiver('zip', { zlib: { level: 6 } });
+    const etiqueta = mes || (desde || hasta ? `${desde || 'inicio'}_${hasta || 'hoy'}`
+                                            : (listaIds.length ? 'seleccion' : 'todas'));
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="facturas-${etiqueta}.zip"`);
+    zip.on('error', (e) => { console.error('❌ zip facturas:', e.message); try { res.end(); } catch {} });
+    zip.pipe(res);
+
+    const filas = [['id', 'ticket', 'fecha_timbrado', 'comercio', 'emisor', 'serie_folio', 'total', 'uuid', 'archivos'].join(',')];
+    let nXml = 0, nPdf = 0;
+
+    for (const f of conArchivo) {
+      const fecha = f.fecha_timbrado || f.creado;
+      const ymd = fecha ? new Date(fecha).toISOString().slice(0, 10) : 'sin-fecha';
+      const limpio = String(f.comercio || 'factura')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'factura';
+      // El nombre lleva fecha + comercio + total: así el contador identifica cada
+      // archivo sin abrirlo, que es justo lo que no se puede hacer con un UUID.
+      const base = `${ymd}_${limpio}_${f.total != null ? Number(f.total).toFixed(2) : 's-total'}`;
+      const bajados = [];
+
+      for (const [ext, url] of [['xml', f.xml_url], ['pdf', f.pdf_url]]) {
+        if (!url || !quiere(ext)) continue;
+        try {
+          const r = await fetch(url);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          zip.append(Buffer.from(await r.arrayBuffer()), { name: `${ext.toUpperCase()}/${base}.${ext}` });
+          bajados.push(ext);
+          if (ext === 'xml') nXml++; else nPdf++;
+        } catch (e) {
+          console.error(`⚠️ zip factura #${f.id} ${ext}: ${e.message}`);
+        }
+      }
+
+      filas.push([
+        f.id, f.ticket_id ?? '', fecha ? new Date(fecha).toISOString().slice(0, 19).replace('T', ' ') : '',
+        `"${String(f.comercio || '').replace(/"/g, '""')}"`,
+        `"${String(f.emisor_nombre || '').replace(/"/g, '""')}"`,
+        f.serie_folio || '', f.total ?? '', f.uuid || '', bajados.join('+'),
+      ].join(','));
+    }
+
+    // BOM al principio para que Excel abra el CSV con los acentos bien.
+    zip.append('﻿' + filas.join('\r\n'), { name: 'INDICE.csv' });
+    zip.append(
+      `Facturas exportadas: ${conArchivo.length}\r\n` +
+      `XML incluidos: ${nXml}\r\nPDF incluidos: ${nPdf}\r\n` +
+      `Periodo: ${etiqueta}\r\nGenerado: ${new Date().toISOString().slice(0, 19).replace('T', ' ')}\r\n` +
+      (nPdf < nXml ? `\r\nAVISO: ${nXml - nPdf} factura(s) no tienen PDF. El CFDI valido es el XML;\r\nel PDF es solo su representacion impresa y se puede pedir al comercio.\r\n` : ''),
+      { name: 'RESUMEN.txt' }
+    );
+    await zip.finalize();
+  } catch (e) {
+    if (!res.headersSent) res.status(500).json({ ok: false, msg: e.message });
+  }
+});
+
 // ── NOTIFICACIONES ──
 app.get("/api/notificaciones", auth, async (req, res) => {
   try {
