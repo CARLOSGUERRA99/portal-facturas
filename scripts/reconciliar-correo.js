@@ -209,8 +209,23 @@ const parseJson = (v) => {
                   [JSON.stringify(ocr), cand.id]
                 );
                 await db.query(
-                  "INSERT INTO facturas (user_id, ticket_id, comercio, xml_url, pdf_url, status) VALUES (?,?,?,?,?,'completado')",
-                  [cand.userId, cand.id, String(cand.comercio || nombreEmisor || 'Comercio').slice(0, 50), xmlUrl, pdfUrl]
+                  // ⚠️ Se guardan TAMBIÉN los datos fiscales del CFDI, no solo las
+                  // URLs. Este INSERT solo ponía ticket_id + urls, así que 10
+                  // facturas quedaron con uuid, total, emisor y receptor en NULL:
+                  // el archivo estaba, pero cualquier consulta o reporte por UUID
+                  // o por emisor no las encontraba. El XML ya está parseado aquí
+                  // arriba — no costaba nada.
+                  `INSERT INTO facturas (user_id, ticket_id, comercio, xml_url, pdf_url, status,
+                                         uuid, receptor_rfc, emisor_rfc, emisor_nombre, total, serie_folio, fecha_timbrado)
+                   VALUES (?,?,?,?,?,'completado',?,?,?,?,?,?,?)`,
+                  [cand.userId, cand.id, String(cand.comercio || nombreEmisor || 'Comercio').slice(0, 50), xmlUrl, pdfUrl,
+                   uuid || null,
+                   rfcReceptor || null,
+                   (xml.match(/<(?:cfdi:)?Emisor[^>]*\sRfc="([^"]+)"/i) || [])[1] || null,
+                   String(nombreEmisor || '').slice(0, 255) || null,
+                   parseFloat(total) || null,
+                   `${(xml.match(/\sSerie="([^"]+)"/) || [])[1] || ''}${(xml.match(/\sFolio="([^"]+)"/) || [])[1] || ''}`.slice(0, 60) || null,
+                   ((xml.match(/FechaTimbrado="([^"]+)"/) || [])[1] || '').replace('T', ' ').slice(0, 19) || null]
                 );
                 await new Promise((r) => imap.addFlags([uid], ['\\Seen'], () => r()));
                 console.log(`   💾 ticket #${cand.id} → procesado + factura registrada`);
