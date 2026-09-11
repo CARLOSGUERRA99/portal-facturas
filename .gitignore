@@ -4,3 +4,7 @@ uploads/
 .mcp.json
 .aider*
 docs/_tmp-server-endpoints-tickets.js
+
+# Carpeta de trabajo local: capturas de depuracion, descargas y volcados.
+# NUNCA debe subirse: aqui han llegado a caer credenciales y CFDI reales.
+tmp/
