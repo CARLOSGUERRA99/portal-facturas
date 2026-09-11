@@ -224,10 +224,18 @@ const parseJson = (v) => {
                   'COMBUSTIBLES', 'ENERGIA', 'ENERGETICOS', 'PETROLEOS', 'AUTOSERVICIO', 'SUPER',
                   'CENTRO', 'NACIONAL', 'MEXICANA', 'MEXICO', 'SADECV', 'RLDECV',
                 ]);
+                // El umbral de >4 caracteres dejaba fuera las siglas, que son
+                // justo lo MÁS distintivo que tiene un comercio: GMV, ICR, KFC,
+                // OXXO. Con él, el CFDI de "SERVICIO GMV" no casaba con el
+                // ticket "SERVICIO GMV SA DE CV - E01744" — la única palabra que
+                // sobrevivía era "E01744", que el emisor no lleva. Ahora entran
+                // desde 3 caracteres, y lo que se descarta son las genéricas y
+                // los sufijos societarios, que es lo que de verdad no distingue.
+                const SOCIETARIAS = new Set(['SA', 'CV', 'SAB', 'SAPI', 'RL', 'SC', 'SRL', 'DE', 'DEL', 'LA', 'EL', 'LOS', 'LAS', 'Y']);
                 const palabras = String(cand.comercio || '')
                   .normalize('NFD').replace(/[̀-ͯ]/g, '')
                   .toUpperCase().split(/[^A-Z0-9]+/)
-                  .filter((p) => p.length > 4 && !GENERICAS.has(p));
+                  .filter((p) => p.length >= 3 && !GENERICAS.has(p) && !SOCIETARIAS.has(p));
                 const emisorUp = nombreEmisor.toUpperCase();
                 const comercioUp = String(cand.comercio || '').toUpperCase();
                 const aliasOk = ALIAS_EMISOR.some(([marca, razon]) =>
