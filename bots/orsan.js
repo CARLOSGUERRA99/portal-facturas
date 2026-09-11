@@ -86,6 +86,12 @@ async function facturarOrsan({ referencia, folio, estacion, dv, total, rfc, tick
     return false;
   });
 
+  // Se pone en true en el instante en que sale el click que EMITE. A partir de
+  // ahí ningún camino —tampoco el catch— puede devolver un error reintentable:
+  // el reintento de medianoche timbraría un SEGUNDO CFDI del mismo ticket, que
+  // luego hay que cancelar ante el SAT.
+  let timbradoDisparado = false;
+
   try {
     console.log("🔐 Iniciando sesión...");
     await page.goto(`${PORTAL}/#/login-form`, { waitUntil: "networkidle2", timeout: 45000 });
@@ -235,36 +241,84 @@ async function facturarOrsan({ referencia, folio, estacion, dv, total, rfc, tick
     console.log(`   ✔ Ticket encontrado${totalPortal ? ` — $${totalPortal}` : ""}`);
 
     console.log("🧾 Facturando...");
-    const pulsado = await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll("button,[role=button],.dx-button"))
-        .filter((x) => x.offsetParent)
-        .find((x) => /^\s*facturar\s*$/i.test((x.textContent || "").trim()));
-      // El botón queda deshabilitado hasta que hay renglón en la tabla.
-      if (!b || b.classList.contains("dx-state-disabled") || b.disabled) return false;
-      b.click();
-      return true;
-    });
+    // ⚠️ Desde esta línea la factura puede existir. La bandera se pone ANTES del
+    // click y solo se deshace si el evaluate llega a devolver false, que es la
+    // única forma de SABER que no se pulsó nada: si el click navega y el
+    // evaluate revienta, no hay manera de averiguarlo, y entonces el único
+    // error aceptable es uno que no reintente.
+    timbradoDisparado = true;
+    // El click puede cambiar de pantalla en la SPA; sin envolverlo en la espera
+    // de navegación, el page.evaluate siguiente muere con "Execution context was
+    // destroyed", la excepción sube al catch y el catch pedía reintento sobre
+    // una factura que ya se había emitido.
+    const [, pulsado] = await Promise.all([
+      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 20000 }).catch(() => {}),
+      page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("button,[role=button],.dx-button"))
+          .filter((x) => x.offsetParent)
+          .find((x) => /^\s*facturar\s*$/i.test((x.textContent || "").trim()));
+        // El botón queda deshabilitado hasta que hay renglón en la tabla.
+        if (!b || b.classList.contains("dx-state-disabled") || b.disabled) return false;
+        b.click();
+        return true;
+      }),
+    ]);
     if (!pulsado) {
+      // El evaluate terminó y dijo que no llegó a pulsar: no se emitió nada, y
+      // este es el ÚNICO camino posterior al intento en el que reintentar es
+      // seguro.
+      timbradoDisparado = false;
       await screenshot("facturar_deshabilitado");
       await browser.close();
-      return { ok: false, msg: "ORSAN: el botón FACTURAR seguía deshabilitado — el ticket no llegó a cargarse en la tabla" };
+      return { ok: false, error_code: "reintentar_despues", msg: "ORSAN: el botón FACTURAR seguía deshabilitado — el ticket no llegó a cargarse en la tabla. NO se emitió nada." };
     }
-    await sleep(15000);
-    t = await texto();
-    await screenshot("p2_post_facturar");
 
-    if (/error|no se pudo|fall[oó]/i.test(t) && !/exito|generad|timbr/i.test(t)) {
-      await browser.close();
-      return { ok: false, msg: `ORSAN: el portal reportó un problema al timbrar. Pantalla: ${t.slice(0, 220)}` };
-    }
+    // ⚠️ Aquí había un sleep fijo de 15 s y UNA sola lectura de pantalla. El
+    // timbrado pasa por el PAC y a veces tarda más: si el modal "Factura
+    // Guardada Correctamente" salía en el segundo 16, el bot ya había leído una
+    // pantalla sin confirmación y devolvía un {ok:false} sin error_code, que la
+    // cola reintenta a medianoche → segundo CFDI del mismo ticket. Ahora se
+    // espera A QUE PASE ALGO (confirmación o rechazo) con margen de sobra.
+    // El rechazo se busca con frases concretas y no con /error/ a secas: una
+    // palabra suelta del pie de página bastaría para dar "rechazo" en el primer
+    // sondeo y cortar la espera antes de que el portal conteste.
+    const senal = await page.waitForFunction(() => {
+      const p = (document.body.innerText || "").replace(/\s+/g, " ");
+      if (/Factura Guardada Correctamente|Tu Factura se envi[oó]/i.test(p)) return "ok";
+      if (/ya (fue|ha sido|est[áa]) facturad|no se pudo (generar|timbrar|facturar)|error al (generar|timbrar|facturar)|fall[oó] el timbrado/i.test(p)) return "rechazo";
+      return false;
+    }, { timeout: 120000, polling: 1500 }).then((h) => h.jsonValue()).catch(() => null);
+    t = await texto().catch(() => "");
+    await screenshot("p2_post_facturar");
 
     // El resultado sale en un modal: "Factura Guardada Correctamente" + folio
     // (ej. ECA-189501) + "Tu Factura se envió a tu correo electronico".
-    const guardada = /Factura Guardada Correctamente/i.test(t);
+    const guardada = senal === "ok" || /Factura Guardada Correctamente/i.test(t);
     const folioFactura = (t.match(/Factura Guardada Correctamente\s*([A-Z]{2,4}-\d{4,9})/i) || [])[1] || null;
     if (!guardada) {
       await browser.close();
-      return { ok: false, msg: `ORSAN: no apareció la confirmación de timbrado. Pantalla: ${t.slice(0, 220)}` };
+      // ⚠️ Aunque la pantalla diga "ya fue facturado", aquí NO se puede devolver
+      // error_code 'ya_facturado': lib/facturacion.js no tiene rama para ese
+      // código (mirado hoy: solo ticket_vencido, captcha, reintentar_despues,
+      // timbrado_sin_archivos, datos_invalidos y folio_no_disponible), así que
+      // cae en el error genérico y ESE programa reintento a medianoche
+      // (facturacion.js:368 → `reintento_programado = medianoche`, que
+      // lib/imap-job.js:262 vuelve a encolar). Sería un camino reintentable
+      // DESPUÉS del click que emite, justo el que duplica el CFDI. El motivo va
+      // en el msg, para que quien lo lea sepa qué contestó el portal.
+      const yaTenia = /ya (fue|ha sido|est[áa]) facturad/i.test(t);
+      // El click YA salió, así que no cabe un código que reintente (duplicaría
+      // el CFDI) ni un ok:true (no hay ninguna prueba de emisión en pantalla).
+      // Se para y se deja a la vista de una persona, que es exactamente lo que
+      // hace `timbrado_sin_archivos`.
+      const motivo = yaTenia
+        ? "el portal respondió que el ticket YA estaba facturado"
+        : `el portal no confirmó el timbrado en 2 min (${senal === "rechazo" ? "la pantalla trae un rechazo" : "sin señal ninguna"})`;
+      return {
+        ok: false,
+        error_code: "timbrado_sin_archivos",
+        msg: `ORSAN: se pulsó FACTURAR y ${motivo}. NO relanzar el bot: comprobar antes en "Consulta de Facturas" (#/search, cuenta ${process.env.ORSAN_USER}) si el CFDI del ticket ${ref} existe; si existe, bajarlo y asociarlo con scripts/asociar-cfdi.js. Pantalla: ${t.slice(0, 220)}`,
+      };
     }
     console.log(`✅ Factura ${folioFactura || "(sin folio legible)"}`);
 
@@ -284,7 +338,19 @@ async function facturarOrsan({ referencia, folio, estacion, dv, total, rfc, tick
   } catch (e) {
     await screenshot("excepcion");
     await browser.close().catch(() => {});
-    return { ok: false, msg: `ORSAN: ${e.message}` };
+    // Si la excepción saltó DESPUÉS del click que emite, devolver un error
+    // reintentable es peor que no devolver nada: la cola volvería de madrugada y
+    // timbraría un segundo CFDI del mismo ticket. "Execution context was
+    // destroyed" es justo ese caso — el click navegó y el evaluate siguiente se
+    // quedó sin contexto.
+    if (timbradoDisparado) {
+      return {
+        ok: true,
+        procesandoCorreo: true,
+        msg: `ORSAN: el click de FACTURAR ya había salido cuando falló el bot (${e.message}). El portal manda la factura al correo de la cuenta (${process.env.ORSAN_USER}) y queda en "Consulta de Facturas" (#/search). NO RELANZAR: comprobar antes en el portal si el CFDI del ticket ${ref} ya existe.`,
+      };
+    }
+    return { ok: false, error_code: "reintentar_despues", msg: `ORSAN: ${e.message} (no se emitió nada)` };
   }
 }
 

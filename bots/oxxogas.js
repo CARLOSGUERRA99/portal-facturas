@@ -197,6 +197,13 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
     } catch {}
   }
 
+  // ⚠️ Marca de no retorno: se pone a true en la línea inmediatamente anterior
+  // al click de "Facturar Tickets". A partir de ahí el CFDI puede existir ya, y
+  // ningún camino —incluido el catch— puede devolver un error reintentable: la
+  // cola reintenta a medianoche y emitiría un SEGUNDO CFDI al mismo folio, que
+  // luego hay que cancelar ante el SAT.
+  let timbradoDisparado = false;
+
   try {
     const resp = await page.goto("https://facturacion.oxxogas.com/", { waitUntil: "networkidle2", timeout: 30000 });
     await page.waitForTimeout(3500);
@@ -232,7 +239,12 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
       await browser.close();
       return {
         ok: false,
-        msg: `OXXO GAS: la página llegó sin JavaScript (${js.scripts} scripts, jQuery=${js.jquery}). Normalmente pasa por entrar con deep link en vez de por la home — este bot ya entra por la home, así que revisar la sesión.`,
+        // El error_code va explícito: aquí todavía no se ha pulsado nada, así
+        // que reintentar es lo correcto. Sin el campo caería igualmente en el
+        // reintento, pero por omisión y no por decisión — y en este archivo esa
+        // omisión es justo la que causó el problema más abajo.
+        error_code: "reintentar_despues",
+        msg: `OXXO GAS: la página llegó sin JavaScript (${js.scripts} scripts, jQuery=${js.jquery}). Normalmente pasa por entrar con deep link en vez de por la home — este bot ya entra por la home, así que revisar la sesión. No se emitió nada.`,
       };
     }
 
@@ -314,19 +326,76 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
       Array.from(document.querySelectorAll("button")).find(x => /facturar tickets/i.test(x.textContent || "")) || null
     );
     const facturarTicketsEl = facturarTicketsHandle.asElement();
+    // Si el botón no aparece NO salió ningún click: no se emitió nada y el
+    // reintento sigue siendo legítimo (este throw cae en el catch con
+    // timbradoDisparado todavía en false).
     if (!facturarTicketsEl) throw new Error("no se encontró el botón Facturar Tickets");
-    await facturarTicketsEl.click();
-    await page.waitForTimeout(7000);
+
+    // ── EL CLICK QUE TIMBRA ────────────────────────────────────────────────
+    timbradoDisparado = true;
+    await Promise.all([
+      // Esta SPA no navega (la URL nunca cambia, ver cabecera), pero si algún
+      // día lo hiciera el page.evaluate siguiente moriría con "Execution
+      // context was destroyed" y la excepción subiría al catch. OJO: Promise.all
+      // espera a AMBAS promesas, así que —al no haber navegación que lo resuelva
+      // antes— este timeout se paga ENTERO en cada corrida, y son segundos
+      // robados a los 60 s exactos que Browserless le da a la sesión. Por eso es
+      // corto: la espera de verdad la hace el sondeo de aquí abajo, cuyo
+      // evaluate ya tolera un contexto destruido con .catch(() => false).
+      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 2500 }).catch(() => {}),
+      facturarTicketsEl.click(),
+    ]);
+
+    // El portal no imprime ningún mensaje de confirmación: la única señal de
+    // éxito es que el carrito se vacíe (ver cabecera). Se sondea en vez de
+    // dormir fijo para no gastar presupuesto de sesión cuando ya se vació.
+    // La ventana es de 20 s y no de 8 porque el timbrado tarda: las dos corridas
+    // reales del ticket 07 (scripts/oxxogas-ticket07-rapido.js y -lento.js)
+    // esperan 25 s por esta misma señal. Con una ventana corta, un CFDI que se
+    // emitió bien pero tardó 10 s se devuelve como 'timbrado_sin_archivos' y se
+    // queda parado esperando a una persona. Sondear de más no cuesta nada en el
+    // camino feliz: el bucle sale en cuanto el carrito se vacía.
+    let carritoVacio = false;
+    for (let i = 0; i < 20 && !carritoVacio; i++) {
+      carritoVacio = await page
+        .evaluate(() => document.body.innerText.includes("No tiene agregado ningún Ticket"))
+        .catch(() => false);
+      if (!carritoVacio) await page.waitForTimeout(1000);
+    }
     await screenshot("post_facturar");
 
-    const carritoVacio = await page.evaluate(() => document.body.innerText.includes("No tiene agregado ningún Ticket"));
-    if (!carritoVacio) throw new Error("el carrito no se vació tras Facturar Tickets — no se pudo confirmar el éxito");
+    if (!carritoVacio) {
+      // Esto era un `throw` y el catch devolvía {ok:false} SIN error_code, es
+      // decir error genérico ⇒ reintento a medianoche de un ticket cuyo click
+      // de facturar YA había salido. Si el portal llegó a timbrar, ese
+      // reintento emite un segundo CFDI al mismo folio. Se sale sin reintento y
+      // dejando el ticket a la vista de una persona.
+      await browser.close().catch(() => {});
+      return {
+        ok: false,
+        error_code: "timbrado_sin_archivos",
+        msg: `OXXO GAS: se pulsó "Facturar Tickets" (folio ${folio}) pero el carrito no se vació, así que no se pudo confirmar el timbrado ni descargar archivos. NO RELANZAR: comprobar antes a mano en ACCEDER A MIS FACTURAS si el CFDI ya existe.`,
+      };
+    }
 
     // Recuperar el UUID real desde "Mis Facturas" (la fila más reciente para este folio)
     const misFacturasHandle = await page.evaluateHandle(() =>
       Array.from(document.querySelectorAll("a")).find(a => a.textContent.trim() === "ACCEDER A MIS FACTURAS") || null
     );
-    await misFacturasHandle.asElement().click();
+    // asElement() devuelve null si el enlace no está, y el .click() encadenado
+    // reventaba con un TypeError que terminaba en el catch — o sea, pidiendo el
+    // reintento de una factura que en este punto YA está emitida (el carrito se
+    // vació). Se comprueba y se sale sin reintento.
+    const misFacturasEl = misFacturasHandle.asElement();
+    if (!misFacturasEl) {
+      await browser.close().catch(() => {});
+      return {
+        ok: false,
+        error_code: "timbrado_sin_archivos",
+        msg: `OXXO GAS: el CFDI del folio ${folio} se emitió (el carrito se vació) pero no apareció el enlace "ACCEDER A MIS FACTURAS" para bajar los archivos. NO RELANZAR: descargar el XML/PDF a mano desde el portal.`,
+      };
+    }
+    await misFacturasEl.click();
     await page.waitForTimeout(3000);
 
     const enlaces = await page.evaluate((folioMonto) => {
@@ -337,7 +406,16 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
       return xmlA ? xmlA.href : null;
     }, Number(monto).toFixed(2).replace(/\.00$/, ""));
 
-    if (!enlaces) throw new Error("no se pudo ubicar la factura recién generada en Mis Facturas para descargar el XML");
+    // Mismo caso: la factura ya existe, sólo falla la descarga. Era un throw
+    // que acababa en el error genérico y volvía a facturar el ticket de noche.
+    if (!enlaces) {
+      await browser.close().catch(() => {});
+      return {
+        ok: false,
+        error_code: "timbrado_sin_archivos",
+        msg: `OXXO GAS: el CFDI del folio ${folio} se emitió pero no se pudo ubicar su fila en Mis Facturas para descargar el XML. NO RELANZAR: bajar los archivos a mano desde el portal.`,
+      };
+    }
 
     const uuid = enlaces.split("/").pop();
     const cookieHeader = cookies.map(c => `${c.name}=${c.value}`).join("; ");
@@ -346,7 +424,16 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
     const xmlBuffer = xmlResp.ok ? Buffer.from(await xmlResp.arrayBuffer()) : null;
     const pdfBuffer = pdfResp.ok ? Buffer.from(await pdfResp.arrayBuffer()) : null;
 
-    if (!xmlBuffer) throw new Error("no se pudo descargar el XML real de la factura");
+    // El fetch del XML falló pero el CFDI está timbrado y localizado: nunca
+    // reintentar por esto, que es literalmente el caso de 'timbrado_sin_archivos'.
+    if (!xmlBuffer) {
+      await browser.close().catch(() => {});
+      return {
+        ok: false,
+        error_code: "timbrado_sin_archivos",
+        msg: `OXXO GAS: el CFDI del folio ${folio} se emitió (UUID ${uuid}) pero la descarga del XML devolvió HTTP ${xmlResp.status}. NO RELANZAR: bajar el XML/PDF a mano desde Mis Facturas.`,
+      };
+    }
     const uuidReal = extraerUUIDcfdi(xmlBuffer) || uuid;
     const xmlUrl = await subirArchivoR2(xmlBuffer, `facturas/oxxogas_${uuidReal}.xml`, "application/xml");
     const pdfUrl = pdfBuffer ? await subirArchivoR2(pdfBuffer, `facturas/oxxogas_${uuidReal}.pdf`, "application/pdf") : null;
@@ -358,7 +445,26 @@ async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, foli
     console.error("❌ Error en bot OXXO GAS:", err.message);
     await screenshot("error").catch(() => {});
     await browser.close().catch(() => {});
-    return { ok: false, msg: `OXXO GAS: ${err.message}` };
+    // Este catch devolvía {ok:false, msg} SIN error_code y cubre tres fallos
+    // que ocurren DESPUÉS de pulsar "Facturar Tickets" (carrito que no se
+    // vacía, factura no localizada en Mis Facturas, XML que no baja). Sin
+    // error_code el ticket cae en el error genérico, que lo reintenta a
+    // medianoche: un segundo CFDI al mismo folio, que hay que cancelar ante el
+    // SAT. Si el click ya salió se sale sin reintento posible.
+    if (timbradoDisparado) {
+      return {
+        ok: true,
+        procesandoCorreo: true,
+        // Sin `folioGenerado` este aviso se pierde: lib/facturacion.js solo
+        // guarda en error_msg el rastro que arma con folioGenerado/uuid, así que
+        // el ticket pasaría a procesando_correo con error_msg = NULL y nadie
+        // sabría qué folio hay que ir a comprobar a Mis Facturas. Aquí el
+        // identificador con el que se recupera el CFDI es el folio del ticket.
+        folioGenerado: String(folio),
+        msg: `OXXO GAS: el click de "Facturar Tickets" ya había salido cuando falló el bot (${err.message}). NO RELANZAR: comprobar antes en el portal (ACCEDER A MIS FACTURAS, folio ${folio}) si el CFDI ya existe.`,
+      };
+    }
+    return { ok: false, error_code: "reintentar_despues", msg: `OXXO GAS: ${err.message} (no se emitió nada)` };
   }
 }
 

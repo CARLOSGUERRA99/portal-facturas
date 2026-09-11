@@ -27,8 +27,9 @@ const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Portales que ya sabemos que no se pueden cerrar solos: intentarlos gasta una
 // sesión de Browserless para nada. Se listan aparte en el informe.
+// 'littlecaesars' salió de esta lista el 15/08/2026: el reCAPTCHA lo resuelve
+// CapSolver y, si el alta acaba mal, /lc/imprimir/ recupera el CFDI.
 const SIN_SALIDA = {
-  littlecaesars: 'reCAPTCHA v2 — solo con una persona delante',
   carljr: 'ICR no ha subido la venta a su plataforma; no depende de nosotros',
 };
 

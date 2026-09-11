@@ -47,9 +47,25 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     return buffer;
   }
 
+  // ⚠️ ESTA FUNCIÓN SOLO PUEDE CORRER CON EL FOLIO INTERNO EN LA MANO.
+  //
+  // Baja los archivos de la PRIMERA FILA de la tabla de DescargarFactura. Si se
+  // la llama sin folio, esa primera fila es un CFDI CUALQUIERA del RFC — la
+  // factura de OTRO ticket — y se la acaba pegando a este. No es un falso
+  // positivo: es adjuntar el comprobante equivocado, que es peor, porque el
+  // ticket queda "resuelto" con una factura que no le corresponde y nadie lo
+  // vuelve a mirar. El `catch` general la llamaba justo así, con null.
+  //
+  // El portal EXIGE los dos datos (RFC **y** Folio interno): buscar solo por RFC
+  // responde "El dato no puede estar vacío" — comprobado en vivo el 11-sep-2026.
+  // Así que sin folio no hay nada que recuperar y lo honesto es decirlo.
   async function runEstrategiaB(folioHint) {
+    if (!folioHint) {
+      console.log('⛔ Estrategia B cancelada: sin folio interno se bajaría la factura de OTRO ticket');
+      return { ok: false, sinFolio: true, msg: 'Estrategia B necesita el folio interno (BXI-xxxxxxx); sin él, la primera fila de la tabla es la factura de otro ticket.' };
+    }
     try {
-      console.log('📥 Estrategia B — Recuperando desde DescargarFactura...');
+      console.log(`📥 Estrategia B — Recuperando ${folioHint} desde DescargarFactura...`);
       await page.waitForTimeout(2000);
       await page.goto('https://buzonfacturas.com/CFDI/DescargarFactura', {
         waitUntil: 'networkidle2',
@@ -57,24 +73,28 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
       });
       await page.waitForTimeout(1500);
 
-      const rfcInput = await page.$('input[name="Rfc"], input#Rfc, input[placeholder*="RFC"]');
+      // El id real es #RFC en MAYÚSCULAS. Los selectores CSS distinguen
+      // mayúsculas, así que `input#Rfc` no casaba con nada y el RFC nunca se
+      // escribía — el portal contestaba "El dato no puede estar vacío" y parecía
+      // que el problema era otro.
+      const rfcInput = await page.$('input#RFC, input[name="RFC"], input[placeholder*="RFC"]');
       if (rfcInput) {
         await rfcInput.click({ clickCount: 3 });
-        await rfcInput.type(rfc);
+        await rfcInput.type(rfc, { delay: 60 });
       }
 
-      const folio = folioHint || await page.evaluate(() => {
-        const match = document.body.innerText.match(/[A-Z]{2,6}-\d{6,10}/);
-        return match ? match[0] : null;
-      });
+      const folio = folioHint;
 
-      if (folio) {
-        const folioInput = await page.$('input[name="Folio"], input[placeholder*="folio" i], input[placeholder*="Folio"]');
-        if (folioInput) {
-          await folioInput.click({ clickCount: 3 });
-          await folioInput.type(folio);
-        }
+      // El campo se llama FolioInterno, no Folio, y su placeholder es
+      // "Ejemplo: BXI-0123456" — sin la palabra "folio". Los tres selectores
+      // que había (`[name="Folio"]`, `[placeholder*="folio"]`) no casaban con
+      // nada, así que el folio tampoco se escribía nunca.
+      const folioInput = await page.$('input#FolioInterno, input[name="FolioInterno"], input[placeholder*="BXI" i]');
+      if (!folioInput) {
+        throw new Error('no apareció el campo de Folio interno en DescargarFactura');
       }
+      await folioInput.click({ clickCount: 3 });
+      await folioInput.type(folio, { delay: 60 });
 
       await page.evaluate(() => {
         const btn = Array.from(document.querySelectorAll('button, input[type="submit"]'))
@@ -114,6 +134,12 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
       return { ok: false, msg: e.message };
     }
   }
+
+  // Declarados FUERA del try a proposito: el catch los necesita. Antes
+  // folioGenerado era un const dentro del try y en el catch ni existia, asi
+  // que el unico dato con el que se puede recuperar la factura se perdia.
+  let folioGenerado = null;
+  let facturaDisparada = false;
 
   try {
     // PASO 1 — Navegar y RFC
@@ -220,7 +246,10 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     console.log('📧 Correo de captura ingresado');
 
     // PASO 5 — Generar factura
+    // A partir de este click el CFDI puede existir ya: ningún camino posterior
+    // —ni el catch— puede devolver un error reintentable.
     console.log('🧾 PASO 5 — Generando factura...');
+    facturaDisparada = true;
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {}),
       page.evaluate(() => {
@@ -253,7 +282,7 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     }
 
     // Buscar folio en múltiples selectores posibles
-    const folioGenerado = await page.evaluate(() => {
+    folioGenerado = await page.evaluate(() => {
       const candidates = [
         document.querySelector('input#folioFactura'),
         document.querySelector('input[id*="folio" i]'),
@@ -308,9 +337,19 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
     ).catch(() => null);
 
     if (!xmlBuf && !pdfBuf) {
-      console.log('⚠️ Descarga directa falló — IMAP recogerá del correo enviado');
+      // El folio interno es el ÚNICO modo de recuperar esta factura después:
+      // buzonfacturas.com exige RFC **y** folio para consultar, y el folio no
+      // viene impreso en el ticket — lo asigna el portal al generar. Al #373 se
+      // le perdió justo aquí y quedó irrecuperable. Va en el mensaje para que
+      // sobreviva en la BD (lib/facturacion.js lo guarda en error_msg).
+      console.log(`⚠️ Descarga directa falló — IMAP recogerá del correo. Folio interno: ${folioGenerado || '(no capturado)'}`);
       await browser.close();
-      return { ok: true, procesandoCorreo: true, folioGenerado };
+      return {
+        ok: true, procesandoCorreo: true, folioGenerado,
+        msg: folioGenerado
+          ? `BuzonFacturas: factura generada con folio interno ${folioGenerado}; la descarga directa falló y se espera por correo. Si el correo no llega, recupérala en buzonfacturas.com/CFDI/DescargarFactura con RFC + ${folioGenerado}. NO RELANZAR: se emitiría un duplicado.`
+          : `BuzonFacturas: factura generada pero NO se pudo capturar el folio interno ni descargar los archivos. Si el correo no llega, la factura NO se puede consultar (el portal exige RFC + folio interno) y habrá que pedirla a la estación. NO RELANZAR: se emitiría un duplicado.`,
+      };
     }
 
     if (xmlBuf) xmlBuffer = xmlBuf;
@@ -330,9 +369,24 @@ async function facturarBuzonFacturas({ rfc, codigoTicket, portalUrl, email, fech
 
   } catch (err) {
     console.error('❌ Error en bot BuzonFacturas:', err.message);
-    const r = await runEstrategiaB(null);
+    // ⚠️ Antes esto era `runEstrategiaB(null)`, que sin folio se traía la
+    // primera fila de la tabla del RFC — la factura de OTRO ticket — y la
+    // devolvía como si fuera de este. Ahora solo se intenta si tenemos el folio
+    // interno de ESTA factura.
+    const r = folioGenerado ? await runEstrategiaB(folioGenerado) : { ok: false, sinFolio: true };
     try { await browser.close(); } catch {}
-    return r;
+    if (r && r.ok) return r;
+
+    // Si el click de generar ya había salido, la factura puede existir: NO se
+    // devuelve un error reintentable, porque el reintento de medianoche
+    // emitiría un segundo CFDI al mismo ticket.
+    if (facturaDisparada) {
+      return {
+        ok: true, procesandoCorreo: true, folioGenerado,
+        msg: `BuzonFacturas: el bot falló (${err.message}) DESPUÉS de pulsar Generar. ${folioGenerado ? `Folio interno ${folioGenerado}.` : 'No se capturó el folio interno.'} NO RELANZAR: comprobar antes si el CFDI existe.`,
+      };
+    }
+    return { ok: false, error_code: 'reintentar_despues', msg: `BuzonFacturas: ${err.message} (no se llegó a generar nada)` };
   }
 }
 

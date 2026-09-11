@@ -127,6 +127,20 @@ async function facturarGrupoCentra({
       return o.text;
     }, id, patron);
 
+  // Se pone en true en la linea inmediatamente anterior al click que EMITE
+  // (#A40). Desde ese instante NINGUN camino —tampoco el catch— puede devolver
+  // reintentar_despues ni un {ok:false} sin error_code: este portal no se
+  // protege de duplicados (ver cabecera), asi que el reintento de medianoche
+  // entraria, "Cargar" traeria el consumo como si nada y se emitiria un SEGUNDO
+  // CFDI al mismo ticket, que luego hay que cancelar ante el SAT.
+  let timbradoDisparado = false;
+  // Folio Y serie del mensaje de exito: la unica prueba fiable de que se timbro
+  // y lo unico con lo que se recupera la factura despues (Reimpresiones exige
+  // los dos, y la serie es por estacion). Viven fuera del try para que el catch
+  // pueda distinguir "ya timbrado" de "no llego a timbrarse".
+  let folioFactura = null;
+  let serieFactura = null;
+
   try {
     await page.goto(PORTAL_URL, { waitUntil: "networkidle2", timeout: 45000 });
     await sleep(3500);
@@ -214,23 +228,64 @@ async function facturarGrupoCentra({
     // excepcion. Es la peor combinacion posible en ESTE portal, que (ver
     // cabecera) no se protege de duplicados: invita a reintentar y a emitir
     // un segundo CFDI. Paso con el ticket #353 el 11-sep-2026.
-    await Promise.all([
+    timbradoDisparado = true;
+    const [, clicFacturar] = await Promise.all([
       page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 }).catch(() => {}),
-      clickId("A40"),
+      // Si el evaluate DEL PROPIO CLICK muere con "Execution context was
+      // destroyed" es justamente porque el click ya salio y navego (le paso al
+      // #353). Sin este catch esa excepcion se lleva por delante el bucle que
+      // lee folio y serie: la factura se emite bien y el bot la entrega como
+      // timbrado_sin_archivos, o sea revision manual en CADA factura buena.
+      // Con el catch, `false` significa una sola cosa: #A40 no estaba en el DOM.
+      clickId("A40").catch(() => true),
     ]);
+    // clickId devuelve false si #A40 no esta en el DOM (GeneXus renumera todos
+    // los ids si el proveedor redespliega). Entonces no salio ninguna peticion
+    // de timbrado, y este es el ULTIMO punto donde se puede reintentar sin
+    // riesgo. Dar por pulsado un boton sin comprobar que existia fue el bug que
+    // dejo los tickets #349 y #356 dados por facturados con cero facturas en el
+    // portal.
+    if (!clicFacturar) {
+      timbradoDisparado = false;
+      await screenshot("sin_boton_facturar");
+      await browser.close();
+      return { ok: false, error_code: "reintentar_despues", msg: 'Grupo Centra: no apareció el botón "Facturar" (#A40) — NO SE EMITIÓ NADA (los ids de GeneXus pudieron cambiar)' };
+    }
     let exito = "";
     const t0 = Date.now();
     while (Date.now() - t0 < 60000) {
       await sleep(2500);
       const t = await texto();
-      const m = t.match(/La Factura folio\s+(\S+)\s+serie\s+(\S+)\s+se Genero Exitosamente/i);
-      if (m) { exito = t; var folioFactura = m[1], serieFactura = m[2]; break; }
+      // Gener[oó]: la unica transcripcion que existe del mensaje (portales.json,
+      // reconocimiento del 08-sep) esta escrita sin acentos, igual que el resto
+      // de esa nota, asi que no consta si el portal pinta "Genero" o "Generó".
+      // Apostar por el sin-tilde ahora cuesta caro: si no casa ya no se
+      // reintenta —se devuelve timbrado_sin_archivos— y cada factura bien
+      // emitida acabaria en revision manual. Aceptar las dos formas no afloja la
+      // prueba: se siguen exigiendo folio Y serie. redco.js hace lo mismo.
+      const m = t.match(/La Factura folio\s+(\S+)\s+serie\s+(\S+)\s+se Gener[oó] Exitosamente/i);
+      if (m) { exito = t; folioFactura = m[1]; serieFactura = m[2]; break; }
       if (/error|no se pudo|fall/i.test(t) && !/NECESITAS AYUDA/i.test(t)) break;
     }
     await screenshot("p2_post_facturar");
     if (!exito) {
+      // 🛑 Aqui el click de "Facturar" YA SALIO: que no hayamos leido el mensaje
+      // de exito no significa que no se haya timbrado (pudo tardar mas de 60 s,
+      // cambiar el texto o quedarse el bot en otra pantalla). Este return no
+      // llevaba error_code, o sea que caia en el error generico y el sistema lo
+      // reintentaba a medianoche; en ESTE portal eso no es hipotetico: no hay
+      // ningun "ya ha sido facturado" que frene al bot, "Cargar" vuelve a traer
+      // el consumo y se emite un SEGUNDO CFDI al mismo ticket.
+      // timbrado_sin_archivos es el unico codigo correcto: no reintenta jamas y
+      // deja el ticket a la vista de una persona, que es quien puede comprobar
+      // si la factura existe.
+      const pantalla = (await texto()).slice(0, 220);
       await browser.close();
-      return { ok: false, msg: `Grupo Centra: no se confirmó el timbrado. Pantalla: ${(await texto()).slice(0, 220)}` };
+      return {
+        ok: false,
+        error_code: "timbrado_sin_archivos",
+        msg: `Grupo Centra: el click de "Facturar" SÍ salió pero el portal no confirmó el timbrado en 60 s — EL CFDI PUEDE EXISTIR YA. NO RELANZAR el bot: este portal deja emitir dos veces el mismo ticket sin avisar. Comprobar a mano (estación #${estacionNum}, ticket ${folio}, ${fecha} ${hora}) y, si existe, bajarla de Reimpresiones con su folio Y SU SERIE y asociarla con scripts/asociar-cfdi.js. Pantalla: ${pantalla}`,
+      };
     }
     console.log(`✅ Factura ${folioFactura} serie ${serieFactura}`);
 
@@ -254,19 +309,49 @@ async function facturarGrupoCentra({
     await sleep(1000);
     await page.evaluate(() => { try { clWDUtil.pfGetTraitement("A10", 0, undefined)(); } catch (e) {} });
     await sleep(9000);
-    const enviado = /correo fue enviado con exito/i.test(await texto());
+    // Misma duda de acento que en el mensaje de timbrado. Aqui equivocarse solo
+    // degrada el mensaje (se devuelve ok:true igual, con folio y serie), pero no
+    // hay motivo para arriesgar un "no se confirmo el envio" que no es cierto.
+    const enviado = /correo fue enviado con [eé]xito/i.test(await texto());
     await screenshot("p3_post_envio");
     await browser.close();
 
+    // folioGenerado es el campo que lib/facturacion.js conserva en error_msg al
+    // pasar a procesando_correo. Sin el, si el correo no llega, la factura es
+    // IRRECUPERABLE: Reimpresiones pide folio Y serie, y la serie es por
+    // estacion (buscar con la de otra no encuentra nada aunque el CFDI exista).
+    const rastro = `${folioFactura} serie ${serieFactura}`;
     if (!enviado) {
       console.log("⚠️ Timbrada pero no se confirmó el envío por correo");
-      return { ok: true, procesandoCorreo: true, msg: `Grupo Centra: CFDI timbrado (folio ${folioFactura} serie ${serieFactura}); el envío al buzón no se confirmó — se puede reenviar desde Reimpresiones con esos datos` };
+      return { ok: true, procesandoCorreo: true, folioGenerado: rastro, msg: `Grupo Centra: CFDI timbrado (folio ${folioFactura} serie ${serieFactura}); el envío al buzón no se confirmó — NO RELANZAR el bot (emitiría un duplicado): reenviarlo desde Reimpresiones con esos datos` };
     }
-    return { ok: true, procesandoCorreo: true };
+    return { ok: true, procesandoCorreo: true, folioGenerado: rastro };
   } catch (e) {
     await screenshot("excepcion");
     await browser.close().catch(() => {});
-    return { ok: false, msg: `Grupo Centra: ${e.message}` };
+    // El catch tambien cuenta: devolver aqui un {ok:false} pelado lo mandaba al
+    // error generico, que reintenta a medianoche. Si la excepcion salto despues
+    // del click de #A40 —y "Execution context was destroyed" salta justo por
+    // eso, porque el click navego— ese reintento emite el duplicado.
+    if (folioFactura) {
+      // Timbrado CONFIRMADO (leimos folio y serie): la excepcion es del paso de
+      // Reimpresiones/envio, que pudo salir igual. Se deja en procesando_correo
+      // con el rastro para recuperarla a mano si el correo no llega.
+      return {
+        ok: true,
+        procesandoCorreo: true,
+        folioGenerado: `${folioFactura} serie ${serieFactura}`,
+        msg: `Grupo Centra: el CFDI folio ${folioFactura} serie ${serieFactura} YA ESTÁ TIMBRADO; falló el paso de envío al buzón (${e.message}). NO RELANZAR el bot: reenviar la factura desde Reimpresiones con ese folio y esa serie.`,
+      };
+    }
+    if (timbradoDisparado) {
+      return {
+        ok: false,
+        error_code: "timbrado_sin_archivos",
+        msg: `Grupo Centra: el click de "Facturar" ya había salido cuando falló el bot (${e.message}) — EL CFDI PUEDE EXISTIR YA. NO RELANZAR: el portal no avisa de duplicados y emitiría un segundo CFDI. Comprobar antes a mano si la factura del ticket ${folio} (estación #${estacionNum}, ${fecha} ${hora}) existe.`,
+      };
+    }
+    return { ok: false, error_code: "reintentar_despues", msg: `Grupo Centra: ${e.message} — falló antes de pulsar "Facturar", NO SE EMITIÓ NADA` };
   }
 }
 

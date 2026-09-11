@@ -35,7 +35,8 @@ async function extraerEmailContacto(page) {
   }).catch(() => null);
 }
 
-async function facturarDana({ referencia, folio, total, rfc, razonSocial, regimenFiscal, usoCfdi, ticketId, portalUrl }) {
+async function facturarDana({ referencia, folio, total, rfc, razonSocial, regimenFiscal, usoCfdi,
+                              codigoPostal, emailEntrega, ticketId, portalUrl }) {
   const codigoUnico = String(referencia || folio || "").trim();
   const folioStr = String(folio || referencia || "").trim();
 
@@ -65,6 +66,11 @@ async function facturarDana({ referencia, folio, total, rfc, razonSocial, regime
       console.log(`📸 [${label}]: ${u}`);
     } catch {}
   };
+
+  // Se pone en true en cuanto sale el click que EMITE la factura. A partir de
+  // ese instante ningun camino puede devolver un error reintentable: el
+  // reintento de medianoche emitiria un segundo CFDI al mismo ticket.
+  let timbradoDisparado = false;
 
   try {
     const url = portalUrl || "https://facturacion.softrestaurant.com/DANACOMIDAMEXICANA";
@@ -149,47 +155,382 @@ async function facturarDana({ referencia, folio, total, rfc, razonSocial, regime
     if (caso === "invalido")     { await browser.close(); return { ok: false, error_code: "datos_invalidos", msg: "Dana: ticket no encontrado o datos incorrectos" }; }
     if (caso === "timeout")      { await browser.close(); return { ok: false, error_code: "timeout", msg: "Dana: timeout esperando respuesta del portal" }; }
 
-    // ── PASO 2 — Datos fiscales: correo + generar ────────────────────────────
+    // ── PASO 2 — Datos fiscales y timbrado ───────────────────────────────────
+    //
+    // ⚠️ AQUÍ VIVÍA EL PEOR BUG QUE HA TENIDO ESTE PROYECTO. La versión anterior
+    // buscaba un botón con /facturar|generar|emitir|timbrar|continuar/, no lo
+    // encontraba (en esta pantalla los botones se llaman "Guardar" y
+    // "Siguiente »"), no avisaba de que no había encontrado nada, esperaba 30s
+    // un texto de éxito que nunca podía llegar y terminaba en:
+    //
+    //     if (!generado) return { ok: true, procesandoCorreo: true };
+    //
+    // Es decir: declaraba TIMBRADO un ticket en el que no se había pulsado ni un
+    // botón. Los tickets #349 y #356 quedaron dados por facturados con CERO
+    // facturas en el portal. Un falso positivo así no se descubre hasta que
+    // vence el plazo del portal y la factura ya es irrecuperable.
+    //
+    // Regla que sustituye a aquello, y que NO se debe relajar:
+    //   · ok:true SOLO si vimos la pantalla de descarga (UUID/folio/enlaces).
+    //   · Si no llegamos a pulsar el "Facturar" final → error controlado
+    //     (`reintentar_despues`): no se emitió nada, reintentar es seguro.
+    //   · Si SÍ lo pulsamos y luego perdimos el hilo → procesandoCorreo con un
+    //     mensaje que grita "no relanzar": puede haberse emitido, y reintentar
+    //     duplicaría el CFDI.
+    //
+    // ── El flujo real del wizard (mapeado en vivo en brokinnibistrot) ────────
+    //   1. Modal informativo "Facturación electrónica CFDI 4.0 … Aceptar".
+    //   2. Modal "Nuevo Cliente – Datos Fiscales" si el RFC no está en el
+    //      catálogo de ESE tenant (cada restaurante tiene el suyo).
+    //   3. Pestaña Cliente → "Siguiente »" → pestaña Previsualizar.
+    //   4. "Facturar" → modal "¿Estás seguro…?" → "Aceptar" → NAVEGA a
+    //      /Invoice/DownloadFiles con los enlaces DownLoadXML / DownLoadPDF.
+    //
+    // ⚠️ TRAMPA DEL PORTAL: el <select id="ListTaxRegimes"> llega VACÍO del
+    // servidor (`<select id="ListTaxRegimes"></select>`, cero <option>). No es
+    // que tarde: no los manda. Hay que escribir el hidden #TaxRegime a mano y
+    // solo entonces llamar a GetProofuse(), que es quien rellena el catálogo de
+    // Uso de CFDI dentro de #ProofUseView (#usecode + hidden #UseCode).
     console.log("✅ Ticket válido — completando datos fiscales...");
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1200);
+
+    const correoPortal = emailEntrega || "buzonfacturas@serviciosga.site";
+
+    // Cierra el modal informativo de CFDI 4.0 si sigue encima.
     await page.evaluate(() => {
-      const campos = Array.from(document.querySelectorAll("input[type='email'], #Correo, #Email, #CorreoElectronico, #correo, input[name*='orreo']"));
+      const b = Array.from(document.querySelectorAll("button, a, input[type=button]"))
+        .filter((x) => x.offsetParent)
+        .find((x) => /^\s*(aceptar|entendido|de acuerdo)\s*$/i.test((x.textContent || x.value || "").trim()));
+      if (b) b.click();
+    }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    const esWizard = await page.evaluate(() =>
+      !!document.getElementById("TaxRegime") || !!document.getElementById("ListTaxRegimes")
+    ).catch(() => false);
+
+    if (esWizard) {
+      console.log("🧭 Wizard SoftRestaurant (Cliente → Previsualizar)");
+
+      // ── Modal "Nuevo Cliente – Datos Fiscales" ────────────────────────────
+      const hayModalCliente = await page.evaluate(() => {
+        const n = document.getElementById("Name");
+        return !!(n && n.offsetParent);
+      }).catch(() => false);
+
+      if (hayModalCliente) {
+        console.log("👤 Alta de cliente nuevo en este tenant...");
+        const datosOk = await page.evaluate(
+          (d) => {
+            const set = (id, v) => {
+              const e = document.getElementById(id);
+              if (!e || v == null || v === "") return false;
+              e.focus();
+              e.value = String(v);
+              ["input", "change", "keyup", "blur"].forEach((ev) => e.dispatchEvent(new Event(ev, { bubbles: true })));
+              return e.value === String(v);
+            };
+            // Régimen: el <select> viene vacío del servidor → se inyecta la
+            // opción y se escribe el hidden que es lo que de verdad se envía.
+            const lt = document.getElementById("ListTaxRegimes");
+            if (lt) {
+              if (!Array.from(lt.options).some((o) => o.value === d.regimen)) {
+                const o = document.createElement("option");
+                o.value = d.regimen;
+                o.text = d.regimen;
+                lt.appendChild(o);
+              }
+              lt.value = d.regimen;
+              lt.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            const tr = document.getElementById("TaxRegime");
+            if (tr) tr.value = d.regimen;
+
+            return {
+              rfc: set("RFC", d.rfc),
+              nombre: set("Name", d.razonSocial),
+              correo: set("Email", d.correo),
+              cp: set("CustomerAddress_Code", d.cp),
+              regimen: tr ? tr.value : null,
+            };
+          },
+          { rfc, razonSocial, correo: correoPortal, cp: String(codigoPostal || ""), regimen: String(regimenFiscal || "601") }
+        );
+        console.log("   Campos:", JSON.stringify(datosOk));
+
+        if (!datosOk.nombre || !datosOk.cp) {
+          await snap("error_datos_cliente");
+          await browser.close();
+          return {
+            ok: false,
+            error_code: "datos_invalidos",
+            msg: `Dana/SoftRestaurant: faltan datos fiscales del receptor para dar de alta el cliente (razón social: ${razonSocial || "vacía"}, C.P.: ${codigoPostal || "vacío"}). No se emitió nada.`,
+          };
+        }
+
+        // Uso de CFDI: solo existe después de llamar a GetProofuse().
+        await page.evaluate(() => { if (typeof GetProofuse === "function") GetProofuse(); }).catch(() => {});
+        const hayUso = await page
+          .waitForFunction(() => {
+            const s = document.getElementById("usecode");
+            return !!(s && s.options.length > 1);
+          }, { timeout: 20000 })
+          .then(() => true)
+          .catch(() => false);
+
+        if (!hayUso) {
+          await snap("error_sin_usocfdi");
+          await browser.close();
+          return { ok: false, error_code: "reintentar_despues", msg: "Dana/SoftRestaurant: el portal no cargó el catálogo de Uso de CFDI. No se emitió nada." };
+        }
+
+        const usoPuesto = await page.evaluate((uso) => {
+          const s = document.getElementById("usecode");
+          const opt = Array.from(s.options).find((o) => o.value === uso) || Array.from(s.options).find((o) => o.value === "G03");
+          if (!opt) return null;
+          s.value = opt.value;
+          s.dispatchEvent(new Event("change", { bubbles: true }));
+          const h = document.getElementById("UseCode");
+          if (h) h.value = opt.value;
+          return opt.value;
+        }, String(usoCfdi || "G03"));
+        console.log(`   Uso CFDI: ${usoPuesto}`);
+        await snap("p3_datos_fiscales");
+
+        const guardado = await page.evaluate(() => {
+          const b = Array.from(document.querySelectorAll("button, a, input[type=button], input[type=submit]"))
+            .filter((x) => x.offsetParent)
+            .find((x) => /^\s*guardar\s*$/i.test((x.textContent || x.value || "").trim()));
+          if (!b) return false;
+          b.click();
+          return true;
+        });
+        if (!guardado) {
+          await snap("error_sin_guardar");
+          await browser.close();
+          return { ok: false, error_code: "reintentar_despues", msg: "Dana/SoftRestaurant: no apareció el botón Guardar del alta de cliente. No se emitió nada." };
+        }
+
+        // El modal se cierra solo cuando el alta fue aceptada; si sigue abierto
+        // es que el portal rechazó algún dato y NO hay que seguir adelante.
+        const modalCerrado = await page
+          .waitForFunction(() => {
+            const n = document.getElementById("Name");
+            return !n || !n.offsetParent;
+          }, { timeout: 25000 })
+          .then(() => true)
+          .catch(() => false);
+
+        if (!modalCerrado) {
+          const motivo = await page.evaluate(() => (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 240)).catch(() => "");
+          await snap("error_alta_cliente_rechazada");
+          await browser.close();
+          return { ok: false, error_code: "datos_invalidos", msg: `Dana/SoftRestaurant: el portal rechazó el alta del receptor. No se emitió nada. Pantalla: ${motivo}` };
+        }
+        console.log("   ✅ Cliente dado de alta");
+      }
+
+      // ── Cliente → Previsualizar ───────────────────────────────────────────
+      await page.waitForTimeout(1200);
+      const avanzo = await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("button, a, input[type=button], input[type=submit]"))
+          .filter((x) => x.offsetParent)
+          .find((x) => /siguiente/i.test((x.textContent || x.value || "")));
+        if (!b) return false;
+        b.click();
+        return true;
+      });
+      if (!avanzo) {
+        await snap("error_sin_siguiente");
+        await browser.close();
+        return { ok: false, error_code: "reintentar_despues", msg: "Dana/SoftRestaurant: no apareció el botón 'Siguiente »' del wizard. No se emitió nada." };
+      }
+
+      const enPrevisualizar = await page
+        .waitForFunction(() => {
+          const t = (document.body.innerText || "");
+          const hayBoton = Array.from(document.querySelectorAll("button, a, input[type=button], input[type=submit]"))
+            .some((x) => x.offsetParent && /^\s*facturar\s*$/i.test((x.textContent || x.value || "").trim()));
+          return hayBoton && /previsualizar/i.test(t);
+        }, { timeout: 30000 })
+        .then(() => true)
+        .catch(() => false);
+
+      if (!enPrevisualizar) {
+        await snap("error_sin_previsualizar");
+        await browser.close();
+        return { ok: false, error_code: "reintentar_despues", msg: "Dana/SoftRestaurant: el wizard no llegó a la pantalla de previsualización. No se emitió nada." };
+      }
+      await snap("p4_previsualizar");
+
+      // ── EL CLICK QUE EMITE ────────────────────────────────────────────────
+      // A partir de aquí `timbradoDisparado` queda en true y NINGÚN camino
+      // puede devolver un error reintentable: la factura puede existir ya.
+      console.log("🧾 Facturar → confirmar...");
+      await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("button, a, input[type=button], input[type=submit]"))
+          .filter((x) => x.offsetParent)
+          .find((x) => /^\s*facturar\s*$/i.test((x.textContent || x.value || "").trim()));
+        if (b) b.click();
+      });
+
+      const hayConfirmacion = await page
+        .waitForFunction(() =>
+          Array.from(document.querySelectorAll("button, a, input[type=button]"))
+            .some((x) => x.offsetParent && /^\s*aceptar\s*$/i.test((x.textContent || x.value || "").trim()))
+          && /seguro|confirmar|deseas generar/i.test(document.body.innerText || ""), { timeout: 15000 })
+        .then(() => true)
+        .catch(() => false);
+
+      if (!hayConfirmacion) {
+        await snap("error_sin_confirmacion");
+        await browser.close();
+        return { ok: false, error_code: "reintentar_despues", msg: "Dana/SoftRestaurant: no apareció el modal de confirmación tras pulsar Facturar. No se emitió nada." };
+      }
+
+      // El "Aceptar" del modal NAVEGA a /Invoice/DownloadFiles. Sin el
+      // waitForNavigation, el evaluate siguiente muere con "Execution context
+      // was destroyed" y el catch devolvería un error reintentable sobre una
+      // factura que YA se emitió — la receta exacta del CFDI duplicado.
+      timbradoDisparado = true;
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 90000 }).catch(() => {}),
+        page.evaluate(() => {
+          const bs = Array.from(document.querySelectorAll("button, a, input[type=button]"))
+            .filter((x) => x.offsetParent && /^\s*aceptar\s*$/i.test((x.textContent || x.value || "").trim()));
+          if (bs.length) bs[bs.length - 1].click();
+        }),
+      ]);
+
+      await page.waitForFunction(
+        () => /ya puedes descargar|descargar tu factura/i.test(document.body.innerText || "")
+          || /DownloadFiles/i.test(location.href),
+        { timeout: 90000 }
+      ).catch(() => {});
+      await page.waitForTimeout(1500);
+      await snap("p5_resultado_final");
+
+      const res = await page.evaluate(() => {
+        const links = Array.from(document.querySelectorAll("a[href]"));
+        const xml = links.find((a) => /DownLoadXML/i.test(a.href));
+        const pdf = links.find((a) => /DownLoadPDF/i.test(a.href));
+        const mUuid = (location.href + " " + document.body.innerHTML).match(/uuid=([0-9a-f-]{36})/i);
+        const mFolio = (document.body.innerText || "").match(/Folio\s+([A-Z0-9-]+)/i);
+        return {
+          xml: xml ? xml.href : null,
+          pdf: pdf ? pdf.href : null,
+          uuid: mUuid ? mUuid[1] : null,
+          folio: mFolio ? mFolio[1] : null,
+          url: location.href,
+          texto: (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 200),
+        };
+      }).catch(() => ({}));
+
+      // Prueba de que se timbró: un UUID o los enlaces de descarga del portal.
+      if (!res.uuid && !res.xml) {
+        await browser.close();
+        console.log(`⚠️ Sin evidencia de timbrado en pantalla: ${res.texto || "(sin texto)"}`);
+        return {
+          ok: true,
+          procesandoCorreo: true,
+          msg: `Dana/SoftRestaurant: se pulsó el Facturar final pero la pantalla de descarga no apareció. NO RELANZAR este ticket sin comprobar antes en el portal (Consultar comprobantes → RFC ${rfc}): la factura puede estar emitida y un reintento crearía un CFDI duplicado.`,
+        };
+      }
+
+      console.log(`✅ Timbrado — UUID ${res.uuid} folio ${res.folio}`);
+
+      // Los enlaces llevan un token firmado y de un solo uso: hay que bajarlos
+      // dentro de la sesión del navegador, no desde Node.
+      const bajar = async (url) => {
+        if (!url) return null;
+        const d = await page.evaluate(async (u) => {
+          try {
+            const r = await fetch(u, { credentials: "include" });
+            const b = await r.arrayBuffer();
+            return { ok: r.ok, bytes: Array.from(new Uint8Array(b)) };
+          } catch (e) { return { error: e.message }; }
+        }, url).catch(() => null);
+        if (!d || !d.ok || !d.bytes || !d.bytes.length) return null;
+        return Buffer.from(d.bytes);
+      };
+
+      const bufXml = await bajar(res.xml);
+      const bufPdf = await bajar(res.pdf);
+      const base = res.uuid || `dana_${ts}`;
+      let xmlUrl = null, pdfUrl = null;
+      try { if (bufXml) xmlUrl = await subirArchivoR2(bufXml, `facturas/${base}.xml`, "application/xml"); } catch {}
+      try { if (bufPdf) pdfUrl = await subirArchivoR2(bufPdf, `facturas/${base}.pdf`, "application/pdf"); } catch {}
+      await browser.close();
+
+      if (xmlUrl || pdfUrl) {
+        console.log(`✅ Dana OK — XML: ${xmlUrl} | PDF: ${pdfUrl}`);
+        return { ok: true, xmlUrl, pdfUrl, uuid: res.uuid };
+      }
+      // Se timbró de verdad (hay UUID) pero no se pudo bajar el archivo: el
+      // portal también lo manda al correo de entrega, así que IMAP lo recoge.
+      return {
+        ok: true,
+        procesandoCorreo: true,
+        uuid: res.uuid,
+        msg: `Dana/SoftRestaurant: CFDI ${res.uuid} emitido; la descarga directa falló y se espera por correo. NO RELANZAR.`,
+      };
+    }
+
+    // ── Variante antigua (formulario simple de una sola pantalla) ────────────
+    await page.evaluate((correo) => {
+      const campos = Array.from(document.querySelectorAll("input"))
+        .filter((el) => el.offsetParent && /mail|correo/i.test(`${el.id} ${el.name} ${el.placeholder} ${el.type}`));
       for (const inp of campos) {
-        if (!inp.offsetParent) continue;
-        inp.value = "buzonfacturas@serviciosga.site";
+        inp.value = correo;
         inp.dispatchEvent(new Event("input", { bubbles: true }));
         inp.dispatchEvent(new Event("change", { bubbles: true }));
       }
-    });
+    }, correoPortal);
+
     if (regimenFiscal) {
       await page.evaluate((reg) => {
         const sel = document.querySelector("#RegimenFiscal, #Regimen, select[name*='regimen']");
         if (!sel) return;
-        for (const opt of sel.options) { if (opt.value === reg || opt.text.includes(reg)) { sel.value = opt.value; sel.dispatchEvent(new Event("change", { bubbles: true })); return; } }
+        for (const opt of sel.options) {
+          if (opt.value === reg || opt.text.includes(reg)) { sel.value = opt.value; sel.dispatchEvent(new Event("change", { bubbles: true })); return; }
+        }
       }, String(regimenFiscal));
     }
     await snap("p3_datos_fiscales");
 
     console.log("🧾 Generando factura...");
-    await page.evaluate(() => {
-      const cand = Array.from(document.querySelectorAll("button, a, input[type='submit'], .btn"));
-      const btn = cand.find(b => /facturar|generar|emitir|timbrar|continuar/i.test((b.textContent || b.value || "")) && !/consultar|regresar/i.test((b.textContent || b.value || "")));
-      if (btn) btn.click();
+    const clicGenerar = await page.evaluate(() => {
+      const cand = Array.from(document.querySelectorAll("button, a, input[type='submit'], .btn")).filter((x) => x.offsetParent);
+      const btn = cand.find((b) => /facturar|generar|emitir|timbrar/i.test((b.textContent || b.value || "")) && !/consultar|regresar|buscar/i.test((b.textContent || b.value || "")));
+      if (!btn) return false;
+      btn.click();
+      return true;
     });
 
+    // Si el botón no existe, NO se emitió nada: error reintentable, nunca
+    // `procesandoCorreo`. Este era exactamente el camino del falso positivo.
+    if (!clicGenerar) {
+      const pantalla = await page.evaluate(() => (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 240)).catch(() => "");
+      await snap("error_sin_boton_generar");
+      await browser.close();
+      return { ok: false, error_code: "reintentar_despues", msg: `Dana: no se encontró el botón para generar la factura. NO se emitió nada. Pantalla: ${pantalla}` };
+    }
+    timbradoDisparado = true;
+
     const generado = await page.waitForFunction(
-      () => /factura\s+generada|exitosamente|descarga|\.xml|\.pdf|ya ha sido generada/i.test(document.body.innerText),
-      { timeout: 30000 }
+      () => /factura\s+generada|ya puedes descargar|exitosamente|\.xml|\.pdf|ya ha sido generada/i.test(document.body.innerText),
+      { timeout: 45000 }
     ).then(() => true).catch(() => false);
     await snap("p4_resultado_final");
 
-    if (!generado) { await browser.close(); return { ok: true, procesandoCorreo: true }; }
-
-    const xmlUrl = await page.evaluate(() => { const a = Array.from(document.querySelectorAll("a[href]")).find(a => /\.xml(\?|$)|descargar.*xml|xml.*descargar/i.test(a.href + " " + a.textContent)); return a?.href || null; });
-    const pdfUrl = await page.evaluate(() => { const a = Array.from(document.querySelectorAll("a[href]")).find(a => /\.pdf(\?|$)|descargar.*pdf|pdf.*descargar/i.test(a.href + " " + a.textContent)); return a?.href || null; });
+    const xmlUrl = await page.evaluate(() => { const a = Array.from(document.querySelectorAll("a[href]")).find(a => /\.xml(\?|$)|DownLoadXML|descargar.*xml|xml.*descargar/i.test(a.href + " " + a.textContent)); return a?.href || null; }).catch(() => null);
+    const pdfUrl = await page.evaluate(() => { const a = Array.from(document.querySelectorAll("a[href]")).find(a => /\.pdf(\?|$)|DownLoadPDF|descargar.*pdf|pdf.*descargar/i.test(a.href + " " + a.textContent)); return a?.href || null; }).catch(() => null);
     await browser.close();
 
     if (xmlUrl || pdfUrl) { console.log(`✅ Dana OK — XML: ${xmlUrl} | PDF: ${pdfUrl}`); return { ok: true, xmlUrl, pdfUrl }; }
+    if (!generado) {
+      return { ok: true, procesandoCorreo: true, msg: `Dana: se pulsó generar pero el portal no confirmó en pantalla. NO RELANZAR sin comprobar antes en el portal: la factura puede estar emitida.` };
+    }
     console.log("📧 Sin descarga directa — fallback IMAP");
     return { ok: true, procesandoCorreo: true };
 
@@ -197,7 +538,17 @@ async function facturarDana({ referencia, folio, total, rfc, razonSocial, regime
     console.error("❌ Error en bot Dana:", err.message);
     await snap("error").catch(() => {});
     try { await browser.close(); } catch {}
-    return { ok: false, msg: err.message };
+    // Si la excepcion salto DESPUES del click que emite, devolver un error
+    // seria peor que no devolver nada: la cola reintentaria y duplicaria el
+    // CFDI. "Execution context was destroyed" es justo eso — el click navego.
+    if (timbradoDisparado) {
+      return {
+        ok: true,
+        procesandoCorreo: true,
+        msg: `Dana/SoftRestaurant: el click de facturar ya habia salido cuando fallo el bot (${err.message}). NO RELANZAR: comprobar primero en el portal (Consultar comprobantes → RFC ${rfc}) si el CFDI ya existe.`,
+      };
+    }
+    return { ok: false, error_code: "reintentar_despues", msg: `Dana: ${err.message} (no se emitio nada)` };
   }
 }
 

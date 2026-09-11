@@ -30,6 +30,19 @@ const EMISOR_OK = (() => {
   return String(process.argv[i + 1] || '').split(',').map((n) => parseInt(n, 10)).filter(Boolean);
 })();
 
+// ── Marca del ticket → razón social con la que timbra ─────────────────────────
+// Muchas cadenas emiten a nombre de una sociedad que no contiene la marca. Sin
+// esta tabla, la comprobación de parecido rechaza SIEMPRE sus CFDI y el ticket
+// se queda colgado aunque la factura esté en el buzón. Cada línea debe salir de
+// un CFDI real ya visto, nunca de una suposición: emparejar de más es peor que
+// emparejar de menos, porque le pega a un ticket la factura de otro.
+//   [ palabra que aparece en el comercio del ticket , trozo de la razón social ]
+const ALIAS_EMISOR = [
+  ['CAFFENIO', 'SERVICIOS ADMINISTRATIVOS OSLO'], // visto en el #363 (UUID D8C5E0E3…)
+  ['BROKINNI', 'OPREVI'],                          // visto en el #356 (UUID 37dc26cc…)
+  ['CARL', 'ICR'],                                 // Carl's Jr factura como ICR S.A. de C.V.
+];
+
 const parseJson = (v) => {
   if (!v) return {};
   if (typeof v === 'object') return v;
@@ -146,9 +159,19 @@ const parseJson = (v) => {
                 // el RFC del receptor, el total y el UUID se siguen exigiendo.
                 // Usarlo únicamente con prueba independiente de que la factura
                 // es de ese ticket (p.ej. haberla timbrado uno mismo).
+                // Antes de dar por bueno el parecido, se consulta la tabla de
+                // razones sociales conocidas: hay cadenas que facturan a nombre
+                // de una sociedad que no lleva la marca por ningún lado, y sin
+                // esto TODAS sus facturas se quedaban fuera para siempre.
                 const palabras = String(cand.comercio || '').toUpperCase().split(/[^A-ZÁÉÍÓÚÑ]+/).filter((p) => p.length > 4);
                 const emisorUp = nombreEmisor.toUpperCase();
-                if (palabras.length && !palabras.some((p) => emisorUp.includes(p))) {
+                const comercioUp = String(cand.comercio || '').toUpperCase();
+                const aliasOk = ALIAS_EMISOR.some(([marca, razon]) =>
+                  comercioUp.includes(marca) && emisorUp.includes(razon));
+                if (aliasOk) {
+                  console.log(`   🏷️ alias conocido: "${nombreEmisor.slice(0, 40)}" es la razón social de "${cand.comercio}"`);
+                }
+                if (!aliasOk && palabras.length && !palabras.some((p) => emisorUp.includes(p))) {
                   if (EMISOR_OK.includes(cand.id)) {
                     console.log(`   🔓 --emisor-ok: se acepta "${nombreEmisor.slice(0, 40)}" para el ticket #${cand.id} pese a no parecerse al comercio`);
                   } else {

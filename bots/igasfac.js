@@ -238,13 +238,32 @@ async function facturarIGasFac(datos = {}) {
     }
 
     // ── Enviar ────────────────────────────────────────────────────────────
+    // ⚠️ El click iba dentro de un page.evaluate con `if (b) b.click()` y el
+    // resultado se tiraba: si el botón no estaba (sesión caída, modal encima,
+    // otro rótulo), no se enviaba NADA, nadie se enteraba, y el flujo seguía
+    // hasta el `return { ok:true, procesandoCorreo:true }` del final. El ticket
+    // quedaba marcado como facturado sin que existiera factura alguna.
     console.log("📨 Enviando solicitud...");
     const nav2 = page.waitForNavigation({ waitUntil: "load", timeout: 18000 }).then(() => "ok").catch(() => "timeout");
-    await page.evaluate(() => {
-      const b = Array.from(document.querySelectorAll("button, a")).find((x) => /enviar solicitud/i.test(x.textContent || ""));
-      if (b) b.click();
+    const clicEnviar = await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button, a"))
+        .filter((x) => x.offsetParent)
+        .find((x) => /enviar solicitud/i.test(x.textContent || ""));
+      if (!b) return false;
+      b.click();
+      return true;
     });
-    await nav2;
+    if (!clicEnviar) {
+      const pantalla = (await texto()).replace(/\s+/g, " ").slice(0, 220);
+      await shot("sin_boton_enviar");
+      await browser.close();
+      return {
+        ok: false,
+        error_code: "reintentar_despues",
+        msg: `IGasFac: no apareció el botón "Enviar solicitud". NO se envió nada, así que reintentar es seguro. Pantalla: ${pantalla}`,
+      };
+    }
+    const navegoTrasEnviar = await nav2;
     await page.waitForTimeout(2500);
     await shot("resultado");
 
@@ -262,12 +281,46 @@ async function facturarIGasFac(datos = {}) {
         msg: "IGasFac: rechazo CFDI40147 del PAC (SmartWeb) — dice que el DomicilioFiscalReceptor no aparece en la lista de RFC del SAT. NO es un dato mal capturado: el CP 80140 está verificado contra la Constancia oficial. Es un desfase entre el PAC y la lista masiva del SAT, que se resuelve solo en 2-3 días. Reintentar entonces con el mismo folio.",
       };
     }
-    if (/error|no fue posible|falló/i.test(final) && !/enviad|correo|solicitud recibida/i.test(final)) {
+    // La lista de exclusión `!/enviad|correo|solicitud recibida/` desactivaba
+    // esta comprobación en cuanto la palabra "correo" aparecía en CUALQUIER
+    // parte del body — el pie de contacto del portal basta. Fuera.
+    if (/error|no fue posible|no es posible|fall(ó|o)\b|incorrect|inválid|invalid/i.test(final)) {
       await browser.close();
-      return { ok: false, msg: `IGasFac: el portal devolvió un error — ${final.replace(/\s+/g, " ").slice(0, 220)}` };
+      return { ok: false, error_code: "datos_invalidos", msg: `IGasFac: el portal devolvió un error — ${final.replace(/\s+/g, " ").slice(0, 220)}` };
     }
 
-    console.log("✅ Solicitud enviada — el CFDI llega por correo");
+    // ⚠️ AQUÍ ESTABA EL FALSO POSITIVO MÁS CARO DEL BOT. El único filtro era el
+    // regex NEGATIVO de arriba (¿dice la pantalla "error"?), y el portal NO usa
+    // ese vocabulario: sus rechazos reales son "Folio web es incorrecto,
+    // intente de nuevo." y "no es posible conectar con la estación". Resultado:
+    // cualquier pantalla que no fuera un éxito se devolvía COMO éxito, el
+    // ticket pasaba a `procesando_correo`, y una hora después lib/imap-job.js
+    // lo cerraba con "el CFDI SÍ se generó, NO reintentar" — afirmando que
+    // existe una factura que nunca se emitió, y prohibiendo volver a intentarlo.
+    //
+    // Ahora se exige una señal POSITIVA. Sin ella no se dice "timbrado".
+    const confirmado = /solicitud\s+(enviada|recibida|registrada|generada)|se\s+(ha\s+)?enviad[oa]|ser[áa]\s+enviad[oa]\s+a\s+su\s+correo|factura\s+(generada|enviada)|gracias\s+por\s+su\s+solicitud|folio\s+de\s+solicitud/i.test(final);
+
+    if (!confirmado) {
+      const pantalla = final.replace(/\s+/g, " ").slice(0, 260);
+      await shot("sin_confirmacion");
+      await browser.close();
+      // Si el portal NAVEGÓ tras el click, algo se envió: no se reintenta, para
+      // no arriesgar un duplicado. Si no navegó ni confirmó, lo más probable es
+      // que no entrara nada, y reintentar es lo correcto.
+      if (navegoTrasEnviar === "ok") {
+        return {
+          ok: true, procesandoCorreo: true,
+          msg: `IGasFac: se envió la solicitud pero la pantalla final no trae una confirmación reconocible. NO RELANZAR sin comprobar antes si el CFDI llegó. Pantalla: ${pantalla}`,
+        };
+      }
+      return {
+        ok: false, error_code: "reintentar_despues",
+        msg: `IGasFac: tras pulsar "Enviar solicitud" el portal no confirmó nada ni navegó — lo más probable es que la solicitud no entrara. Pantalla: ${pantalla}`,
+      };
+    }
+
+    console.log("✅ Solicitud CONFIRMADA por el portal — el CFDI llega por correo");
     await browser.close();
     return { ok: true, procesandoCorreo: true };
 

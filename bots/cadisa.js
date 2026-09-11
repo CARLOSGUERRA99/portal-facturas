@@ -164,6 +164,11 @@ async function facturarCadisa({
     }
   }
 
+  // Se pone en true en cuanto sale el click que EMITE la factura. A partir de
+  // ese instante ningun camino puede devolver un error reintentable: el
+  // reintento de medianoche timbraria un SEGUNDO CFDI al mismo ticket.
+  let timbradoDisparado = false;
+
   try {
     await page.goto(PORTAL, { waitUntil: "networkidle2", timeout: 45000 });
     await page.waitForSelector("#txtRFC", { timeout: 25000 });
@@ -264,17 +269,41 @@ async function facturarCadisa({
       if (!elegida) continue;
       console.log(`🧾 Facturando con forma de pago "${elegida}"...`);
       await sleep(1500);
-      await clickId("btnRealizarFactura");
+      // #btnRealizarFactura es un postback de ASP.NET: NAVEGA. Sin envolverlo en
+      // el waitForNavigation, el texto() de abajo moria con "Execution context
+      // was destroyed", la excepcion subia al catch y el catch pedia reintento
+      // sobre una factura que ya podia estar timbrada — asi nace el duplicado.
+      timbradoDisparado = true;
+      const [, seDisparo] = await Promise.all([
+        page.waitForNavigation({ waitUntil: "networkidle2", timeout: 90000 }).catch(() => {}),
+        // Si el postback destruye el contexto antes de que vuelva el evaluate, el
+        // click YA salio: eso cuenta como disparado.
+        clickId("btnRealizarFactura").catch(() => true),
+      ]);
+      if (!seDisparo) {
+        // clickId devuelve false cuando el boton no estaba en la pantalla: no se
+        // envio nada. Se deshace la marca (si no, el ticket quedaria esperando a
+        // una persona sin haberse pulsado nada) y se pide reintento.
+        timbradoDisparado = false;
+        await screenshot("sin_boton_realizar_factura");
+        await browser.close();
+        return { ok: false, error_code: "reintentar_despues", msg: `CADISA/RADEC: no apareció el botón "Realizar Factura" (folio ${folio}). NO se emitió nada.` };
+      }
       await sleep(6000);
       await esperarProceso();
       t = await texto();
       if (/SU FACTURA ES LA/i.test(t)) { exito = t; break; }
       if (/Revisar la Forma de Pago/i.test(t)) {
         console.log("   ⚠️ el portal rechazó esa forma de pago — probando la siguiente");
-        await page.evaluate(() => {
+        const cerroAviso = await page.evaluate(() => {
           const ok = Array.from(document.querySelectorAll("button,a,input")).find((e) => e.offsetParent && /^OK$/i.test((e.textContent || e.value || "").trim()));
-          if (ok) ok.click();
+          if (!ok) return false;
+          ok.click();
+          return true;
         });
+        // Si el aviso no se cerro, el siguiente intento pulsa sobre un modal
+        // abierto y no llega a enviar: mejor saberlo en el log que deducirlo.
+        if (!cerroAviso) console.log("   ⚠️ no se encontró el OK del aviso; el siguiente intento puede no llegar a enviarse");
         await sleep(2500);
         continue;
       }
@@ -284,7 +313,21 @@ async function facturarCadisa({
 
     if (!exito) {
       await browser.close();
-      return { ok: false, msg: `CADISA/RADEC: no se confirmó el timbrado. Pantalla: ${t.slice(-220)}` };
+      // Esto devolvia {ok:false} SIN error_code aunque el click de "Realizar
+      // Factura" ya hubiera salido: caia en el error generico, que reintenta a
+      // medianoche y timbra un SEGUNDO CFDI al mismo ticket (hay que cancelarlo
+      // ante el SAT). Con el click fuera no sabemos si la factura existe, asi
+      // que se deja a la vista de una persona y NO se reintenta nunca.
+      if (timbradoDisparado) {
+        return {
+          ok: false,
+          error_code: "timbrado_sin_archivos",
+          msg: `CADISA/RADEC: se pulsó "Realizar Factura" (folio ${folio}, código ${codigo}, $${totalPortal}) y la pantalla no confirmó el timbrado. NO RELANZAR: comprobar antes en ${PORTAL} si el CFDI ya existe. Pantalla: ${String(t).slice(-220)}`,
+        };
+      }
+      // Aqui no se llego a pulsar nada (ninguna forma de pago del catalogo
+      // coincidio con los patrones), asi que reintentar es seguro.
+      return { ok: false, error_code: "reintentar_despues", msg: `CADISA/RADEC: no se llegó a pulsar "Realizar Factura" — ninguna forma de pago del catálogo coincidió. NO se emitió nada. Pantalla: ${String(t).slice(-220)}` };
     }
     const folioFactura = (exito.match(/Factura:\s*(\S+)/i) || [])[1] || null;
     const pdfUrl = await page.evaluate(() => {
@@ -295,14 +338,26 @@ async function facturarCadisa({
 
     console.log("⬇️ Pidiendo el XML...");
     xmlBuf = null;
-    await page.evaluate(() => { try { __doPostBack("btnXML", ""); } catch (e) {} });
+    // El postback de btnXML tambien navega: si mata el contexto, el evaluate
+    // RECHAZA y esa excepcion se llevaba al catch una factura YA confirmada en
+    // pantalla, que acababa saliendo como "procesandoCorreo" sin folio ni PDF —
+    // el peor desenlace para un CFDI que existe. El XML no se pierde por esto:
+    // lo recoge el page.on("response") de arriba, no el valor del evaluate.
+    await page.evaluate(() => { try { __doPostBack("btnXML", ""); } catch (e) {} }).catch(() => {});
     for (let i = 0; i < 10 && !xmlBuf; i++) await sleep(1800);
-    await browser.close();
+    // Mismo motivo: Browserless corta la sesion por su cuenta, y un close que
+    // falla no puede tirar a la basura un timbrado ya confirmado (aqui el XML
+    // puede estar ya descargado en xmlBuf).
+    await browser.close().catch(() => {});
 
     if (!xmlBuf) {
+      // Aqui el exito ya esta CONFIRMADO en pantalla ("SU FACTURA ES LA"): el
+      // CFDI existe. Con "reintentar_despues" el sistema volvia cada noche y
+      // emitia un duplicado por el mismo ticket. Solo falta el archivo, asi que
+      // el ticket se queda a la vista de una persona y no se reintenta.
       return {
         ok: false,
-        error_code: "reintentar_despues",
+        error_code: "timbrado_sin_archivos",
         msg: `CADISA/RADEC: la factura ${folioFactura} SÍ se timbró por $${totalPortal}${pdfUrl ? ` (PDF: ${pdfUrl})` : ""}, pero no se pudo capturar el XML. NO reintentar el bot (duplicaría el CFDI): el portal también lo envió por correo a ${email || "el correo de la ficha"}.`,
       };
     }
@@ -312,7 +367,18 @@ async function facturarCadisa({
   } catch (e) {
     await screenshot("excepcion");
     await browser.close().catch(() => {});
-    return { ok: false, msg: `CADISA/RADEC: ${e.message}` };
+    // Si la excepcion salto DESPUES del click que emite, devolver un error
+    // reintentable —o un {ok:false} pelado, que cae en el generico— haria que la
+    // cola de medianoche timbrara el mismo ticket otra vez. "Execution context
+    // was destroyed" es justo ese caso: el postback ya habia navegado.
+    if (timbradoDisparado) {
+      return {
+        ok: true,
+        procesandoCorreo: true,
+        msg: `CADISA/RADEC: el click de "Realizar Factura" ya había salido cuando falló el bot (${e.message}). NO RELANZAR: comprobar antes en ${PORTAL} si el CFDI ya existe; el portal también lo manda por correo a ${emailEntrega || email || "el correo de la ficha"}.`,
+      };
+    }
+    return { ok: false, error_code: "reintentar_despues", msg: `CADISA/RADEC: ${e.message}. NO se emitió nada.` };
   }
 }
 

@@ -271,7 +271,7 @@ async function facturarTopGas({
     if (!zipBuf) {
       return {
         ok: false,
-        error_code: "reintentar_despues",
+        error_code: "timbrado_sin_archivos",
         msg: `TopGas: la factura ${folioFactura}${uuid ? ` (UUID ${uuid})` : ""} SÍ se timbró por $${totalPortal}, pero no se pudo bajar el ZIP. NO reintentar el bot (duplicaría el CFDI): bajarla del portal con "Descargar Factura" y asociarla con scripts/asociar-cfdi.js.`,
       };
     }
@@ -286,7 +286,7 @@ async function facturarTopGas({
       else pdfUrl = await subirArchivoR2(buf, `facturas/topgas_${ts}_${folioFactura}.pdf`, "application/pdf");
     }
     if (!xmlUrl) {
-      return { ok: false, error_code: "reintentar_despues", msg: `TopGas: factura ${folioFactura} timbrada, pero el ZIP no traía XML. NO reintentar; bajarla del portal.` };
+      return { ok: false, error_code: "timbrado_sin_archivos", msg: `TopGas: factura ${folioFactura} timbrada, pero el ZIP no traía XML. NO reintentar; bajarla del portal.` };
     }
     console.log(`☁️ XML: ${xmlUrl}`);
     return { ok: true, xmlUrl, pdfUrl };

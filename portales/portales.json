@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-08-13",
+  "actualizado": "2026-09-11",
   "portales": {
     "bodegaaurrera": {
       "nombre": "Walmart de México (Bodega Aurrera / Mi Bodega Aurrera / Walmart / Sam's Club / Superama)",
@@ -1626,6 +1626,32 @@
         "nota_deteccion": "El folio NO es el de la linea \"FOLIO :\" — es el numero de 8 digitos entre parentesis despues de la hora. Lo contrario que en facturagas."
       },
       "notas_desarrollo": "Facturar SI esta automatizado (bots/g500.js). Consultar lo timbrado tambien: scripts/g500-descargar-cfdi.js entra a misFacturas.aspx y lista folio, monto, estatus y fecha — el monto y el estatus van en columnas display:none, asi que hay que leer textContent celda por celda y sin el monto no se puede emparejar cada factura con su ticket.\n\n🛑 BAJAR EL XML/PDF NO SE PUEDE AUTOMATIZAR, y no por un problema tecnico. El click SI llega al boton (verificado con un listener: registra \"IMG src=img/fg-nw/xml.png\"); lo que aparece despues es \"Por favor, marque la casilla para verificar que no es un robot\". Es una verificacion anti-bot delante de la descarga y no se marca. Antes de dar con esto se probaron sin exito click sintetico, click real sobre el <button> y sobre el <img>, captura de respuestas HTTP, hook de createObjectURL, vigilancia de ventanas nuevas y Browser.setDownloadBehavior por CDP: ninguna podia funcionar porque no habia descarga que capturar.\n\nEn la practica: el bot factura, el script lista, y los archivos los baja una persona (dos clicks) o se piden por correo. ⚠️ Ademas G500_USER/G500_PASS NO estan puestas en Railway — por eso en produccion el bot falla con \"faltan credenciales\" aunque localmente funcione."
+    },
+    "qualligas": {
+      "nombre": "QualliGas (estacion.qualligas.com)",
+      "bot": "qualligas.js",
+      "estado": "activo",
+      "url_base": "https://estacion.qualligas.com",
+      "tecnologia": "PHP + jQuery, multi-estacion por numero en la ruta",
+      "stealth": true,
+      "comercios": [
+        "Grupo Gasolinero del Pacifico",
+        "gasolineras que facturan con QualliGas"
+      ],
+      "deteccion": {
+        "por_portal_field": "qualligas",
+        "por_texto_ocr": [
+          "qualligas",
+          "estacion.qualligas.com",
+          "web id"
+        ],
+        "por_comercio": [],
+        "por_url_qr": [
+          "qualligas.com"
+        ],
+        "nota_deteccion": "QualliGas NO es la gasolinera: es el proveedor del software. El comercio del ticket es otro (Grupo Gasolinero del Pacifico en el #357), asi que hay que detectar por URL o texto, nunca por el nombre del comercio. El numero de estacion sale como \"ES: 13920\" y otra vez en el pie como estacion.qualligas.com/13920."
+      },
+      "notas_desarrollo": "PIDE DOS DATOS DEL TICKET, no uno: \"Ticket\" y \"Web ID\". Los dos van impresos juntos al final (TICKET: 860670 / WEB ID: 0927). Sin el Web ID el portal no deja agregar el ticket. El OCR solo capturaba el primero.\n\nPLAZO: \"FACTURA EN LINEA SOLO EL MISMO MES DE COMPRA\" — es el mes natural, no 30 dias. Un ticket del 28 tiene 3 dias de vida.\n\nLos selects #regimenFiscal y #usoCfdi llegan del servidor con CERO option. No tardan: no vienen. Los puebla getRegimenFiscal(rfc, seleccionado), funcion del propio portal que consulta /{estacion}/factura/regimenFiscal. Ademas fetchReceptor() (que dispara el campo Email) BORRA nombre/RFC/CP, asi que hay que rellenarlos DESPUES de que carguen los catalogos.\n\nCAPTCHA de imagen 150x120 en #captcha-img, servido en /service/captcha/captcha/{captchaId}.pn. Necesita la cookie de sesion: hay que leerlo desde dentro de la pagina con canvas->dataURL; un fetch desde Node devuelve 0 bytes. Se resuelve con CapSolver ImageToTextTask.\n\nFlujo: llenar email -> getRegimenFiscal -> resto de campos -> #add-ticket (la tabla responde \"Ticket disponible para solicitar factura\") -> #facturar (abre el captcha) -> ACEPTAR.\n\nContacto de la estacion: facturacion{numeroEstacion}@gmail.com. Hay ademas una pestana DESCARGAR para recuperar un CFDI ya emitido."
     }
   },
   "fusionados": {

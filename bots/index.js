@@ -25,6 +25,13 @@ const { facturarEnerfuelTech } = require('./enerfueltech');
 const { facturarEnerser } = require('./enerser');
 const { facturarGrupoCentra } = require('./grupocentra');
 const { facturarTopGas } = require('./topgas');
+const { facturarQualligas } = require('./qualligas');
+const { facturarEstrellaBlanca } = require('./estrellablanca');
+const { facturarLosSenderos } = require('./lossenderos');
+const { facturarGrupoArlosa } = require('./grupoarlosa');
+const { facturarYoubuy } = require('./youbuy');
+const { facturarFacturaT } = require('./facturat');
+const { facturarRedco } = require('./redco');
 const { facturarCadisa } = require('./cadisa');
 const { facturarOrsan } = require('./orsan');
 const { facturarRAMCAL } = require('./ramcal');
@@ -231,6 +238,29 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Panamá Restaurante y Pastelería');
     return await facturarPanama(datos);
+  }
+
+  // ⚠️ GRUPO A-LOSA VA ANTES QUE CARL'S JR, NO DESPUÉS.
+  //
+  // Carl's Jr opera con franquicias, y cada franquiciatario factura por su
+  // cuenta: el ticket lleva el logo de Carl's Jr, pero el emisor fiscal es otra
+  // empresa (STAR LAGUNA S.A. de C.V. en el #367) y el portal es el suyo, no el
+  // Egrid corporativo de ICR. Si se comprueba primero `comercio.includes("carl's
+  // jr")`, TODOS los tickets de franquicia caen en carljr.js, que ni siquiera
+  // encuentra los campos y contesta "no hay referencia que capturar" — un
+  // mensaje que suena a OCR malo cuando el problema es el portal equivocado.
+  // Le pasó al #367.
+  if (
+    portal === 'grupoarlosa' ||
+    portalUrl.includes('grupoarlosa') ||
+    portalUrl.includes('grupoa-losa') ||   // el OCR lee un guion que no existe
+    comercio.includes('star laguna') ||
+    texto.includes('grupoarlosa') ||
+    texto.includes('grupoa-losa') ||
+    texto.includes('sla101203dx4')
+  ) {
+    console.log("🎯 Portal detectado: Grupo A-Losa (Carl's Jr franquicia)");
+    return await facturarGrupoArlosa(datos);
   }
 
   if (
@@ -531,6 +561,120 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Grupo Centra (Karmi)');
     return await facturarGrupoCentra(datos);
+  }
+
+  // ── AMS Integra: DOS marcas, MISMO backend, PASO 1 DISTINTO ──────────────
+  //
+  // factura.estrellablanca.com.mx y facturafranquicias.lossenderos.com.mx son
+  // el mismo build de React contra el mismo API (amsintegra.com.mx/main), pero
+  // el primer paso NO es intercambiable:
+  //   · Estrella Blanca  → NoComprobante + NoTr + Precio, claveTicket=AUTOBUS
+  //   · Los Senderos     → Franquicia + Sucursal + FechaVenta + NoTicket,
+  //                        claveTicket=CONSUMO
+  // Mandar un ticket al bot equivocado no falla con un mensaje claro: el API
+  // responde "El boleto no se encontró" y parece un folio mal leído.
+  //
+  // ⚠️ LOS SENDEROS VA PRIMERO A PROPÓSITO. El OCR del #350 (KFC Central
+  // Durango) escribió portal:'estrellablanca' y portalUrl:'imprimefactura.mx',
+  // y las dos cosas son falsas. Si se comprobara antes `portal ===
+  // 'estrellablanca'`, ese ticket se iría al bot de autobuses para siempre. La
+  // marca de la franquicia (KFC / SUSHIITTO) es la señal fiable.
+  if (
+    portal === 'lossenderos' ||
+    portal === 'senderos' ||
+    portalUrl.includes('lossenderos.com.mx') ||
+    portalUrl.includes('facturafranquicias') ||
+    comercio.includes('kfc') ||
+    comercio.includes('sushiitto') ||
+    texto.includes('facturafranquicias')
+  ) {
+    // KFC El Refugio (#364) NO es de Los Senderos: factura en
+    // facturacion.prb.com.mx:444, que es otra plataforma entera. Se reconoce
+    // porque su referencia es un folio largo de 16 dígitos.
+    const esPRB = portalUrl.includes('prb.com.mx') ||
+      /\b\d{16}\b/.test(String(datos.referencia || datos.folio || ''));
+    if (!esPRB) {
+      console.log('🎯 Portal detectado: Los Senderos franquicias (AMS Integra)');
+      return await facturarLosSenderos(datos);
+    }
+  }
+
+  if (
+    portal === 'estrellablanca' ||
+    portalUrl.includes('estrellablanca.com.mx') ||
+    portalUrl.includes('apifacturasestrellablanca') ||
+    comercio.includes('expreso futura') ||
+    comercio.includes('estrella blanca') ||
+    texto.includes('futura siente') ||
+    texto.includes('fsm210831qu5')
+  ) {
+    console.log('🎯 Portal detectado: Estrella Blanca / Expreso Futura (AMS Integra)');
+    return await facturarEstrellaBlanca(datos);
+  }
+
+  // Grupo A-Losa: franquiciatario de Carl's Jr que factura POR SU CUENTA, no
+  // por el portal Egrid de ICR corporativo que maneja carljr.js. Va ANTES que
+  // carljr porque el ticket dice "Carl's Jr" en grande y caería allí.
+  // ⚠️ El OCR lee el dominio como "grupoa-losa.mx" (con guion) sobre la tira
+  // térmica; ese dominio NO EXISTE. El bueno es grupoarlosa.mx.
+  if (
+    portal === 'grupoarlosa' ||
+    portalUrl.includes('grupoarlosa') ||
+    portalUrl.includes('grupoa-losa') ||
+    comercio.includes('star laguna') ||
+    texto.includes('grupoarlosa') ||
+    texto.includes('sla101203dx4')
+  ) {
+    console.log('🎯 Portal detectado: Grupo A-Losa (Carl\'s Jr franquicia)');
+    return await facturarGrupoArlosa(datos);
+  }
+
+  // YouBuy: plataforma multi-inquilino, un subdominio por comercio
+  // (facturasvalencia.youbuy.mx, facturasheparestaurantes.youbuy.mx…). El
+  // subdominio NO se puede adivinar por el nombre del comercio: sale de la URL
+  // impresa en el ticket.
+  if (portal === 'youbuy' || portalUrl.includes('youbuy.mx') || texto.includes('youbuy.mx')) {
+    console.log('🎯 Portal detectado: YouBuy');
+    return await facturarYoubuy(datos);
+  }
+
+  // AutoFacturaT / Factura-T ("DescargaT"): multimarca, una ruta por marca
+  // (/FacturacionChurchsChicken/, …). La marca sale de la URL.
+  if (portal === 'facturat' || portalUrl.includes('autofacturat.com.mx') || texto.includes('autofacturat')) {
+    console.log('🎯 Portal detectado: AutoFacturaT (Factura-T)');
+    return await facturarFacturaT(datos);
+  }
+
+  // Alianza RedCo: ~18 grupos gasolineros comparten el MISMO facturaenlinea.aspx,
+  // cada uno en su propio host DDNS y su propio puerto. El ticket llega con la
+  // web corporativa del grupo (grupohorizon.com.mx en el #371), que es una
+  // página de marketing y no el formulario: el bot resuelve la instancia real
+  // probando puertos, porque el puerto publicado suele estar caído.
+  if (
+    portal === 'redco' ||
+    portalUrl.includes('gruporedco') ||
+    portalUrl.includes('grupohorizon') ||
+    portalUrl.includes('facturaenlinea.aspx') ||
+    comercio.includes('redco') ||
+    comercio.includes('grupo horizon') ||
+    texto.includes('gruporedco')
+  ) {
+    console.log('🎯 Portal detectado: Alianza RedCo (facturaenlinea.aspx)');
+    return await facturarRedco(datos);
+  }
+
+  // QualliGas: plataforma multi-estación en estacion.qualligas.com/{numero}.
+  // QualliGas no es la gasolinera, es el proveedor del software — el comercio
+  // del ticket es otro (Grupo Gasolinero del Pacífico en el #357), así que la
+  // detección tiene que mirar la URL y el texto, no el nombre del comercio.
+  if (
+    portal === 'qualligas' ||
+    portalUrl.includes('qualligas') ||
+    comercio.includes('qualligas') ||
+    texto.includes('qualligas')
+  ) {
+    console.log('🎯 Portal detectado: QualliGas');
+    return await facturarQualligas(datos);
   }
 
   // TopGas va ANTES que IGasFac a propósito: sus tickets no nombran su portal

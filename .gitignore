@@ -8,3 +8,8 @@ docs/_tmp-server-endpoints-tickets.js
 # Carpeta de trabajo local: capturas de depuracion, descargas y volcados.
 # NUNCA debe subirse: aqui han llegado a caer credenciales y CFDI reales.
 tmp/
+
+# Volcados de los probes de reconocimiento (HTML/PNG/JSON de portales reales).
+# Son artefactos de depuracion, pesan megas y quedan obsoletos en cuanto el
+# portal cambia: el conocimiento util vive en la cabecera de cada bot.
+.probe-*/
