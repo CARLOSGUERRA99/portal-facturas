@@ -161,12 +161,28 @@ async function seleccionarPagoEnFila(page, folio, regexTexto) {
 async function facturarOxxoGas({ rfcId, regimenFiscal, usoCfdi, estacionId, folio, monto, ticketId }) {
   console.log("🤖 Iniciando bot OXXO GAS (requiere sesión manual inyectada)...");
 
-  const ciSession = process.env.OXXOGAS_CI_SESSION;
-  const incapSes117 = process.env.OXXOGAS_INCAP_SES_117;
-  const incapSes363 = process.env.OXXOGAS_INCAP_SES_363;
-  const visidIncap = process.env.OXXOGAS_VISID_INCAP;
+  // La sesión puede venir de dos sitios. Las variables de entorno se conservan
+  // por compatibilidad, pero la vía buena es la tabla `config`: exigir cuatro
+  // variables de entorno en CADA invocación era un trámite que en la práctica no
+  // se hacía, y los tickets se quedaban parados aunque hubiera sesión válida.
+  // Se guarda con: node scripts/oxxogas-sesion.js --ci <valor>
+  let guardada = {};
+  try {
+    const db = require("../lib/db");
+    const [[fila]] = await db.query("SELECT valor FROM config WHERE clave = 'oxxogas_sesion'");
+    if (fila) guardada = JSON.parse(fila.valor || "{}");
+  } catch { /* la tabla puede no existir todavía: se sigue con el entorno */ }
+
+  const ciSession = process.env.OXXOGAS_CI_SESSION || guardada.ci_sessions;
+  const incapSes117 = process.env.OXXOGAS_INCAP_SES_117 || guardada.incap_ses_117_3020163;
+  const incapSes363 = process.env.OXXOGAS_INCAP_SES_363 || guardada.incap_ses_363_3020163;
+  const visidIncap = process.env.OXXOGAS_VISID_INCAP || guardada.visid_incap_3020163;
   if (!ciSession) {
-    return { ok: false, error_code: "captcha", msg: "OXXO GAS: no hay sesión manual inyectada (falta OXXO_GAS_CI_SESSION). Requiere que el usuario inicie sesión a mano y proporcione cookies frescas — no se puede automatizar el login por el reCAPTCHA." };
+    return {
+      ok: false,
+      error_code: "captcha",
+      msg: "OXXO GAS: no hay sesión guardada. Su login lleva reCAPTCHA v2 y NO se automatiza; el resto del flujo de facturación no tiene captcha, así que basta con iniciar sesión a mano UNA vez y guardar la cookie: entra a facturacion.oxxogas.com, F12 → Application → Cookies, copia el valor de `ci_sessions` y corre `node scripts/oxxogas-sesion.js --ci <valor>`. El script la verifica contra el portal antes de guardarla.",
+    };
   }
 
   const token = process.env.BROWSERLESS_TOKEN;
