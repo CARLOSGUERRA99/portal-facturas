@@ -146,8 +146,21 @@ const parseJson = (v) => {
                 if (!total) continue;
                 if (rfcReceptor !== RFC_GPN) continue;
 
-                const cand = objetivos.find((t) => !usados.has(t.id) && Math.abs(t.total - parseFloat(total)) <= 0.01);
-                if (!cand) continue;
+                // ⚠️ TODOS los candidatos con ese importe, no solo el primero.
+                //
+                // Con `.find()` se elegía el ticket de menor id y, si ese no
+                // pasaba la comprobación del emisor, el CFDI se descartaba —
+                // aunque el ticket correcto estuviera dos posiciones más abajo
+                // con el mismo importe. Pasó con el CFDI de $1,000 de "SERVICIO
+                // ESCOSERRA DE MAZATLAN" (ticket #387): se probaba contra el
+                // #342 de Gastur, que también vale $1,000, se rechazaba, y el
+                // #387 se quedaba sin su factura sin que nadie lo notara.
+                //
+                // Ahora se ordenan por PARECIDO del emisor: el que de verdad
+                // corresponde se prueba primero, y el desempate por importe deja
+                // de depender del orden de los ids.
+                const candidatos = objetivos.filter((t) => !usados.has(t.id) && Math.abs(t.total - parseFloat(total)) <= 0.01);
+                if (!candidatos.length) continue;
 
                 // ⚠️ Emparejar SOLO por importe puede robarle el CFDI a otro
                 // ticket: pasó de verdad con el UUID 6e804707, que se asignó a
@@ -157,6 +170,23 @@ const parseJson = (v) => {
                 const uuidPrev = (extraerUUIDcfdi(xmlAtt.content) || '').toLowerCase();
                 const [yaUsado] = await db.query('SELECT ticket_id FROM facturas WHERE xml_url LIKE ?', [`%${uuidPrev}%`]);
                 if (yaUsado.length) { console.log(`   ⏭️ CFDI ${uuidPrev} ya está en el ticket #${yaUsado[0].ticket_id}`); continue; }
+
+                // Se ordena por parecido con el emisor ANTES de decidir: primero
+                // el que comparte alguna palabra distintiva, después el resto.
+                // Así, entre varios tickets del mismo importe, se prueba el que
+                // de verdad corresponde.
+                const emisorNorm = String(nombreEmisor || '')
+                  .normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+                const GENERICAS_ORD = new Set(['SERVICIO', 'SERVICIOS', 'ESTACION', 'GASOLINERA', 'COMERCIAL', 'GRUPO', 'OPERADORA', 'COMBUSTIBLES', 'SUPER', 'CENTRO']);
+                const puntua = (t) => String(t.comercio || '')
+                  .normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().split(/[^A-Z0-9]+/)
+                  .filter((p) => p.length > 4 && !GENERICAS_ORD.has(p))
+                  .filter((p) => emisorNorm.includes(p)).length;
+                candidatos.sort((a, b) => puntua(b) - puntua(a));
+                if (candidatos.length > 1) {
+                  console.log(`   🔀 ${candidatos.length} tickets valen $${total}; se prueba primero #${candidatos[0].id} (${String(candidatos[0].comercio).slice(0, 30)})`);
+                }
+                const cand = candidatos[0];
 
                 // El nombre del emisor debe parecerse al comercio del ticket.
                 // Es la última defensa contra pegarle a un ticket la factura de
