@@ -1654,10 +1654,22 @@ app.get("/api/facturas", auth, async (req, res) => {
 // cae a `creado`, que es lo único que hay.
 app.get("/api/facturas/descargar-zip", auth, async (req, res) => {
   try {
-    const { mes, desde, hasta, ids, formato } = req.query;
+    const { mes, desde, hasta, ids, formato, residente_id } = req.query;
     const alcance = filtroAlcance(req, "f.user_id");
     const cond = [alcance.sql];
     const params = [...alcance.params];
+
+    // El filtro de residente TIENE que viajar al ZIP. Si en pantalla se eligió
+    // "Ines Beltran" y septiembre, el ZIP debe traer las de Inés en septiembre —
+    // no las de todo el mundo. Se replica la misma semántica de /api/facturas,
+    // incluido 'sin_asignar', para que lo que se descarga sea exactamente lo que
+    // se está viendo.
+    if (residente_id === 'sin_asignar') {
+      cond.push('(t.residente_id IS NULL OR t.id IS NULL)');
+    } else if (residente_id) {
+      cond.push('t.residente_id = ?');
+      params.push(residente_id);
+    }
 
     const fechaSql = "COALESCE(f.fecha_timbrado, f.creado)";
     if (mes && /^\d{4}-\d{2}$/.test(mes)) {
@@ -1675,8 +1687,11 @@ app.get("/api/facturas/descargar-zip", auth, async (req, res) => {
 
     const [rows] = await db.query(
       `SELECT f.id, f.comercio, f.xml_url, f.pdf_url, f.uuid, f.total, f.serie_folio,
-              f.fecha_timbrado, f.creado, f.emisor_nombre, f.receptor_rfc, f.ticket_id
+              f.fecha_timbrado, f.creado, f.emisor_nombre, f.receptor_rfc, f.ticket_id,
+              t.residente_id, r.nombre AS residente
          FROM facturas f
+         LEFT JOIN tickets t ON t.id = f.ticket_id
+         LEFT JOIN residentes r ON r.id = t.residente_id
         WHERE ${cond.join(' AND ')}
         ORDER BY ${fechaSql} ASC, f.id ASC`,
       params
@@ -1689,25 +1704,38 @@ app.get("/api/facturas/descargar-zip", auth, async (req, res) => {
     // archiver fijado a la 7.x — ver la nota en /api/tickets/descargar-todos.
     const archiver = require('archiver');
     const zip = archiver('zip', { zlib: { level: 6 } });
-    const etiqueta = mes || (desde || hasta ? `${desde || 'inicio'}_${hasta || 'hoy'}`
-                                            : (listaIds.length ? 'seleccion' : 'todas'));
+    // El nombre del ZIP dice de quién y de cuándo es: si se bajan tres lotes
+    // seguidos (Inés septiembre, Inés agosto, todos septiembre) y los tres se
+    // llaman igual, en la carpeta de descargas quedan facturas-1.zip,
+    // facturas-2.zip… y ya no se sabe cuál es cuál.
+    const quien = conArchivo.find((f) => f.residente)?.residente;
+    const todosMismoResidente = residente_id && residente_id !== 'sin_asignar' && quien
+      ? String(quien).normalize('NFD').replace(/[̀-ͯ]/g, '')
+          .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
+      : (residente_id === 'sin_asignar' ? 'sin-asignar' : '');
+    const periodo = mes || (desde || hasta ? `${desde || 'inicio'}_${hasta || 'hoy'}`
+                                           : (listaIds.length ? 'seleccion' : 'todas'));
+    const etiqueta = [todosMismoResidente, periodo].filter(Boolean).join('-');
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="facturas-${etiqueta}.zip"`);
     zip.on('error', (e) => { console.error('❌ zip facturas:', e.message); try { res.end(); } catch {} });
     zip.pipe(res);
 
-    const filas = [['id', 'ticket', 'fecha_timbrado', 'comercio', 'emisor', 'serie_folio', 'total', 'uuid', 'archivos'].join(',')];
+    // El CSV es el que se lee a ojo, ya que los archivos van nombrados por UUID:
+    // lleva residente para poder repartir el lote sin abrir un solo XML.
+    const filas = [['uuid', 'fecha_timbrado', 'residente', 'comercio', 'emisor', 'serie_folio', 'total', 'ticket', 'id', 'archivos'].join(',')];
     let nXml = 0, nPdf = 0;
 
     for (const f of conArchivo) {
       const fecha = f.fecha_timbrado || f.creado;
-      const ymd = fecha ? new Date(fecha).toISOString().slice(0, 10) : 'sin-fecha';
-      const limpio = String(f.comercio || 'factura')
-        .normalize('NFD').replace(/[̀-ͯ]/g, '')
-        .replace(/[^A-Za-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'factura';
-      // El nombre lleva fecha + comercio + total: así el contador identifica cada
-      // archivo sin abrirlo, que es justo lo que no se puede hacer con un UUID.
-      const base = `${ymd}_${limpio}_${f.total != null ? Number(f.total).toFixed(2) : 's-total'}`;
+      // ⚠️ EL NOMBRE ES EL UUID. Es lo que pide la contabilidad: el folio fiscal
+      // es el identificador único del CFDI ante el SAT, y es como lo esperan los
+      // sistemas contables al importar un lote. Un nombre "bonito"
+      // (fecha_comercio_total) se lee mejor de un vistazo pero no es único —dos
+      // consumos del mismo día, comercio e importe chocarían— y obliga a abrir
+      // el XML para cruzarlo con la contabilidad. Para leerlo a ojo está el
+      // INDICE.csv, que lleva fecha, comercio, emisor, total y residente.
+      const base = (f.uuid || `sin-uuid-${f.id}`).toLowerCase();
       const bajados = [];
 
       for (const [ext, url] of [['xml', f.xml_url], ['pdf', f.pdf_url]]) {
@@ -1724,10 +1752,12 @@ app.get("/api/facturas/descargar-zip", auth, async (req, res) => {
       }
 
       filas.push([
-        f.id, f.ticket_id ?? '', fecha ? new Date(fecha).toISOString().slice(0, 19).replace('T', ' ') : '',
+        f.uuid || '',
+        fecha ? new Date(fecha).toISOString().slice(0, 19).replace('T', ' ') : '',
+        `"${String(f.residente || 'Sin asignar').replace(/"/g, '""')}"`,
         `"${String(f.comercio || '').replace(/"/g, '""')}"`,
         `"${String(f.emisor_nombre || '').replace(/"/g, '""')}"`,
-        f.serie_folio || '', f.total ?? '', f.uuid || '', bajados.join('+'),
+        f.serie_folio || '', f.total ?? '', f.ticket_id ?? '', f.id, bajados.join('+'),
       ].join(','));
     }
 
@@ -1736,7 +1766,10 @@ app.get("/api/facturas/descargar-zip", auth, async (req, res) => {
     zip.append(
       `Facturas exportadas: ${conArchivo.length}\r\n` +
       `XML incluidos: ${nXml}\r\nPDF incluidos: ${nPdf}\r\n` +
-      `Periodo: ${etiqueta}\r\nGenerado: ${new Date().toISOString().slice(0, 19).replace('T', ' ')}\r\n` +
+      `Periodo: ${periodo}\r\n` +
+      `Residente: ${residente_id ? (todosMismoResidente || residente_id) : 'todos'}\r\n` +
+      `Los archivos van nombrados por UUID (folio fiscal). Para leerlos a ojo, abre INDICE.csv.\r\n` +
+      `Generado: ${new Date().toISOString().slice(0, 19).replace('T', ' ')}\r\n` +
       (nPdf < nXml ? `\r\nAVISO: ${nXml - nPdf} factura(s) no tienen PDF. El CFDI valido es el XML;\r\nel PDF es solo su representacion impresa y se puede pedir al comercio.\r\n` : ''),
       { name: 'RESUMEN.txt' }
     );
