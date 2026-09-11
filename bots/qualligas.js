@@ -35,8 +35,14 @@ const { subirArchivoR2 } = require("../storage/r2");
  * fetch desde Node. Se resuelve con CapSolver ImageToTextTask, igual que el de
  * 7-Eleven.
  *
- * Contacto si todo falla: el portal publica el correo de la propia estación
- * (facturacion{estacion}@gmail.com en el caso de la 13920).
+ * ⚠️ EL CORREO DE CONTACTO NO SE CONSTRUYE. El portal publica un mailto de la
+ * estación, y en la 13920 es facturacion13920@gmail.com — que PARECE un patrón
+ * (`facturacion{estacion}@gmail.com`) y no lo es. Esa dirección ni siquiera
+ * existe: la solicitud del ticket #357 salió ahí y Gmail la rechazó con "The
+ * email account that you tried to reach does not exist". Un correo inventado no
+ * falla de forma ruidosa — sale, rebota en silencio, y el ticket se queda
+ * esperando una respuesta que nunca va a llegar. Se usa solo el mailto que la
+ * página publique de verdad, y si no hay ninguno se devuelve null.
  */
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -115,7 +121,7 @@ async function facturarQualligas(datos) {
   if (fueraDePlazo(fecha)) {
     return {
       ok: false, error_code: "ticket_vencido",
-      email_contacto: `facturacion${estacion}@gmail.com`, permite_solicitud_correo: true,
+      email_contacto: null, permite_solicitud_correo: true,
       msg: `QualliGas: el ticket es del ${fecha} y el portal solo factura DENTRO DEL MISMO MES NATURAL de la compra ("FACTURA EN LINEA SOLO EL MISMO MES DE COMPRA", impreso en el ticket). Hay que pedirla por correo a la estación.`,
     };
   }
@@ -139,6 +145,8 @@ async function facturarQualligas(datos) {
   };
 
   let timbradoDisparado = false;
+  // Se rellena con el mailto que publique el portal; nunca se construye.
+  let correoEstacion = null;
   try {
     // ⚠️ IR DIRECTO A /13920 NO FUNCIONA: el portal responde 200 y devuelve la
     // PORTADA, no el formulario de esa estación. La ruta con número solo existe
@@ -168,6 +176,20 @@ async function facturarQualligas(datos) {
       await browser.close();
       return { ok: false, error_code: "datos_invalidos", msg: `QualliGas: el portal no abrió el formulario de la estación ${estacion} — ¿es correcto el número? Pantalla: ${pantalla}` };
     }
+
+    // ⚠️ EL CORREO NO SE INVENTA. Antes se construia como
+    // `facturacion${estacion}@gmail.com` porque asi era el de la 13920. Es un
+    // patron, no un dato: la solicitud del #357 salio a esa direccion y Gmail
+    // la rechazo con "The email account that you tried to reach does not
+    // exist". Un correo inventado no falla ruidosamente: sale, rebota, y el
+    // ticket se queda esperando una respuesta que nunca va a llegar. Ahora
+    // solo se usa el mailto que el portal publique de verdad, y si no publica
+    // ninguno se devuelve null (el sistema pedira la direccion a una persona).
+    correoEstacion = await page.evaluate(() => {
+      const a = document.querySelector('a[href^="mailto:"]');
+      return a ? a.href.replace(/^mailto:/i, "").split("?")[0].trim().toLowerCase() : null;
+    }).catch(() => null);
+    console.log(`   Correo publicado por el portal: ${correoEstacion || "(ninguno)"}`);
 
     const nombreEstacion = await page.evaluate(() =>
       ((document.body.innerText || "").match(/\d{3,6}\s*-\s*([^\n]{5,80})/) || [])[1] || null
@@ -265,7 +287,7 @@ async function facturarQualligas(datos) {
     if (!/disponible\s+para\s+solicitar\s+factura/i.test(estadoTicket)) {
       await browser.close();
       if (/venci|fuera\s+de\s+(tiempo|plazo)|caduc/i.test(estadoTicket)) {
-        return { ok: false, error_code: "ticket_vencido", email_contacto: `facturacion${estacion}@gmail.com`, permite_solicitud_correo: true, msg: `QualliGas: ${estadoTicket.slice(0, 200)}` };
+        return { ok: false, error_code: "ticket_vencido", email_contacto: correoEstacion, permite_solicitud_correo: true, msg: `QualliGas: ${estadoTicket.slice(0, 200)}` };
       }
       return { ok: false, error_code: "datos_invalidos", msg: `QualliGas: el portal no aceptó el ticket ${numTicket} / Web ID ${web}. Respuesta: ${estadoTicket.slice(0, 200) || "(sin mensaje)"}` };
     }
@@ -419,7 +441,7 @@ async function facturarQualligas(datos) {
       return {
         ok: false,
         error_code: "captcha",
-        email_contacto: `facturacion${estacion}@gmail.com`,
+        email_contacto: correoEstacion,
         msg: `QualliGas: el captcha de imagen no se puede resolver de forma automática (CapSolver falló ${INTENTOS_CAPTCHA} de ${INTENTOS_CAPTCHA}). NO se emitió nada. Para facturarlo a mano en estacion.qualligas.com → estación ${estacion}: Ticket ${numTicket}, Web ID ${web}, correo ${correo}. Plazo: hasta el último día del mes de la compra.`,
       };
     }
