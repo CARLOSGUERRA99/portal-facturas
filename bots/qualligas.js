@@ -147,6 +147,9 @@ async function facturarQualligas(datos) {
   let timbradoDisparado = false;
   // Se rellena con el mailto que publique el portal; nunca se construye.
   let correoEstacion = null;
+  // true en cuanto el portal rechaza un captcha: distingue "se murio el bot"
+  // de "se murio el bot peleandose con el captcha", que se tratan distinto.
+  let captchaRechazado = false;
   try {
     // ⚠️ IR DIRECTO A /13920 NO FUNCIONA: el portal responde 200 y devuelve la
     // PORTADA, no el formulario de esa estación. La ruta con número solo existe
@@ -320,7 +323,12 @@ async function facturarQualligas(datos) {
     // devolvía procesandoCorreo sobre una factura inexistente. La prueba de que
     // el captcha pasó no es que no se vea un error: es que EL MODAL SE CIERRE.
     let captchaAceptado = false;
-    const INTENTOS_CAPTCHA = 6;
+    // 3 y no 6: cada intento cuesta ~50 s (recarga + CapSolver + espera a que el
+    // modal se cierre) y la sesión de Browserless se muere sobre los 300 s. Con
+    // 6 el bot no llegaba ni a terminar el bucle — reventaba a media tanda con
+    // "Requesting main frame too early!" y caía al catch, que pedía reintento.
+    // Da igual: en 14 captchas servidos CapSolver no acertó ninguno.
+    const INTENTOS_CAPTCHA = 3;
     for (let intento = 1; intento <= INTENTOS_CAPTCHA && !captchaAceptado; intento++) {
       if (intento > 1) {
         // Recargar para pedir una imagen nueva: insistir con la misma no sirve
@@ -421,6 +429,7 @@ async function facturarQualligas(datos) {
 
       if (!captchaAceptado) {
         const aviso = await page.evaluate(() => (document.body.innerText || "").replace(/\s+/g, " ").slice(0, 120)).catch(() => "");
+        captchaRechazado = true;
         console.log(`   ⚠️ Captcha rechazado (intento ${intento}/${INTENTOS_CAPTCHA}): ${aviso.slice(0, 80)}`);
       }
     }
@@ -508,6 +517,18 @@ async function facturarQualligas(datos) {
       return {
         ok: true, procesandoCorreo: true,
         msg: `QualliGas: el bot falló (${err.message}) DESPUÉS de pulsar Aceptar en el captcha. NO RELANZAR: comprobar primero en estacion.qualligas.com/${estacion} → DESCARGAR si el CFDI ya existe.`,
+      };
+    }
+    // Si la excepción cayó mientras se peleaba con el captcha, `reintentar_despues`
+    // manda el ticket al portal cada noche a gastar CapSolver sin ninguna
+    // posibilidad de acertar. Se devuelve `captcha`, que para los reintentos y
+    // avisa de que hay que facturarlo a mano.
+    if (captchaRechazado) {
+      return {
+        ok: false,
+        error_code: "captcha",
+        email_contacto: correoEstacion,
+        msg: `QualliGas: el captcha de imagen no se resuelve de forma automática (CapSolver falló todos los intentos y el bot murió con "${err.message}"). NO se emitió nada. Para facturarlo a mano: estacion.qualligas.com → estación ${estacion}, Ticket ${numTicket}, Web ID ${web}, correo ${correo}, régimen ${regimenFiscal || "601"}, uso ${usoCfdi || "G03"}.`,
       };
     }
     return { ok: false, error_code: "reintentar_despues", msg: `QualliGas: ${err.message} (no se emitió nada)` };

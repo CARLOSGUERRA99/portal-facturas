@@ -40,7 +40,18 @@ const EMISOR_OK = (() => {
 const ALIAS_EMISOR = [
   ['CAFFENIO', 'SERVICIOS ADMINISTRATIVOS OSLO'], // visto en el #363 (UUID D8C5E0E3…)
   ['BROKINNI', 'OPREVI'],                          // visto en el #356 (UUID 37dc26cc…)
-  ['CARL', 'ICR'],                                 // Carl's Jr factura como ICR S.A. de C.V.
+  ['CARL', 'ICR'],                                 // Carl's Jr corporativo
+  ['CARL', 'STAR LAGUNA'],                         // Carl's Jr franquicia A-Losa (#367)
+  ['KFC', 'PREMIUM RESTAURANT BRANDS'],            // visto en el #364, portal PRB
+  ['KFC', 'LOS SENDEROS'],                         // KFC de franquicia Senderos (#350)
+  ['SUSHIITTO', 'LOS SENDEROS'],
+  ['SUPER VOY', 'LOS SENDEROS'],                   // #368 y #370
+  ['SALA DE ESPERA', 'COMERCIAL CAMIONERA'],       // #361
+  ['EXPRESO FUTURA', 'FUTURA SIENTE'],             // #354 y #369
+  ['CHURCH', 'SUBMARINOS DE VALLARTA'],            // #362
+  ['SEVILLA PALACE', 'ELSEAN'],                    // #375 y #376
+  ['LOS NARANJOS', 'ELSEAN'],
+  ['PIONEROS', 'SERVICIO PIONEROS'],               // #360
 ];
 
 const parseJson = (v) => {
