@@ -312,9 +312,20 @@ async function detectarYFacturar(datosCrudos, db = null) {
     portal === 'dana' ||
     comercio.includes('dana comida') ||
     comercio.includes('dana mexicana') ||
-    portalUrl.includes('danacomidamexicana')
+    portalUrl.includes('danacomidamexicana') ||
+    // ⚠️ HAY DOS FAMILIAS "mefacturo" CON SELECTORES DISTINTOS, y confundirlas
+    // manda el ticket al bot equivocado:
+    //   mefacturo.mx/*  → admin.softrestaurant.com → #FolioTicket /
+    //                     #CodigoUnicoTicket  → bots/sushito.js
+    //   mefacturo.com/* → facturacion.softrestaurant.com → #folio /
+    //                     #unicCode / #RFC    → bots/dana.js  (ESTE)
+    // Comprobado en vivo sobre mefacturo.com/chayitocentro: redirige a
+    // facturacion.softrestaurant.com y sirve #folio, #unicCode y #RFC.
+    // Pollo Feliz vive en mefacturo.com pero tiene su propia rama mas abajo.
+    (portalUrl.includes('mefacturo.com') && !portalUrl.includes('pollofeliz')) ||
+    portalUrl.includes('facturacion.softrestaurant.com')
   ) {
-    console.log('🎯 Portal detectado: Dana Comida Mexicana (SoftRestaurant)');
+    console.log('🎯 Portal detectado: SoftRestaurant / mefacturo.com (bot dana)');
     return await facturarDana(datos);
   }
 

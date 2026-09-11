@@ -109,11 +109,30 @@ async function facturarDana({ referencia, folio, total, rfc, razonSocial, regime
     // ── Detectar resultado (polling) ─────────────────────────────────────────
     let caso = "timeout";
     for (let i = 0; i < 30; i++) {
+      // ⚠️ Algunos tenants de SoftRestaurant abren un modal informativo
+      // ("Facturación electrónica CFDI 4.0 … Aceptar") ENCIMA del formulario ya
+      // cargado. El bot se quedaba esperando el paso 2 mientras el paso 2 ya
+      // estaba ahí, solo que tapado, y acababa en "timeout esperando respuesta
+      // del portal" — que parece portal caído y no lo es. Visto en vivo con
+      // mefacturo.com/chayitocentro (ticket #349).
+      await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("button, a, input[type=button], .swal2-confirm"))
+          .filter((x) => x.offsetParent)
+          .find((x) => /^\s*(aceptar|entendido|de acuerdo|continuar)\s*$/i.test((x.textContent || x.value || "").trim()));
+        if (b) b.click();
+      }).catch(() => {});
+
       const estado = await detectarEstado(page);
       if (estado) { caso = estado; break; }
       const hayPaso2 = await page.evaluate(() => {
-        const el = document.querySelector("input[type='email'], #Correo, #CorreoElectronico, #Email, #correo, input[name*='orreo']");
-        return !!(el && el.offsetParent !== null);
+        // Se acepta cualquier campo de correo visible: cada tenant le pone un
+        // id distinto, y fiarse de una lista corta dejaba fuera a los nuevos.
+        const cands = Array.from(document.querySelectorAll("input"));
+        return cands.some((el) => {
+          if (!el.offsetParent) return false;
+          const pista = `${el.id} ${el.name} ${el.placeholder} ${el.type}`.toLowerCase();
+          return /mail|correo/.test(pista);
+        });
       }).catch(() => false);
       if (hayPaso2) { caso = "paso2"; break; }
       await page.waitForTimeout(500);
