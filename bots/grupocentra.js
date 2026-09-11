@@ -97,7 +97,11 @@ async function facturarGrupoCentra({
       console.log(`📸 [${label}]: ${u}`);
     } catch {}
   }
-  const texto = () => page.evaluate(() => document.body.innerText.replace(/\s+/g, " "));
+  // Devuelve "" en vez de reventar si la pagina esta navegando justo en ese
+  // instante: en GeneXus cada boton provoca un postback y leer el DOM en mitad
+  // del cambio tiraba todo el bot con "Execution context was destroyed".
+  const texto = () =>
+    page.evaluate(() => document.body.innerText.replace(/\s+/g, " ")).catch(() => "");
   const valor = (id) => page.evaluate((i) => { const e = document.getElementById(i); return e ? e.value : null; }, id);
   const clickId = (id) => page.evaluate((i) => { const e = document.getElementById(i); if (!e) return false; e.click(); return true; }, id);
   // GeneXus ignora el .value pelado en algunos campos; se dispara input/change
@@ -204,7 +208,16 @@ async function facturarGrupoCentra({
     await screenshot("p1_previo_facturar");
 
     console.log("🧾 Facturando...");
-    await clickId("A40");
+    // ⚠️ ESTE CLICK NAVEGA. Sin esperar la navegacion, el page.evaluate que
+    // sigue revienta con "Execution context was destroyed" — y el click YA
+    // salio, asi que la factura queda emitida mientras el bot reporta
+    // excepcion. Es la peor combinacion posible en ESTE portal, que (ver
+    // cabecera) no se protege de duplicados: invita a reintentar y a emitir
+    // un segundo CFDI. Paso con el ticket #353 el 11-sep-2026.
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: "networkidle2", timeout: 60000 }).catch(() => {}),
+      clickId("A40"),
+    ]);
     let exito = "";
     const t0 = Date.now();
     while (Date.now() - t0 < 60000) {
