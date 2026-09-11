@@ -82,7 +82,7 @@ function resolverBase({ portalUrl, estacion, comercio }) {
 
 async function facturarCadisa({
   folio, codigo, estacion, comercio, portalUrl, total, formaPago,
-  rfc, razonSocial, codigoPostal, regimenFiscal, calle, ext, int: interior, colonia, municipio, estado, email,
+  rfc, razonSocial, codigoPostal, regimenFiscal, calle, ext, int: interior, colonia, municipio, estado, email, emailEntrega,
   ticketId,
 }) {
   // El pipeline entrega calle / num_ext / num_int por separado (lib/facturacion.js),
@@ -186,14 +186,17 @@ async function facturarCadisa({
       await escribir("CCodigoPostal", codigoPostal || "");
       await elegir("ddRegimenFiscal", `^${String(regimenFiscal || "601")}`);
       await escribir("CRFC", rfc);
-      await escribir("CEmail", email || "");
+      // El CFDI tiene que llegar al BUZON DE CAPTURA, no al correo del
+      // residente: si va a otro lado, la factura se emite y el ticket se
+      // queda esperando. Paso con Casa Ley y La Parisina.
+      await escribir("CEmail", emailEntrega || email || "");
       await sleep(1500);
       await clickId("btnDatosCorrectosContinuar");
       await sleep(9000);
     } else if (await existe("CCiudad")) {
       // Ficha existente: se corrige lo que esté mal antes de seguir (ver
       // cabecera — en Palo Verde el municipio decía "cajeme").
-      const arreglos = await page.evaluate((mun, dir) => {
+      const arreglos = await page.evaluate((mun, dir, correo) => {
         const cambios = [];
         const set = (id, val) => {
           const e = document.getElementById(id);
@@ -207,8 +210,12 @@ async function facturarCadisa({
         };
         set("CCiudad", mun);
         set("CDireccion", dir);
+        // Se corrige tambien el correo de la ficha: si quedo el del residente,
+        // el CFDI se va a un buzon que el sistema no lee y el ticket se queda
+        // esperando para siempre aunque la factura exista.
+        set("CEmail", correo);
         return cambios;
-      }, municipio || "", direccion);
+      }, municipio || "", direccion, emailEntrega || "");
       if (arreglos.length) console.log(`   Datos fiscales corregidos → ${arreglos.join(" | ")}`);
       await sleep(1500);
       await clickId("btnDatosCorrectosContinuar");

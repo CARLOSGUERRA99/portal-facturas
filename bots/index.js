@@ -72,6 +72,18 @@ function normalizarDatos(datos) {
   d.urlEstacion = primero(d.urlEstacion, d.portalUrl, d.portal_url);
   d.portalUrl  = primero(d.portalUrl, d.portal_url, d.urlEstacion);
 
+  // ⚠️ DOS CORREOS QUE NO SE DEBEN CONFUNDIR:
+  //   d.email        → el del residente. Sirve para AVISARLE que su factura ya
+  //                    esta lista (lo manda lib/facturacion.js aparte).
+  //   d.emailEntrega → el buzon de captura. Es el que hay que escribir en el
+  //                    campo "enviar factura a" de CUALQUIER portal, para que
+  //                    el CFDI entre solo por IMAP y se asocie al ticket.
+  // Escribir el correo del residente en el portal —que es lo que hacia
+  // cadisa.js— manda el CFDI a un buzon que el sistema no lee: la factura se
+  // emite y el ticket se queda esperando para siempre. Paso con Casa Ley y La
+  // Parisina, cuyos CFDI acabaron en GASTOSCULIACAN@GMAIL.COM.
+  d.emailEntrega = primero(d.emailEntrega, process.env.IMAP_USER, 'buzonfacturas@serviciosga.site');
+
   // Datos fiscales de GPN: constantes del emisor receptor, no salen del ticket.
   d.rfc = primero(d.rfc, 'GPR110128QD8');
   d.regimenFiscal = primero(d.regimenFiscal, '601');
