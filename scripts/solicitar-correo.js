@@ -32,7 +32,7 @@ const IDS = args.filter((a) => /^\d+$/.test(a)).map(Number);
 const SQL_TICKET = `
   SELECT t.id, t.comercio, t.email_contacto, t.solicitud_correo_enviada,
          t.ocr_json, t.nombre_archivo, t.ruta_archivo, t.user_id, t.status,
-         u.nombre AS user_nombre, u.email AS user_email,
+         u.nombre AS user_nombre, u.email AS user_email, u.telefono AS user_telefono,
          u.rfc, u.razon_social, u.constancia_url,
          c.nombre AS cliente_nombre
   FROM tickets t

@@ -1408,7 +1408,7 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
     const [[ticket]] = await db.query(
       `SELECT t.id, t.comercio, t.email_contacto, t.solicitud_correo_enviada,
               t.ocr_json, t.nombre_archivo, t.ruta_archivo, t.user_id,
-              u.nombre AS user_nombre, u.email AS user_email,
+              u.nombre AS user_nombre, u.email AS user_email, u.telefono AS user_telefono,
               u.rfc, u.razon_social, u.constancia_url,
               c.nombre AS cliente_nombre
        FROM tickets t JOIN users u ON t.user_id = u.id
@@ -1450,7 +1450,8 @@ app.post("/api/tickets/:id/solicitar-correo", auth, async (req, res) => {
     res.status(500).json({ ok: false, msg: err.message });
   }
 });
-
+
+
 // ── MARCA DEL CLIENTE ────────────────────────────────────────────────────────
 //
 // Cada cliente ve SU portal, no el de otro. G&A vende el mismo motor a ~30
