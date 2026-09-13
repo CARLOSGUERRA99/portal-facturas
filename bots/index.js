@@ -40,6 +40,7 @@ const { facturarCapufe } = require('./capufe');
 const { facturarIGasFac } = require('./igasfac');
 const { facturarOxxoGas } = require('./oxxogas');
 const { facturarLittleCaesars } = require('./littlecaesars');
+const { facturarFiarum } = require('./fiarum');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -123,6 +124,24 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: OXXO GAS (requiere sesión manual)');
     return await facturarOxxoGas(datos);
+  }
+
+  // FIARUM — caseta Centinela–Rumorosa (BC). Va AQUÍ ARRIBA a propósito, no al
+  // final: más abajo hay dos ramas que se lo robarían. La de Orler pilla
+  // cualquier `comercio.includes('caseta')` y la de ARCO cualquier
+  // `texto.includes('arco')`, y este ticket es de una caseta cuyo ocr_text no
+  // controlamos. Las condiciones de aquí son específicas, así que no le quita
+  // tickets a nadie.
+  if (
+    portal === 'fiarum' ||
+    portalUrl.includes('fiarumfacturas') ||
+    comercio.includes('centinela') ||
+    comercio.includes('rumorosa') ||
+    comercio.includes('tramo carretero') ||
+    texto.includes('fiarum')
+  ) {
+    console.log('🎯 Portal detectado: FIARUM (caseta Centinela–Rumorosa)');
+    return await facturarFiarum(datos);
   }
 
   // NexusFuel tiene DOS plantillas distintas y el TLD es lo único que las
