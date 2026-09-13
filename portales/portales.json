@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "actualizado": "2026-09-11",
+  "actualizado": "2026-09-13",
   "portales": {
     "bodegaaurrera": {
       "nombre": "Walmart de México (Bodega Aurrera / Mi Bodega Aurrera / Walmart / Sam's Club / Superama)",
@@ -926,11 +926,11 @@
       "notas_desarrollo": "Bot pendiente. Analizar formulario de facturación de boletos de autobús."
     },
     "puentecolorado": {
-      "nombre": "Fideicomiso Puente Colorado (Sonora)",
+      "nombre": "Fideicomiso Puente Colorado (Gobierno de Sonora) — Caseta San Luis Río Colorado",
       "bot": null,
       "estado": "pendiente_bot",
-      "url_base": "https://puentecolorado.com/prefacturacion/",
-      "tecnologia": "WordPress + Elementor. Formulario de PRE-facturación, sin login ni CAPTCHA.",
+      "url_base": "https://www.qrplus.com.mx/SONORA_Facturacion/FormsFacturacion/FWizExprFacturacion.aspx",
+      "tecnologia": "ASP.NET WebForms + DevExpress (ASPxFormLayout), operado por AIDE Soluciones. Wizard de 3 pasos: Registrar Ticket(s) → Datos Fiscales → Facturar. Sin login ni CAPTCHA. Timbra al momento.",
       "stealth": true,
       "comercios": [
         "Caseta Puente Colorado",
@@ -941,18 +941,21 @@
         "por_portal_field": "puentecolorado",
         "por_texto_ocr": [
           "puente colorado",
-          "puentecoloradofacturacion"
+          "puentecoloradofacturacion",
+          "san luis rio colorado",
+          "qrplus"
         ],
         "por_comercio": [
           "puente colorado"
         ],
         "por_url_qr": [
           "puentecoloradofacturacion.com.mx",
-          "puentecolorado.com"
+          "puentecolorado.com",
+          "qrplus.com.mx"
         ],
-        "nota_deteccion": "El dominio que imprime el ticket (puentecoloradofacturacion.com.mx) está CAÍDO: rechaza la conexión por HTTPS. El portal vivo es puentecolorado.com/prefacturacion/."
+        "nota_deteccion": "El dominio que imprime el ticket (puentecoloradofacturacion.com.mx) está CAÍDO. El portal vivo es qrplus.com.mx/SONORA_Facturacion (verificado 13-sep-2026)."
       },
-      "notas_desarrollo": "NO timbra al momento: es una SOLICITUD. Se envía el formulario y la factura llega por correo en un plazo de hasta 48 h → el bot debe devolver {ok:true, procesandoCorreo:true} y dejar que el IMAP la recoja. Campos (ids de Elementor, poco estables — mejor localizarlos por su placeholder): correo [email], teléfono [tel], razón social (ph \"Empresa S.A. DE C.V.\"), RFC (ojo: su id es form-field-email pero el placeholder es \"EMR781210TVC\", o sea que ahí va el RFC), CP [number], un <select>, folios (ph \"03976843, 0397898…\" — admite VARIOS separados por coma), fecha y un [file] para adjuntar la foto del ticket. Botón Enviar. Contacto: puente.colorado@sonora.gob.mx · 653 534 9694."
+      "notas_desarrollo": "PORTAL NUEVO desde sep-2026 (qrplus.com.mx), verificado en vivo el 13-sep-2026. Sustituye al formulario de WordPress puentecolorado.com/prefacturacion/, que era una SOLICITUD y tardaba hasta 48 h en llegar por correo: este TIMBRA AL MOMENTO y ofrece descarga directa. Dos caminos en el Paso 1: (a) WebID, campo con máscara de 5 grupos (____-_____-_____-_____-__) en #..._txtFolioUnico_I → botón #..._btnRegistraTicketFU_I (\"Registrar WebId\"); (b) si el ticket no trae WebID, el bloque \"Si no cuenta con WebID ingrese los datos del ticket\": #..._txtFolio_I (Folio), #..._cmbCaseta_I (combo Caseta, viene con \"SAN LUIS RIO COLORADO\"), #..._txtCarril_I (Carril), #..._date_fecha_I (Fecha), #..._txtHora_I (Hora, formato 00:00:00) → botón #..._btnRegistrar_I (\"Registrar\"). ⚠️ Por el camino (b) hacen falta CASETA, CARRIL y HORA además de folio y fecha: sin ellos el portal no encuentra el ticket. El popup de resultado trae botones de descarga directa #..._pop_Mensaje_btnDescargaPDF_I y #..._pop_Mensaje_btnDescargaXML_I; hay además popups de error (#..._pop_ErrorValidacion_*) y de confirmación (#..._pop_MensajeConfirmaRow_btnAceptaTick_I) que hay que atender. ⚠️ Los ids largos son de DevExpress: el input real termina en _I y hay un hidden hermano con el valor, así que escribir sin disparar los eventos del control deja el hidden vacío y el postback manda el campo en blanco. Prefijo completo: MainPane_Content_MainContent_PageControl_Factura_exampleFormLayout_rpnDatosTicket_ASPxFormLayout8_. Contacto: puente.colorado@sonora.gob.mx · 653 534 9694."
     },
     "littlecaesarsnavojoa": {
       "nombre": "Little Caesars Navojoa",
@@ -1652,6 +1655,73 @@
         "nota_deteccion": "QualliGas NO es la gasolinera: es el proveedor del software. El comercio del ticket es otro (Grupo Gasolinero del Pacifico en el #357), asi que hay que detectar por URL o texto, nunca por el nombre del comercio. El numero de estacion sale como \"ES: 13920\" y otra vez en el pie como estacion.qualligas.com/13920."
       },
       "notas_desarrollo": "PIDE DOS DATOS DEL TICKET, no uno: \"Ticket\" y \"Web ID\". Los dos van impresos juntos al final (TICKET: 860670 / WEB ID: 0927). Sin el Web ID el portal no deja agregar el ticket. El OCR solo capturaba el primero.\n\nPLAZO: \"FACTURA EN LINEA SOLO EL MISMO MES DE COMPRA\" — es el mes natural, no 30 dias. Un ticket del 28 tiene 3 dias de vida.\n\nLos selects #regimenFiscal y #usoCfdi llegan del servidor con CERO option. No tardan: no vienen. Los puebla getRegimenFiscal(rfc, seleccionado), funcion del propio portal que consulta /{estacion}/factura/regimenFiscal. Ademas fetchReceptor() (que dispara el campo Email) BORRA nombre/RFC/CP, asi que hay que rellenarlos DESPUES de que carguen los catalogos.\n\nCAPTCHA de imagen 150x120 en #captcha-img, servido en /service/captcha/captcha/{captchaId}.pn. Necesita la cookie de sesion: hay que leerlo desde dentro de la pagina con canvas->dataURL; un fetch desde Node devuelve 0 bytes. Se resuelve con CapSolver ImageToTextTask.\n\nFlujo: llenar email -> getRegimenFiscal -> resto de campos -> #add-ticket (la tabla responde \"Ticket disponible para solicitar factura\") -> #facturar (abre el captcha) -> ACEPTAR.\n\nContacto de la estacion: facturacion{numeroEstacion}@gmail.com. Hay ademas una pestana DESCARGAR para recuperar un CFDI ya emitido."
+    },
+    "fiarum": {
+      "nombre": "FIARUM — Fideicomiso Tramo Carretero Centinela–Rumorosa (Baja California)",
+      "bot": null,
+      "estado": "pendiente_bot",
+      "url_base": "https://fiarumfacturas.com.mx/cfdi/autofacturas",
+      "tecnologia": "PHP + jQuery. Autofactura en dos bloques (buscar folio → datos fiscales). Sin login ni CAPTCHA. Timbra al momento.",
+      "stealth": true,
+      "comercios": [
+        "Fideicomiso Tramo Carretero",
+        "Plaza de Cobro Centinela - Rumorosa",
+        "Autopista Centinela - La Rumorosa",
+        "FIARUM"
+      ],
+      "deteccion": {
+        "por_portal_field": "fiarum",
+        "por_texto_ocr": [
+          "fiarum",
+          "fideicomiso tramo carretero",
+          "centinela",
+          "rumorosa",
+          "fiarumfacturas"
+        ],
+        "por_comercio": [
+          "fideicomiso tramo carretero",
+          "centinela-rumorosa",
+          "centinela - rumorosa",
+          "fiarum"
+        ],
+        "por_url_qr": [
+          "fiarumfacturas.com.mx"
+        ],
+        "nota_deteccion": "⚠️ NO es CAPUFE ni PINFRA aunque el ticket diga \"PLAZA DE COBRO\": esa frase la usan todas las casetas. Este ticket NO lleva el código de 18 caracteres de CAPUFE ni imprime la URL de su portal, así que se reconoce por el texto \"Fideicomiso Tramo Carretero\" y/o por el nombre de plaza Centinela / Rumorosa. ⚠️ El dominio ficacentinela.com.mx NO EXISTE (NXDOMAIN, comprobado 13-sep-2026): fue una deducción del agente a partir del nombre de la plaza y mandó tres tickets a error. El portal real es fiarumfacturas.com.mx."
+      },
+      "notas_desarrollo": "Selectores verificados en vivo el 13-sep-2026. BLOQUE 1 (buscar el folio): #codigo = Folio, #carril = Carril, #fechaPago = Fecha de pago → botón #btnSearch (\"Buscar\") → si el folio existe aparece #add-code (\"Agregar folio\", oculto hasta entonces) que lo pasa a la tabla \"FOLIOS PARA FACTURAR\". BLOQUE 2 (datos fiscales): #rfc, <select> #usoCfdi (G03), #DomicilioFiscalReceptor = CP del receptor, <select> #regimenReceptor (601), #correo, <select> #formaPago (01 Efectivo / 04 Tarjeta de crédito / 28 Tarjeta de débito) → botón #send (\"Siguiente\"). ⚠️ TRAMPA: #fechaPago tiene ENGANCHADO un daterangepicker de jQuery (jQuery('#fechaPago').data('daterangepicker') devuelve objeto). Escribir con page.type() no dispara el change y la búsqueda contesta \"Referencia de facturación No encontrada\", que parece un folio malo cuando en realidad es la fecha que nunca se envió: fijarla por la API del picker o disparar el change a mano. Textos de resultado que hay que leer: \"Referencia de facturación No encontrada.\", \"Referencia de facturación fuera de rango\", \"Referencia de facturación exitosa.\", \"FOLIO de facturación encontrado, esperando aprobación.\". La pestaña DESCARGAR FACTURAS (#rfcBuscar + #folioBuscar + #searchCfdis) sirve para recuperar un CFDI ya timbrado. El portal admite VARIOS folios en la misma factura (\"Agregar folio\" repetido)."
+    },
+    "laparisina": {
+      "nombre": "Parisina (Grupo Parisina S.A. de C.V.) — Portal Clientes",
+      "bot": null,
+      "estado": "pendiente_bot",
+      "url_base": "https://facturacion.laparisina.com.mx/",
+      "tecnologia": "Web clásica. Paso 1 \"Consulta RFC\": régimen (Física/Moral) + RFC → Buscar. Sin login ni CAPTCHA.",
+      "stealth": true,
+      "comercios": [
+        "Parisina",
+        "La Parisina",
+        "Grupo Parisina S.A. de C.V."
+      ],
+      "deteccion": {
+        "por_portal_field": "laparisina",
+        "por_texto_ocr": [
+          "parisina",
+          "grupo parisina",
+          "laparisina"
+        ],
+        "por_comercio": [
+          "parisina",
+          "la parisina",
+          "grupo parisina"
+        ],
+        "por_url_qr": [
+          "facturacion.laparisina.com.mx",
+          "laparisina.com.mx"
+        ],
+        "nota_deteccion": "⚠️ El ticket imprime laparisina.com.mx, que es el sitio CORPORATIVO y no factura. El portal es el subdominio facturacion.laparisina.com.mx. Si el OCR devuelve portalUrl \"http://www.laparisina.com.mx/\", corregirlo al subdominio."
+      },
+      "notas_desarrollo": "⚠️ NO timbra al momento: el propio portal avisa que la factura llega al correo en un plazo no mayor de 24 h → el bot debe devolver {ok:true, procesandoCorreo:true} y dejar que el IMAP la recoja, como puentecolorado. ⚠️ Advertencia del portal con consecuencia fiscal: la factura se emite CON LA FECHA DE CAPTURA en el portal, no con la del ticket. Entra por \"Consulta RFC\" (radio Física/Moral + RFC + Buscar) antes de pedir los datos del ticket. Contacto: facturacion@laparisina.com.mx."
     }
   },
   "fusionados": {
