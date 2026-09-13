@@ -46,13 +46,20 @@
 //    folio"). Aquí se factura de uno en uno porque el sistema trabaja por
 //    ticket.
 //
-// ⚠️ LO QUE NO ESTÁ VERIFICADO: todo lo que pasa DESPUÉS de pulsar #send. El
-// reconocimiento se paró justo antes a propósito, porque ese botón emite un
-// CFDI real y no tiene vuelta atrás. Por eso el tramo final es defensivo:
-// intenta capturar XML/PDF por blob (como carljr) y, si no los ve, devuelve
-// procesandoCorreo:true para que el CFDI entre por IMAP — que llega igual
-// porque en #correo se escribe el buzón de captura, no el correo del residente.
-// Para probar el flujo completo SIN emitir nada: dryRun:true (o FIARUM_DRY_RUN=1).
+//  - ⚠️ EL BOTÓN "SIGUIENTE" (#send) NO TIMBRA. Abre una SEGUNDA pantalla de
+//    prefactura (emisor HSBC MEXICO SA F/138509 FIARUM, RFC BIF990427KU0) con
+//    el desglose y dos botones nuevos: #BtnVista ("Vista Previa") y #BtnSend
+//    ("Generar CFDI"). El que emite es #BtnSend. En esa pantalla aparece
+//    #razonSocial (data[Receptor][Nombre]) VACÍO y obligatorio — el RFC llega
+//    readOnly y el resto (correo, uso, régimen, CP) se arrastra de la primera.
+//    Esto costó el primer intento del ticket #391: el bot pulsaba "Siguiente",
+//    no capturaba archivos y daba el ticket por facturado sin estarlo.
+//
+// Paradas de seguridad para probar sin emitir (scripts/probe-fiarum.js):
+//   dryRun:'siguiente'  → para antes de #send
+//   dryRun:'prefactura' → atraviesa #send, deja la prefactura lista y para
+//                         antes de #BtnSend. Es la parada útil: valida
+//                         exactamente el estado que se va a timbrar.
 const puppeteer = require("puppeteer");
 const { subirArchivoR2 } = require("../storage/r2");
 
@@ -92,6 +99,9 @@ async function facturarFiarum({
   codigoPostal,
   regimenFiscal,
   usoCfdi,
+  // Domicilio del receptor: opcional en la prefactura, pero si el perfil del
+  // cliente lo tiene se llena. `int` se renombra porque es palabra reservada.
+  calle, ext, int: numInt, colonia, municipio, estado,
   formaPago,
   emailEntrega,
   ticketId,
@@ -105,11 +115,13 @@ async function facturarFiarum({
   const carrilLimpio = String(carril || "").replace(/\D/g, "") || "1";
   const fechaPortal = aDdMmYyyy(fecha || fechaPago);
   const montoTicket = total != null ? total : importe;
-  // ⚠️ Solo para scripts/probe-fiarum.js. NUNCA se activa desde la cola: su
-  // error_code no es de los controlados, así que si llegara por el pipeline
-  // lib/facturacion.js lo trataría como error genérico y lo reintentaría a
-  // medianoche. Desde el probe se llama a esta función directamente.
-  const seco = dryRun === true || process.env.FIARUM_DRY_RUN === "1";
+  // Paradas de seguridad, solo para scripts/probe-fiarum.js. NUNCA se activan
+  // desde la cola: su error_code no es de los controlados, así que si llegara
+  // por el pipeline lib/facturacion.js lo trataría como error genérico.
+  //   "siguiente"  → para ANTES de pulsar Siguiente (ni siquiera ve la prefactura)
+  //   "prefactura" → atraviesa Siguiente y para ANTES de "Generar CFDI"
+  const crudo = dryRun === true ? "siguiente" : (dryRun || process.env.FIARUM_DRY_RUN || null);
+  const seco = crudo === "1" ? "siguiente" : crudo;
 
   console.log(`   Folio: ${folioLimpio} | Carril: ${carrilLimpio} | Fecha: ${fechaPortal} | Total: ${montoTicket} | RFC: ${rfc}${seco ? " | 🧪 DRY RUN" : ""}`);
 
@@ -208,10 +220,10 @@ async function facturarFiarum({
 
     // El portal deja los cuatro mensajes de estado en el DOM y solo cambia su
     // visibilidad, así que se sondea la VISIBILIDAD, no el texto suelto.
-    let estado = null;
+    let busqueda = null;
     for (let i = 0; i < 20; i++) {
       await sleep(1000);
-      estado = await page.evaluate(() => {
+      busqueda = await page.evaluate(() => {
         const visible = (el) => !!(el && el.offsetParent);
         const txt = (re) => Array.from(document.querySelectorAll("div,span,p"))
           .some((e) => visible(e) && re.test(e.textContent || "") && (e.textContent || "").length < 200);
@@ -223,30 +235,30 @@ async function facturarFiarum({
           carrilPortal: document.getElementById("carril").value,
         };
       });
-      if (estado.agregar || estado.noEncontrada || estado.fueraDeRango || estado.esperandoAprobacion) break;
+      if (busqueda.agregar || busqueda.noEncontrada || busqueda.fueraDeRango || busqueda.esperandoAprobacion) break;
     }
     await screenshot("p2_busqueda");
 
-    if (estado.noEncontrada) {
+    if (busqueda.noEncontrada) {
       await browser.close();
       return { ok: false, error_code: "datos_invalidos", msg: `FIARUM: el portal no encontró el folio ${folioLimpio} con fecha ${fechaPortal}. Revisa folio y fecha en la foto del ticket.` };
     }
-    if (estado.fueraDeRango) {
+    if (busqueda.fueraDeRango) {
       await browser.close();
       return { ok: false, error_code: "ticket_vencido", msg: `FIARUM: el folio ${folioLimpio} está fuera del rango de facturación (plazo vencido).` };
     }
-    if (estado.esperandoAprobacion) {
+    if (busqueda.esperandoAprobacion) {
       await browser.close();
       return { ok: false, msg: `FIARUM: el folio ${folioLimpio} ya tiene una solicitud en curso ("esperando aprobación") — no se vuelve a mandar para no duplicar.` };
     }
-    if (!estado.agregar) {
+    if (!busqueda.agregar) {
       await browser.close();
       return { ok: false, msg: `FIARUM: la búsqueda del folio ${folioLimpio} no dio respuesta reconocible en 20 s${ultimoDialog ? ` (alert: "${ultimoDialog}")` : ""}` };
     }
 
     // El portal reescribe #carril con el carril real de su base.
-    if (estado.carrilPortal && estado.carrilPortal !== carrilLimpio) {
-      console.log(`   ℹ️ Carril del ticket "${carrilLimpio}" → el portal lo corrigió a "${estado.carrilPortal}"`);
+    if (busqueda.carrilPortal && busqueda.carrilPortal !== carrilLimpio) {
+      console.log(`   ℹ️ Carril del ticket "${carrilLimpio}" → el portal lo corrigió a "${busqueda.carrilPortal}"`);
     }
     console.log("✅ Folio encontrado");
 
@@ -313,18 +325,18 @@ async function facturarFiarum({
 
     // ── PASO 4 — Emitir ──────────────────────────────────────────────────
     // A partir de aquí NO hay vuelta atrás: #send emite un CFDI real.
-    if (seco) {
+    if (seco === "siguiente") {
       await browser.close();
       console.log("🧪 DRY RUN — todo listo hasta el botón Siguiente; no se emite nada.");
       return {
         ok: false,
         error_code: "dry_run",
         msg: `FIARUM dry run OK: folio ${folioLimpio} encontrado y agregado, datos fiscales cargados. No se pulsó "Siguiente".`,
-        _debug: { carrilPortal: estado.carrilPortal, llenado: llenado.leido },
+        _debug: { carrilPortal: busqueda.carrilPortal, llenado: llenado.leido },
       };
     }
 
-    console.log('🧾 Pulsando "Siguiente" (EMISIÓN REAL)...');
+    console.log('➡️  Pulsando "Siguiente" (aún NO emite: lleva a la prefactura)...');
     const pulso = await page.evaluate(() => {
       const b = document.getElementById("send");
       if (!b || !b.offsetParent) return false;
@@ -337,7 +349,88 @@ async function facturarFiarum({
       return { ok: false, msg: `FIARUM: el folio ${folioLimpio} quedó cargado pero el botón "Siguiente" no estaba disponible` };
     }
     await sleep(9000);
-    await screenshot("p5_post_emision");
+    await screenshot("p5_prefactura");
+
+    // ── PASO 5 — PREFACTURA ──────────────────────────────────────────────
+    // "Siguiente" NO timbra: abre una segunda pantalla con el desglose (emisor
+    // HSBC MEXICO SA F/138509 FIARUM, RFC BIF990427KU0) y DOS botones nuevos,
+    // "Vista Previa" y "Generar CFDI". El que emite es "Generar CFDI".
+    // ⚠️ Y aquí aparece un campo que en la primera pantalla no existía:
+    // Nombre/Razón Social, vacío y OBLIGATORIO (asterisco rojo). Sin llenarlo
+    // el portal no timbra.
+    const pre = await page.evaluate(() => {
+      const vis = (e) => !!(e && e.offsetParent);
+      return {
+        campos: Array.from(document.querySelectorAll("input,select,textarea"))
+          .filter((e) => vis(e) && e.type !== "hidden")
+          .map((e) => ({ id: e.id, name: e.name, ph: e.placeholder, val: e.value, req: e.required, ro: e.readOnly })),
+        botones: Array.from(document.querySelectorAll("button,a.btn,input[type=submit]"))
+          .filter(vis)
+          .map((e) => ({ id: e.id, cls: (e.className || "").slice(0, 50), txt: (e.innerText || e.value || "").trim().slice(0, 40) })),
+      };
+    });
+    console.log(`   Prefactura — ${pre.campos.length} campos, ${pre.botones.length} botones`);
+
+    // #razonSocial (data[Receptor][Nombre]) llega VACÍO y es el único dato que
+    // falta: el RFC viene readOnly y el resto (correo, uso, régimen, CP) se
+    // arrastra de la pantalla anterior. Los de domicilio son opcionales
+    // ("Extras") pero se llenan si el perfil del cliente los tiene.
+    const relleno = await page.evaluate((d) => {
+      const puestos = [];
+      const set = (id, val) => {
+        const e = document.getElementById(id);
+        if (!e || !val || e.readOnly) return;
+        e.value = val;
+        e.dispatchEvent(new Event("input", { bubbles: true }));
+        e.dispatchEvent(new Event("change", { bubbles: true }));
+        puestos.push(id);
+      };
+      set("razonSocial", d.razonSocial);
+      set("calle", d.calle);
+      set("noExterior", d.ext);
+      set("noInterior", d.int);
+      set("colonia", d.colonia);
+      set("municipio", d.municipio);
+      set("estado", d.estado);
+      return { puestos, razonSocial: (document.getElementById("razonSocial") || {}).value };
+    }, { razonSocial, calle, ext, int: numInt, colonia, municipio, estado });
+
+    if (!relleno.razonSocial) {
+      await screenshot("error_sin_razon_social");
+      await browser.close();
+      return { ok: false, error_code: "datos_invalidos", msg: `FIARUM: la prefactura del folio ${folioLimpio} exige Nombre/Razón Social y quedó vacío — no se pulsa "Generar CFDI" para no emitir un CFDI incompleto.` };
+    }
+    console.log(`   Prefactura rellenada: ${relleno.puestos.join(", ")}`);
+    await screenshot("p5b_prefactura_lista");
+
+    // Parada de seguridad con la pantalla YA LISTA: es el estado exacto que
+    // vería el botón verde, así que lo que se valida aquí es lo que se emitirá.
+    if (seco === "prefactura") {
+      await browser.close();
+      console.log('🧪 DRY RUN prefactura — todo listo; parado ANTES de "Generar CFDI". No se emitió nada.');
+      return {
+        ok: false,
+        error_code: "dry_run",
+        msg: `FIARUM dry run: prefactura del folio ${folioLimpio} lista y sin timbrar.`,
+        _prefactura: { rellenados: relleno.puestos, razonSocial: relleno.razonSocial, botones: pre.botones },
+      };
+    }
+
+    console.log('🧾 Pulsando "Generar CFDI" (EMISIÓN REAL)...');
+    const genero = await page.evaluate(() => {
+      const b = Array.from(document.querySelectorAll("button,a,input[type=submit]"))
+        .find((e) => e.offsetParent && /generar\s*cfdi/i.test(e.innerText || e.value || ""));
+      if (!b) return false;
+      b.click();
+      return true;
+    });
+    if (!genero) {
+      await screenshot("error_sin_generar_cfdi");
+      await browser.close();
+      return { ok: false, msg: `FIARUM: llegué a la prefactura del folio ${folioLimpio} pero no apareció el botón "Generar CFDI" — no se emitió nada.` };
+    }
+    await sleep(12000);
+    await screenshot("p6_post_emision");
 
     // Intento de capturar XML/PDF: primero pulsando cualquier enlace/botón de
     // descarga que haya aparecido, luego leyendo los blobs interceptados.
@@ -373,23 +466,43 @@ async function facturarFiarum({
       return { ok: true, xmlUrl, pdfUrl };
     }
 
-    // Antes de soltar el browser: rescatar cualquier UUID o folio de la
-    // pantalla final. lib/facturacion.js solo conserva estos dos nombres
-    // (folioGenerado / uuid) y con ellos escribe el "NO RELANZAR" en error_msg,
-    // que es lo único que impide volver a timbrar el mismo cruce.
-    const textoFinal = await page.evaluate(() => document.body.innerText);
-    const uuid = (textoFinal.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0] || null;
+    // ⚠️ AQUÍ ESTUVO EL BUG QUE COSTÓ EL PRIMER INTENTO DEL #391: la versión
+    // anterior devolvía ok:true / procesandoCorreo:true en cuanto no capturaba
+    // archivos, SIN comprobar nada. Como "Siguiente" solo abre la prefactura y
+    // no timbra, el ticket quedó marcado "FACTURA GENERADA … NO RELANZAR"
+    // cuando en realidad no se había emitido nada — el peor error posible aquí,
+    // porque un falso "no relanzar" congela el ticket para siempre.
+    // Ahora hace falta PRUEBA de que se timbró: un UUID, un texto de éxito, o
+    // que el botón "Generar CFDI" haya desaparecido de la pantalla.
+    const cierre = await page.evaluate(() => ({
+      texto: document.body.innerText,
+      sigueElBoton: Array.from(document.querySelectorAll("button,a,input[type=submit]"))
+        .some((e) => e.offsetParent && /generar\s*cfdi/i.test(e.innerText || e.value || "")),
+    }));
+    const uuid = (cierre.texto.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0] || null;
+    const textoExito = /(cfdi|factura)\s*(generad|timbrad|emitid)|se\s*(ha\s*)?envi|descarga\s*tu\s*factura|exitosa/i.test(cierre.texto);
     await browser.close();
 
-    // Sin archivos capturados no damos el ticket por perdido: en #correo fue el
-    // buzón de captura, así que el CFDI llega por IMAP y el job lo asocia.
-    console.log(`📧 Sin captura de archivos — queda en manos del correo (IMAP)${uuid ? ` | UUID: ${uuid}` : ""}`);
+    if (!uuid && !textoExito && cierre.sigueElBoton) {
+      console.log('❌ Tras "Generar CFDI" la pantalla sigue mostrando el botón y no hay UUID ni acuse: NO se emitió.');
+      return {
+        ok: false,
+        msg: `FIARUM: se pulsó "Generar CFDI" para el folio ${folioLimpio} pero el portal no dio acuse (ni UUID, ni mensaje de éxito, y el botón sigue ahí). NO se da por facturado. Texto: ${cierre.texto.replace(/\s+/g, " ").slice(0, 250)}`,
+        _debug: { descargas: descargas.map((d) => d.name || "?") },
+      };
+    }
+
+    // Hay prueba de emisión pero no pudimos bajar los archivos: en #correo fue
+    // el buzón de captura, así que el CFDI llega por IMAP y el job lo asocia.
+    // folioGenerado/uuid son los dos únicos nombres que lib/facturacion.js
+    // conserva, y con ellos escribe el "NO RELANZAR" en error_msg.
+    console.log(`📧 Emitida sin captura de archivos — queda en manos del correo (IMAP)${uuid ? ` | UUID: ${uuid}` : ""}`);
     return {
       ok: true,
       procesandoCorreo: true,
       folioGenerado: folioLimpio,
       ...(uuid ? { uuid } : {}),
-      _debug: { texto: textoFinal.replace(/\s+/g, " ").slice(0, 400), descargas: descargas.map((d) => d.name || "?") },
+      _debug: { texto: cierre.texto.replace(/\s+/g, " ").slice(0, 400), descargas: descargas.map((d) => d.name || "?") },
     };
   } catch (e) {
     console.error("❌ Error en bot FIARUM:", e.message);

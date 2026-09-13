@@ -7,9 +7,11 @@
  * que emite el CFDI y no tiene vuelta atrás.
  *
  * Uso:
- *   node scripts/probe-fiarum.js            → ticket #391 en seco (no emite)
- *   node scripts/probe-fiarum.js 394        → otro de los tickets conocidos
- *   node scripts/probe-fiarum.js 391 EMITIR → ⚠️ TIMBRA DE VERDAD
+ *   node scripts/probe-fiarum.js                        → #391, para antes de "Siguiente"
+ *   node scripts/probe-fiarum.js 394                    → otro de los tickets conocidos
+ *   node scripts/probe-fiarum.js 394 prefactura         → atraviesa "Siguiente" y para
+ *                                                         ante "Generar CFDI" (no emite)
+ *   node scripts/probe-fiarum.js 391 EMITIR             → ⚠️ TIMBRA DE VERDAD
  *
  * Los tres tickets son de la caseta Centinela–Rumorosa y llevan desde el 7-sep
  * en error por el portal que no existía (ficacentinela.com.mx).
@@ -23,14 +25,16 @@ process.on('uncaughtException', (e) => console.log('uncaughtException:', (e && e
 
 const { facturarFiarum } = require('../bots/fiarum');
 
-// Datos fiscales del receptor: los mismos que el router pone por defecto
-// (bots/index.js → normalizarDatos) y que se ven en los logs de producción.
+// Datos fiscales REALES del receptor, leídos de la tabla `clientes` con
+// scripts/_ver-fiscales.js. No inventar el CP: tiene que ser el del domicilio
+// fiscal del SAT o el CFDI sale mal y no hay deshacer (en la primera versión de
+// este probe puse 85000 a ojo, y el bueno es 80140).
 const FISCALES = {
   rfc: 'GPR110128QD8',
   razonSocial: 'GPN PINTURAS Y RECUBRIMIENTOS',
   regimenFiscal: '601',
   usoCfdi: 'G03',
-  codigoPostal: '85000',
+  codigoPostal: '80140',
   emailEntrega: 'buzonfacturas@serviciosga.site',
 };
 
@@ -45,7 +49,8 @@ const TICKETS = {
 
 (async () => {
   const id = process.argv[2] || '391';
-  const emitir = (process.argv[3] || '').toUpperCase() === 'EMITIR';
+  const modo = (process.argv[3] || '').toLowerCase();
+  const emitir = modo === 'emitir';
   const ticket = TICKETS[id];
 
   if (!ticket) {
@@ -53,13 +58,17 @@ const TICKETS = {
     process.exit(1);
   }
 
+  // "Siguiente" NO emite (solo abre la prefactura), así que parar en
+  // 'prefactura' sigue siendo seguro: el botón que timbra es "Generar CFDI".
+  const dryRun = emitir ? false : (modo === 'prefactura' ? 'prefactura' : 'siguiente');
+
   console.log(
     emitir
       ? `⚠️  MODO EMISIÓN REAL — el ticket #${id} se va a TIMBRAR. No hay deshacer.\n`
-      : `⛔ Parada de seguridad activa (dryRun): se recorre todo y se para antes de "Siguiente".\n`
+      : `⛔ Parada de seguridad: dryRun='${dryRun}' — no se emite nada.\n`
   );
 
-  const r = await facturarFiarum({ ...FISCALES, ...ticket, dryRun: !emitir });
+  const r = await facturarFiarum({ ...FISCALES, ...ticket, dryRun });
 
   console.log('\n========== RESULTADO ==========');
   console.log(JSON.stringify(r, null, 1));
