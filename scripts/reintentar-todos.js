@@ -23,7 +23,8 @@ const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Errores en los que insistir NO sirve de nada: el problema es el dato o el
 // portal, no una falla transitoria. Reintentar solo quema sesiones.
-const DEFINITIVOS = /captcha|ya (fue )?facturad|duplicad|vencid|no est[aá] dado de alta|c[oó]digo .*(inv[aá]lido|no lo reconoce)|sin portal|no reconoce NINGUNA/i;
+// ⚠️ 13-sep-2026: "captcha" ya no es definitivo — el repo lo resuelve.
+const DEFINITIVOS = /ya (fue )?facturad|duplicad|vencid|no est[aá] dado de alta|c[oó]digo .*(inv[aá]lido|no lo reconoce)|sin portal|no reconoce NINGUNA/i;
 
 (async () => {
   const idsArg = process.argv.slice(2).map((n) => parseInt(n, 10)).filter(Boolean);

@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer');
 const Anthropic = require('@anthropic-ai/sdk');
 const { subirArchivoR2 } = require('../storage/r2');
 // Reconocer el CAPTCHA antes de gastar el alta (ver lib/captcha.js).
-const { detectarCaptcha } = require('../lib/captcha');
+const { detectarCaptcha, esResoluble, solverPara } = require('../lib/captcha');
 
 // El modelo del agente se elige por variable de entorno, sin tocar código.
 //
@@ -159,21 +159,33 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
       // lo que necesita quien lo va a facturar a mano. No se intenta resolver
       // ni esquivar: se reconoce y se manda a Validación Manual.
       const bloqueo = await detectarCaptcha(page);
-      if (bloqueo.hay) {
+      const comoSeLlama = {
+        recaptcha: 'reCAPTCHA de Google', turnstile: 'Cloudflare Turnstile',
+        hcaptcha: 'hCaptcha', radcaptcha: 'RadCaptcha de Telerik',
+        imagen: 'CAPTCHA de imagen', muro: 'muro anti-bot de Cloudflare',
+        imagen_may: 'CAPTCHA de texto sensible a mayúsculas',
+      }[bloqueo.tipo] || bloqueo.tipo;
+
+      // ⚠️ Antes esto abortaba el alta ante CUALQUIER captcha, con el motivo
+      // "No se puede automatizar". Derogado el 13-sep-2026: el repo resuelve
+      // reCAPTCHA v2, Turnstile e imagen, así que un captcha de esos ya no es
+      // razón para no generar el bot — es un dato más que el bot tendrá que
+      // manejar, y se le pasa como captchaTipo/captchaSolver.
+      // Solo se sigue cortando con los tipos que aún no sabemos resolver:
+      // gastar el alta ahí sí es tirar el dinero.
+      if (bloqueo.hay && !esResoluble(bloqueo.tipo)) {
         await browser.close().catch(() => {});
-        const comoSeLlama = {
-          recaptcha: 'reCAPTCHA de Google', turnstile: 'Cloudflare Turnstile',
-          hcaptcha: 'hCaptcha', radcaptcha: 'RadCaptcha de Telerik',
-          imagen: 'CAPTCHA de imagen', muro: 'muro anti-bot de Cloudflare',
-        }[bloqueo.tipo] || bloqueo.tipo;
-        console.log(`🛑 [Analizador] ${comoSeLlama} en ${urlFinal} — no se gasta el alta`);
+        console.log(`🛑 [Analizador] ${comoSeLlama} en ${urlFinal} — aún sin solver, no se gasta el alta`);
         return {
           ok: false,
           etapa: 'captcha',
           captcha: true,
           captcha_tipo: bloqueo.tipo,
-          msg: `${comercioNombre || 'El portal'} está protegido con ${comoSeLlama}. No se puede automatizar: hay que facturarlo a mano o pedirlo por correo.`,
+          msg: `${comercioNombre || 'El portal'} está protegido con ${comoSeLlama}, para el que todavía no hay solver escrito. Factúralo a mano o pídelo por correo.`,
         };
+      }
+      if (bloqueo.hay) {
+        console.log(`🔓 [Analizador] ${comoSeLlama} en ${urlFinal} — resoluble con ${solverPara(bloqueo.tipo)}, se sigue con el alta`);
       }
 
       // ── Seguir el iframe del formulario real si el form está embebido ──

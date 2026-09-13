@@ -14,9 +14,10 @@ sube una foto. Con WhatsApp le manda la foto a un número, como le manda una fot
 a su esposa. Se acabó la fricción — y esa fricción es la razón real de que los
 tickets se acumulen sin subir.
 
-**No cambia:** cómo se factura. El CAPTCHA, los plazos de cada portal y los
-formularios están del lado del comercio. Un portal bloqueado seguirá bloqueado
-llegue el ticket por donde llegue.
+**No cambia:** cómo se factura. Los plazos de cada portal y los formularios
+están del lado del comercio y llegue el ticket por donde llegue, siguen igual.
+(El CAPTCHA salió de esta lista el 13-sep-2026: ese sí está de nuestro lado —
+se resuelve con CapSolver.)
 
 Dicho de otro modo: WhatsApp resuelve el problema de **entrada**, que hoy es el
 cuello de botella real. No toca el de **salida**.

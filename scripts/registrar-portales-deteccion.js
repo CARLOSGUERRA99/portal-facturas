@@ -52,7 +52,7 @@ const NUEVOS = {
       por_comercio: ['oxxo gas'],
       por_url_qr: ['oxxogas.com'],
     },
-    notas_desarrollo: 'NO es la tienda OXXO. El ticket trae "Folio:" de 7 digitos y "Bomba:". Requiere cookies de sesion inyectadas a mano: el login tiene reCAPTCHA v2 que no se resuelve. Entrar SIEMPRE por la home, nunca por deep link.',
+    notas_desarrollo: 'NO es la tienda OXXO. El ticket trae "Folio:" de 7 digitos y "Bomba:". Requiere cookies de sesion inyectadas a mano: el login tiene reCAPTCHA v2, resoluble con CapSolver desde el 15-ago-2026. Entrar SIEMPRE por la home, nunca por deep link.',
   },
   caffenio: {
     nombre: 'CAFFENIO',

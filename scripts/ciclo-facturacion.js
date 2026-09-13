@@ -31,7 +31,11 @@ const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Errores en los que insistir NO sirve: el problema es el dato, el plazo o el
 // portal, no una falla pasajera.
-const IRRECUPERABLE = /captcha|cloudflare|duplicad|72 hora|venci|plazo|ya (fue|est[aá]) (timbrad|facturad)|no lo reconoce NINGUNA|ilegible|no extrajo|no se pudo leer|reserva|ya capturado|sin portal|no automatizable/i;
+// ⚠️ 13-sep-2026: se quitaron de esta lista "captcha" y "cloudflare". Estaban
+// aqui de cuando el repo no resolvia captchas; hoy resolvemos reCAPTCHA v2,
+// Turnstile e imagen, asi que un fallo de captcha es TRANSITORIO y merece
+// reintento. Quien no tiene solver ya se para antes, en lib/facturacion.js.
+const IRRECUPERABLE = /duplicad|72 hora|venci|plazo|ya (fue|est[aá]) (timbrad|facturad)|no lo reconoce NINGUNA|ilegible|no extrajo|no se pudo leer|reserva|ya capturado|sin portal|no automatizable/i;
 
 function correr(script, args = [], minutos = 12) {
   try {

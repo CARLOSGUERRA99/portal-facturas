@@ -1,7 +1,24 @@
 {
- "fecha": "2026-09-13T21:49:20.194Z",
- "pct": "100.0",
- "perfectos": 24,
+ "fecha": "2026-09-13T23:10:44.605Z",
+ "pct": "97.1",
+ "perfectos": 22,
  "total": 24,
- "fallidos": []
+ "fallidos": [
+  {
+   "caso": "0150_Analizando.jpeg",
+   "aciertos": 3,
+   "total": 4,
+   "fallos": [
+    "referencia: esperaba \"0498471292208AE\" y salió \"049847129220BAE\""
+   ]
+  },
+  {
+   "caso": "0163_GRUPO-INNO-SA-DE-CV.jpeg",
+   "aciertos": 3,
+   "total": 4,
+   "fallos": [
+    "referencia: esperaba \"0498471292208AE\" y salió \"049847129220BAE\""
+   ]
+  }
+ ]
 }

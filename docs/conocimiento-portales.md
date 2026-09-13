@@ -294,7 +294,7 @@ reintentar entonces con el mismo folio.
 - **Errores que distingue:** captcha
 - **Esperas fijas:** 21.2s (⚠️ el tope de sesión de Browserless son 60s)
 
-> NO es la tienda OXXO. El ticket trae "Folio:" de 7 digitos y "Bomba:". Requiere cookies de sesion inyectadas a mano: el login tiene reCAPTCHA v2 que no se resuelve. Entrar SIEMPRE por la home, nunca por deep link.
+> NO es la tienda OXXO. El ticket trae "Folio:" de 7 digitos y "Bomba:". Hoy requiere cookies de sesion inyectadas a mano porque el login automatico no esta escrito todavia — NO porque el captcha bloquee: su login lleva reCAPTCHA v2 y el repo lo resuelve (derogado el 13-sep-2026). Entrar SIEMPRE por la home, nunca por deep link.
 
 <details><summary>Reconocimiento real del portal</summary>
 
@@ -333,11 +333,12 @@ OXXO GAS — facturacion.oxxogas.com
   autenticado por la misma cookie (no hace falta navegador para eso).
 ══════════════════════════════════════════════════════════════════════════
 
-⚠️ ESTE BOT NO ES AUTÓNOMO. Requiere una cookie de sesión ya
-autenticada MANUALMENTE por el usuario (ver más abajo). NO intenta
-resolver el reCAPTCHA v2 del login bajo ninguna circunstancia — esa
-regla es absoluta e innegociable en este proyecto. La única forma de
-operar este bot es:
+⚠️ HOY ESTE BOT NO ES AUTÓNOMO: requiere una cookie de sesión autenticada
+a mano (ver más abajo). Es el estado actual, NO un límite.
+REGLA DEROGADA (13-sep-2026): aquí decía que no se resuelve el reCAPTCHA v2
+del login "bajo ninguna circunstancia — regla absoluta e innegociable".
+Se escribió cuando el repo no sabía resolver v2; desde el 15-ago sí sabe, y
+automatizar este login está aprobado. Mientras no se escriba, se opera así:
   1. El usuario inicia sesión a mano en facturacion.oxxogas.com en un
      navegador real, resolviendo el reCAPTCHA él mismo.
   2. Copia el valor de la cookie `ci_sessions` (DevTools → Application
