@@ -41,6 +41,7 @@ const { facturarIGasFac } = require('./igasfac');
 const { facturarOxxoGas } = require('./oxxogas');
 const { facturarLittleCaesars } = require('./littlecaesars');
 const { facturarFiarum } = require('./fiarum');
+const { facturarPuenteColorado } = require('./puentecolorado');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -142,6 +143,21 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: FIARUM (caseta Centinela–Rumorosa)');
     return await facturarFiarum(datos);
+  }
+
+  // Puente Colorado — caseta San Luis Rio Colorado (qrplus). Va aqui arriba por
+  // lo mismo que FIARUM: su comercio dice "Caseta de Peaje San Luis Rio
+  // Colorado" y mas abajo `comercio.includes('caseta')` se lo llevaria a
+  // Orler/Sinaloa.
+  if (
+    portal === 'puentecolorado' ||
+    portalUrl.includes('qrplus.com.mx') ||
+    portalUrl.includes('puentecolorado') ||
+    comercio.includes('puente colorado') ||
+    comercio.includes('rio colorado')
+  ) {
+    console.log('🎯 Portal detectado: Puente Colorado / San Luis Rio Colorado (qrplus)');
+    return await facturarPuenteColorado(datos);
   }
 
   // NexusFuel tiene DOS plantillas distintas y el TLD es lo único que las

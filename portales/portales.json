@@ -927,8 +927,8 @@
     },
     "puentecolorado": {
       "nombre": "Fideicomiso Puente Colorado (Gobierno de Sonora) — Caseta San Luis Río Colorado",
-      "bot": null,
-      "estado": "pendiente_bot",
+      "bot": "bots/puentecolorado.js",
+      "estado": "produccion",
       "url_base": "https://www.qrplus.com.mx/SONORA_Facturacion/FormsFacturacion/FWizExprFacturacion.aspx",
       "tecnologia": "ASP.NET WebForms + DevExpress (ASPxFormLayout), operado por AIDE Soluciones. Wizard de 3 pasos: Registrar Ticket(s) → Datos Fiscales → Facturar. Sin login ni CAPTCHA. Timbra al momento.",
       "stealth": true,
@@ -955,7 +955,7 @@
         ],
         "nota_deteccion": "El dominio que imprime el ticket (puentecoloradofacturacion.com.mx) está CAÍDO. El portal vivo es qrplus.com.mx/SONORA_Facturacion (verificado 13-sep-2026)."
       },
-      "notas_desarrollo": "PORTAL NUEVO desde sep-2026 (qrplus.com.mx), verificado en vivo el 13-sep-2026. Sustituye al formulario de WordPress puentecolorado.com/prefacturacion/, que era una SOLICITUD y tardaba hasta 48 h en llegar por correo: este TIMBRA AL MOMENTO y ofrece descarga directa. Dos caminos en el Paso 1: (a) WebID, campo con máscara de 5 grupos (____-_____-_____-_____-__) en #..._txtFolioUnico_I → botón #..._btnRegistraTicketFU_I (\"Registrar WebId\"); (b) si el ticket no trae WebID, el bloque \"Si no cuenta con WebID ingrese los datos del ticket\": #..._txtFolio_I (Folio), #..._cmbCaseta_I (combo Caseta, viene con \"SAN LUIS RIO COLORADO\"), #..._txtCarril_I (Carril), #..._date_fecha_I (Fecha), #..._txtHora_I (Hora, formato 00:00:00) → botón #..._btnRegistrar_I (\"Registrar\"). ⚠️ Por el camino (b) hacen falta CASETA, CARRIL y HORA además de folio y fecha: sin ellos el portal no encuentra el ticket. El popup de resultado trae botones de descarga directa #..._pop_Mensaje_btnDescargaPDF_I y #..._pop_Mensaje_btnDescargaXML_I; hay además popups de error (#..._pop_ErrorValidacion_*) y de confirmación (#..._pop_MensajeConfirmaRow_btnAceptaTick_I) que hay que atender. ⚠️ Los ids largos son de DevExpress: el input real termina en _I y hay un hidden hermano con el valor, así que escribir sin disparar los eventos del control deja el hidden vacío y el postback manda el campo en blanco. Prefijo completo: MainPane_Content_MainContent_PageControl_Factura_exampleFormLayout_rpnDatosTicket_ASPxFormLayout8_. Contacto: puente.colorado@sonora.gob.mx · 653 534 9694."
+      "notas_desarrollo": "PORTAL NUEVO desde sep-2026 (qrplus.com.mx), verificado en vivo el 13-sep-2026. Sustituye al formulario de WordPress puentecolorado.com/prefacturacion/, que era una SOLICITUD y tardaba hasta 48 h en llegar por correo: este TIMBRA AL MOMENTO y ofrece descarga directa. Dos caminos en el Paso 1: (a) WebID, campo con máscara de 5 grupos (____-_____-_____-_____-__) en #..._txtFolioUnico_I → botón #..._btnRegistraTicketFU_I (\"Registrar WebId\"); (b) si el ticket no trae WebID, el bloque \"Si no cuenta con WebID ingrese los datos del ticket\": #..._txtFolio_I (Folio), #..._cmbCaseta_I (combo Caseta, viene con \"SAN LUIS RIO COLORADO\"), #..._txtCarril_I (Carril), #..._date_fecha_I (Fecha), #..._txtHora_I (Hora, formato 00:00:00) → botón #..._btnRegistrar_I (\"Registrar\"). ⚠️ Por el camino (b) hacen falta CASETA, CARRIL y HORA además de folio y fecha: sin ellos el portal no encuentra el ticket. El popup de resultado trae botones de descarga directa #..._pop_Mensaje_btnDescargaPDF_I y #..._pop_Mensaje_btnDescargaXML_I; hay además popups de error (#..._pop_ErrorValidacion_*) y de confirmación (#..._pop_MensajeConfirmaRow_btnAceptaTick_I) que hay que atender. ⚠️ Los ids largos son de DevExpress: el input real termina en _I y hay un hidden hermano con el valor, así que escribir sin disparar los eventos del control deja el hidden vacío y el postback manda el campo en blanco. Prefijo completo: MainPane_Content_MainContent_PageControl_Factura_exampleFormLayout_rpnDatosTicket_ASPxFormLayout8_. Contacto: puente.colorado@sonora.gob.mx · 653 534 9694. ✅ BOT EN PRODUCCIÓN desde el 13-sep-2026 (tickets #390 y #396 timbrados). Lo medido al escribirlo: (1) TODO se maneja por la API cliente de DevExpress — cada control publica un objeto global window[id] con SetText/GetText/SetDate/DoClick; escribir .value en el input que acaba en \"_I\" NO sirve porque el valor real vive en un hidden hermano. (2) Cada DoClick es un POSTBACK COMPLETO: hay que esperar la navegación. (3) ⚠️ Los CAMPOS del Paso 2 están en ASPxFormLayout1 pero los BOTONES en ASPxFormLayout5; apuntar al prefijo equivocado no da error, el click simplemente no ocurre. (4) ⚠️ EL WEB ID NO SIRVE: el ticket lo imprime (5 grupos) y el portal tiene atajo, pero contesta \"NO SE ENCUENTRA TICKET CON FOLIO ÚNICO\" — el OCR confunde O/0 y 2/Z y no hay forma de fiarse. El camino manual (folio+caseta+carril+fecha+hora) sí funciona. (5) Registrar un ticket es REVERSIBLE: Grid_cell0_0_btnEliminarReg_0_I + popup pop_MensajeConfirmaRow_btnAceptaTick. (6) ⚠️ EL ACUSE: el Paso 3 lleva SIEMPRE impreso \"UNA VEZ GENERADA LA FACTURA, NO SE REALIZARÁN CORRECIONES\", también antes de pulsar nada, así que un regex laxo da falso positivo. El acuse real es \"SU FACTURA HA SIDO ENVIADA A SU EMAIL (Tickets: facturados N)\" en un popup. (7) Los botones PDF/XML de ese popup son descargas de fichero y NO se capturan con page.on(response): la entrega buena es el correo, que el portal manda al buzón de captura puesto en el Paso 2."
     },
     "littlecaesarsnavojoa": {
       "nombre": "Little Caesars Navojoa",
@@ -1466,7 +1466,7 @@
         "por_url_qr": [
           "pinfrafacturacion.com.mx"
         ],
-        "nota_deteccion": "⚠️ NO es CAPUFE aunque el ticket diga \"PLAZA DE COBRO\": esa frase la usan todas las casetas. Los tickets de concesionaria (Santa Ana-Altar y demás de PINFRA) NO llevan el código de 18 caracteres de CAPUFE. Hace falta la HORA además de la fecha, y el CARRIL."
+        "nota_deteccion": "⚠️ NO es CAPUFE aunque el ticket diga \"PLAZA DE COBRO\": esa frase la usan todas las casetas. Los tickets de concesionaria (Santa Ana-Altar y demás de PINFRA) NO llevan el código de 18 caracteres de CAPUFE. Hace falta la HORA además de la fecha, y el CARRIL. ⚠️ La autopista TIJUANA–TECATE NO es de PINFRA (es de Grupo IDEAL, portal facturaciontij-tkt.com.mx → clave \"tijuanatecate\"): el ticket #393 se enrutó aquí por error y PINFRA lo rechazó porque no está entre sus 26 autopistas."
       },
       "notas_desarrollo": "CUATRO TRAMPAS medidas en vivo: (1) dos formatos de fecha en el MISMO portal — Facturar/GenerarFactura usa M/D/YYYY y Consultar/GenerarConsultas usa D/M/YYYY; con el equivocado la consulta dice \"Nada Encontrado\" y parece que la factura no existe. (2) No se puede click+type: #Fecha abre un datepicker que tapa el resto y los demás campos se quedan vacíos. (3) El botón de confirmar del aviso de Uso de CFDI es #modal-uso-cdfi button#Facturar, con el MISMO id y texto que el \"Facturar\" de la tabla: buscarlo por texto coge el de fuera y solo reabre el aviso. Y ese aviso no lleva clase .modal ni role=dialog. (4) El resultado viene en la query string: MensajeError / MensajeSuccess. Mapeo: FOLIO \"2-0000983716\" → NumeroId=2 (máx 7) + Consecutivo=0000983716 (máx 10); CARRIL 2B → Máquina 02B (con cero delante). \"Agregar Ticket\" es reversible (hay \"Liberar Ticket Seleccionado\"); \"Facturar\" no. Entrega: Consultar Facturas → poner #Correo (campo de PÁGINA) y pulsar #btnSendEmail de la fila."
     },
@@ -1722,6 +1722,45 @@
         "nota_deteccion": "⚠️ El ticket imprime laparisina.com.mx, que es el sitio CORPORATIVO y no factura. El portal es el subdominio facturacion.laparisina.com.mx. Si el OCR devuelve portalUrl \"http://www.laparisina.com.mx/\", corregirlo al subdominio."
       },
       "notas_desarrollo": "⚠️ NO timbra al momento: el propio portal avisa que la factura llega al correo en un plazo no mayor de 24 h → el bot debe devolver {ok:true, procesandoCorreo:true} y dejar que el IMAP la recoja, como puentecolorado. ⚠️ Advertencia del portal con consecuencia fiscal: la factura se emite CON LA FECHA DE CAPTURA en el portal, no con la del ticket. Entra por \"Consulta RFC\" (radio Física/Moral + RFC + Buscar) antes de pedir los datos del ticket. Contacto: facturacion@laparisina.com.mx."
+    },
+    "tijuanatecate": {
+      "nombre": "Autopista Tijuana–Tecate (Grupo IDEAL) — Kiosco Facturación",
+      "bot": null,
+      "estado": "pendiente_bot",
+      "url_base": "https://www.facturaciontij-tkt.com.mx/facturacion",
+      "tecnologia": "SPA \"Kiosco Facturación\" de Grupo IDEAL. Sin login ni CAPTCHA. Se agregan tickets a una lista y se factura el lote.",
+      "stealth": true,
+      "comercios": [
+        "Autopista Tijuana - Tecate",
+        "Tijuana-Tecate",
+        "Paso del Aguila",
+        "Esperanzas",
+        "Paso del Aguila Bis",
+        "Grupo IDEAL"
+      ],
+      "deteccion": {
+        "por_portal_field": "tijuanatecate",
+        "por_texto_ocr": [
+          "tijuana - tecate",
+          "tijuana-tecate",
+          "tijuanatecate",
+          "paso del aguila",
+          "esperanzas",
+          "facturaciontij-tkt"
+        ],
+        "por_comercio": [
+          "tijuana - tecate",
+          "tijuana-tecate",
+          "paso del aguila",
+          "esperanzas"
+        ],
+        "por_url_qr": [
+          "facturaciontij-tkt.com.mx",
+          "tijuanatecate.com.mx"
+        ],
+        "nota_deteccion": "⚠️ NO ES PINFRA, aunque el OCR lo dedujo así y por eso el ticket #393 falló con «\"Tijuana-Tecate\" no está entre sus 26 autopistas». Es de Grupo IDEAL y tiene portal propio. Tampoco es CAPUFE. Cubre cuatro plazas: Tijuana-Tecate, Paso del Águila, Esperanzas y Paso del Águila Bis."
+      },
+      "notas_desarrollo": "⚠️ PLAZO CORTO, es lo primero a mirar: el portal avisa que «solo se podrán emitir facturas de los tickets por peaje durante el mes en curso y el primer día natural del siguiente mes». Un ticket de septiembre vence el 1 de octubre. Campos del formulario (todos con *): Autopista (select: TIJUANA - TECATE / PASO DEL AGUILA / ESPERANZAS / PASO DEL AGUILA BIS), Entronque (select, se llena según la autopista), Carril, Folio, Fecha-Hora, y Cantidad pagada — que pide el MONTO SIN DECIMALES. Luego «Agregar ticket», que lo mete en una tabla (Fecha-Hora, Entronque, Carril, Folio, Monto), y admite varios antes de facturar. ⚠️ El ENTRONQUE es un campo que el OCR todavía no extrae: hay que mirarlo en el ticket antes de escribir el bot. Contacto: 800-824-84-83. Verificado que carga el 13-sep-2026."
     }
   },
   "fusionados": {
