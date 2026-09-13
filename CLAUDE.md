@@ -230,6 +230,12 @@ los caracteres pero no la caja (probado el 13-sep-2026, 4 intentos, 4 fallos).
    4. **Guardar la sesión** en la tabla `config`, clave `oxxogas_sesion`, reutilizando el
       `INSERT … ON DUPLICATE KEY` de `scripts/oxxogas-sesion.js:106`. Sin esto se paga un
       captcha por ticket.
+      🔴 **Cífrala primero.** `docs/auditoria-2026-09-13.md` marca esto como severidad alta:
+      hoy esa cookie —una sesión autenticada del portal fiscal— se guarda **en claro**, y
+      `lib/backup-db.js` vuelca **todas** las tablas a R2 cada 24 h, a un bucket público
+      (sin listado, pero cualquier key adivinable se descarga). Automatizar el login mete
+      además usuario y contraseña vivos en ese mismo circuito. Cifrar **antes** de ampliarlo,
+      no después.
    5. **Reescribir los dos cortes** (`oxxogas.js:180` sin cookie y `:224` cookie muerta): en vez
       de devolver `error_code:'captcha'`, llamar al login; el `'captcha'` se reserva para cuando
       el login falle.
