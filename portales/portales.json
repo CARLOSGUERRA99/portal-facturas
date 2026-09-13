@@ -1725,8 +1725,8 @@
     },
     "tijuanatecate": {
       "nombre": "Autopista Tijuana–Tecate (Grupo IDEAL) — Kiosco Facturación",
-      "bot": null,
-      "estado": "pendiente_bot",
+      "bot": "bots/tijuanatecate.js",
+      "estado": "produccion",
       "url_base": "https://www.facturaciontij-tkt.com.mx/facturacion",
       "tecnologia": "SPA \"Kiosco Facturación\" de Grupo IDEAL. Sin login ni CAPTCHA. Se agregan tickets a una lista y se factura el lote.",
       "stealth": true,
@@ -1760,7 +1760,7 @@
         ],
         "nota_deteccion": "⚠️ NO ES PINFRA, aunque el OCR lo dedujo así y por eso el ticket #393 falló con «\"Tijuana-Tecate\" no está entre sus 26 autopistas». Es de Grupo IDEAL y tiene portal propio. Tampoco es CAPUFE. Cubre cuatro plazas: Tijuana-Tecate, Paso del Águila, Esperanzas y Paso del Águila Bis."
       },
-      "notas_desarrollo": "⚠️ PLAZO CORTO, es lo primero a mirar: el portal avisa que «solo se podrán emitir facturas de los tickets por peaje durante el mes en curso y el primer día natural del siguiente mes». Un ticket de septiembre vence el 1 de octubre. Campos del formulario (todos con *): Autopista (select: TIJUANA - TECATE / PASO DEL AGUILA / ESPERANZAS / PASO DEL AGUILA BIS), Entronque (select, se llena según la autopista), Carril, Folio, Fecha-Hora, y Cantidad pagada — que pide el MONTO SIN DECIMALES. Luego «Agregar ticket», que lo mete en una tabla (Fecha-Hora, Entronque, Carril, Folio, Monto), y admite varios antes de facturar. ⚠️ El ENTRONQUE es un campo que el OCR todavía no extrae: hay que mirarlo en el ticket antes de escribir el bot. Contacto: 800-824-84-83. Verificado que carga el 13-sep-2026."
+      "notas_desarrollo": "⚠️ PLAZO CORTO, es lo primero a mirar: «solo se podrán emitir facturas de los tickets por peaje durante el mes en curso y el primer día natural del siguiente mes». Un ticket de septiembre vence el 1 de octubre. ⚠️ LOS DOS DESPLEGABLES NO SE LLAMAN COMO UNO ESPERA: el que dice «Entronque» es la AUTOPISTA (TIJUANA - TECATE / PASO DEL AGUILA / ESPERANZAS / PASO DEL AGUILA BIS) y el que dice «Carril» es el código de carril (1001A, 1009A, 1010B…). Los DOS están impresos en el ticket —la autopista en el encabezado, el carril en «Carril:»— así que no falta ningún dato. El de carril se puebla por AJAX al elegir la autopista: hay que esperar entre uno y otro. «Cantidad pagada» pide el MONTO SIN DECIMALES (168, no 168.00). Fecha-Hora en un solo campo, DD/MM/YYYY HH:MM:SS. ⚠️ El folio se MANDA con ceros a la izquierda (0000360201) pero la tabla lo PINTA sin ellos (360201), y esa lista NO es un <table> sino divs de Angular Material: comprobar con querySelectorAll('table tr') y comparando la cadena tal cual da FALSO NEGATIVO por partida doble. El portal abre DOS modales al entrar; mientras estén abiertos los clicks se pierden sin error. Los ids son mat-input-N y son POSICIONALES: localizar los controles por su <mat-label>. En «Uso de CFDI» el código está en el value (G03) y el texto es «Gastos en general.», al revés que en Entronque/Carril. ⚠️ EL ACUSE «Factura generada correctamente» sale en un MAT-DIALOG, no en el snackbar: mirando solo snackbar/mat-error el bot da por fallida una factura ya emitida. Ese falso negativo deja el ticket en error y el reintento de medianoche emitiría un duplicado (pasó con el #393 el 13-sep-2026; se corrigió con scripts/_marcar-esperando-correo.js). El CFDI se entrega por correo al buzón de captura que se pone en «Email». Contacto: 800-824-84-83. Ticket #393 facturado el 13-sep-2026."
     }
   },
   "fusionados": {
