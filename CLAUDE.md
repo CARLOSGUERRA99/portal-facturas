@@ -192,9 +192,15 @@ Cuando llega un ticket de portal desconocido → `orquestador.orquestar()`:
 ⚠️ **El CAPTCHA ya NO es ese límite, y la documentación vieja de este repo decía lo contrario.**
 Desde el 15-ago-2026 hay resolutor de reCAPTCHA v2 (`ReCaptchaV2TaskProxyLess`) y de Turnstile,
 además del de imagen. Si encuentras un comentario que diga que un captcha "no se resuelve",
-comprueba la fecha antes de creértelo: varios quedaron sin actualizar. Lo que sí sigue sin
-resolverse hoy es el captcha de **texto sensible a mayúsculas** de Parisina — CapSolver acierta
-los caracteres pero no la caja (probado el 13-sep-2026, 4 intentos, 4 fallos).
+comprueba la fecha antes de creértelo: varios quedaron sin actualizar.
+
+**No hay portales "bloqueados", hay tipos sin proveedor configurado.** El registro vivo está en
+`lib/captcha.js` → `SOLVERS`, y es por TIPO y por PROVEEDOR a propósito: CapSolver no es bueno
+en todo. En el captcha de **texto sensible a mayúsculas** (QualliGas, consulta de Parisina) va
+0/14 y 0/4 — acierta los caracteres y falla la caja. Ese hueco se llena enchufando OTRO
+proveedor en `SOLVERS['imagen_may']`, no insistiendo con este; en cuanto se configure, el resto
+del sistema se entera solo (el agente de altas y el reintento de `lib/facturacion.js` consultan
+ese mapa).
 ⚠️ `portales.json` puede corromperse por escrituras concurrentes en disco efímero (no rompe routing — usa DB/disco; se restaura en deploy).
 
 ---

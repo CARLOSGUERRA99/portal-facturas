@@ -2,7 +2,7 @@ const puppeteer = require('puppeteer');
 const Anthropic = require('@anthropic-ai/sdk');
 const { subirArchivoR2 } = require('../storage/r2');
 // Reconocer el CAPTCHA antes de gastar el alta (ver lib/captcha.js).
-const { detectarCaptcha, esResoluble, solverPara } = require('../lib/captcha');
+const { detectarCaptcha, esResoluble, describeSolver } = require('../lib/captcha');
 
 // El modelo del agente se elige por variable de entorno, sin tocar código.
 //
@@ -175,17 +175,17 @@ async function analizarPortal({ screenshotBase64, mimeType, url, notas, portalUr
       // gastar el alta ahí sí es tirar el dinero.
       if (bloqueo.hay && !esResoluble(bloqueo.tipo)) {
         await browser.close().catch(() => {});
-        console.log(`🛑 [Analizador] ${comoSeLlama} en ${urlFinal} — aún sin solver, no se gasta el alta`);
+        console.log(`🧩 [Analizador] ${comoSeLlama} en ${urlFinal} — aún sin proveedor configurado, no se gasta el alta`);
         return {
           ok: false,
           etapa: 'captcha',
           captcha: true,
           captcha_tipo: bloqueo.tipo,
-          msg: `${comercioNombre || 'El portal'} está protegido con ${comoSeLlama}, para el que todavía no hay solver escrito. Factúralo a mano o pídelo por correo.`,
+          msg: `${comercioNombre || 'El portal'} usa ${comoSeLlama}, para el que aún no hay proveedor configurado en lib/captcha.js → SOLVERS. Factúralo a mano mientras tanto; en cuanto se configure uno, el alta sale sola.`,
         };
       }
       if (bloqueo.hay) {
-        console.log(`🔓 [Analizador] ${comoSeLlama} en ${urlFinal} — resoluble con ${solverPara(bloqueo.tipo)}, se sigue con el alta`);
+        console.log(`🔓 [Analizador] ${comoSeLlama} en ${urlFinal} — resoluble con ${describeSolver(bloqueo.tipo)}, se sigue con el alta`);
       }
 
       // ── Seguir el iframe del formulario real si el form está embebido ──

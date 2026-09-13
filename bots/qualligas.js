@@ -311,7 +311,8 @@ async function facturarQualligas(datos) {
 
     // ── El captcha, con reintentos ───────────────────────────────────────────
     //
-    // ⚠️ EL CAPTCHA DISTINGUE MAYÚSCULAS Y CAPSOLVER SE EQUIVOCA EN ELLAS. En la
+    // ⚠️ EL CAPTCHA DISTINGUE MAYÚSCULAS Y CAPSOLVER SE EQUIVOCA EN ELLAS
+    // (no el portal: el proveedor — ver lib/captcha.js -> SOLVERS['imagen_may']). En la
     // primera corrida en vivo la imagen decía "38x6yP" y CapSolver devolvió
     // "38x6yp": el portal contestó "Captcha Incorrecto" y NO se emitió nada.
     // Por eso se pide `case: true` y, sobre todo, por eso hay reintentos: el
@@ -439,19 +440,23 @@ async function facturarQualligas(datos) {
       await browser.close();
       // Nada emitido: el portal nunca aceptó el captcha.
       //
-      // Se devuelve `captcha` y NO `reintentar_despues` a propósito. Medido en
-      // vivo sobre el ticket #357: CapSolver falló los 10 captchas que se le
-      // dieron, con imagen cruda y binarizada, en dos corridas. No es mala
-      // suerte: este captcha lleva una raya diagonal gruesa encima de glifos
-      // manuscritos y distingue mayúsculas. `reintentar_despues` lo mandaría al
-      // portal cada noche para siempre, quemando créditos de CapSolver sin
-      // ninguna posibilidad de acertar. `captcha` para los reintentos y avisa de
-      // que hay que facturarlo a mano, que es lo que de verdad toca.
+      // Se devuelve `captcha` y NO `reintentar_despues`, y el motivo es el
+      // PROVEEDOR, no el portal. Medido en vivo sobre el ticket #357: CapSolver
+      // falló los 10 captchas que se le dieron, con imagen cruda y binarizada,
+      // en dos corridas (14 en total contando la primera). Este captcha lleva
+      // una raya diagonal gruesa sobre glifos manuscritos y distingue
+      // mayúsculas, y CapSolver acierta los caracteres pero falla la caja.
+      // ⚠️ Eso NO significa que el portal no se pueda automatizar: significa que
+      // para este tipo hace falta OTRO proveedor. En cuanto se configure uno en
+      // lib/captcha.js -> SOLVERS['imagen_may'], esta rama deja de dispararse y
+      // el ticket vuelve a reintentarse solo. Mientras no lo haya, se para aquí
+      // para no quemar créditos cada noche con el proveedor que ya sabemos que
+      // no acierta.
       return {
         ok: false,
         error_code: "captcha",
         email_contacto: correoEstacion,
-        msg: `QualliGas: el captcha de imagen no se puede resolver de forma automática (CapSolver falló ${INTENTOS_CAPTCHA} de ${INTENTOS_CAPTCHA}). NO se emitió nada. Para facturarlo a mano en estacion.qualligas.com → estación ${estacion}: Ticket ${numTicket}, Web ID ${web}, correo ${correo}. Plazo: hasta el último día del mes de la compra.`,
+        msg: `QualliGas: el captcha de imagen no lo acierta el proveedor actual (CapSolver, 0/14 medido); hace falta configurar otro en lib/captcha.js -> SOLVERS (CapSolver falló ${INTENTOS_CAPTCHA} de ${INTENTOS_CAPTCHA}). NO se emitió nada. Para facturarlo a mano en estacion.qualligas.com → estación ${estacion}: Ticket ${numTicket}, Web ID ${web}, correo ${correo}. Plazo: hasta el último día del mes de la compra.`,
       };
     }
     timbradoDisparado = true;
@@ -528,7 +533,7 @@ async function facturarQualligas(datos) {
         ok: false,
         error_code: "captcha",
         email_contacto: correoEstacion,
-        msg: `QualliGas: el captcha de imagen no se resuelve de forma automática (CapSolver falló todos los intentos y el bot murió con "${err.message}"). NO se emitió nada. Para facturarlo a mano: estacion.qualligas.com → estación ${estacion}, Ticket ${numTicket}, Web ID ${web}, correo ${correo}, régimen ${regimenFiscal || "601"}, uso ${usoCfdi || "G03"}.`,
+        msg: `QualliGas: el captcha de imagen no lo acierta el proveedor actual (CapSolver); hace falta configurar otro en lib/captcha.js -> SOLVERS (CapSolver falló todos los intentos y el bot murió con "${err.message}"). NO se emitió nada. Para facturarlo a mano: estacion.qualligas.com → estación ${estacion}, Ticket ${numTicket}, Web ID ${web}, correo ${correo}, régimen ${regimenFiscal || "601"}, uso ${usoCfdi || "G03"}.`,
       };
     }
     return { ok: false, error_code: "reintentar_despues", msg: `QualliGas: ${err.message} (no se emitió nada)` };
