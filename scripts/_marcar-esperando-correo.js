@@ -34,9 +34,16 @@ const db = require('../lib/db');
   console.log(`#${id} ${t.comercio}`);
   console.log(`  antes → status=${t.status}`);
 
-  const msg = `FACTURA GENERADA${referencia ? ` (${referencia})` : ''} — esperando el correo. `
-    + 'NO RELANZAR: el portal confirmó la emisión aunque el bot no reconoció el acuse; '
-    + 'reintentar emitiría un CFDI duplicado.';
+  // El motivo por defecto asume que el portal SÍ dio acuse y el bot no lo
+  // reconoció. Hay portales que no dan acuse ninguno (Parisina), y ahí escribir
+  // "el portal confirmó" sería mentir a quien lea esto dentro de un mes: para
+  // esos se pasa el motivo a mano como tercer argumento.
+  const motivo = process.argv[4];
+  const msg = motivo
+    ? `${motivo.slice(0, 400)} NO RELANZAR sin comprobar antes: reintentar emitiría un CFDI duplicado.`
+    : `FACTURA GENERADA${referencia ? ` (${referencia})` : ''} — esperando el correo. `
+      + 'NO RELANZAR: el portal confirmó la emisión aunque el bot no reconoció el acuse; '
+      + 'reintentar emitiría un CFDI duplicado.';
 
   await db.query(
     `UPDATE tickets
