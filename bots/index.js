@@ -42,6 +42,7 @@ const { facturarOxxoGas } = require('./oxxogas');
 const { facturarLittleCaesars } = require('./littlecaesars');
 const { facturarFiarum } = require('./fiarum');
 const { facturarPuenteColorado } = require('./puentecolorado');
+const { facturarTijuanaTecate } = require('./tijuanatecate');
 const { facturarConEngine, tieneEngine } = require('../engine');
 const fs = require('fs');
 const path = require('path');
@@ -158,6 +159,22 @@ async function detectarYFacturar(datosCrudos, db = null) {
   ) {
     console.log('🎯 Portal detectado: Puente Colorado / San Luis Rio Colorado (qrplus)');
     return await facturarPuenteColorado(datos);
+  }
+
+  // Autopista Tijuana-Tecate (Grupo IDEAL). ⚠️ NO es PINFRA: el OCR lo dedujo
+  // asi por ser caseta y PINFRA lo rechazo («no esta entre sus 26 autopistas»).
+  // Va antes que la rama de Orler por lo mismo que las otras dos casetas.
+  if (
+    portal === 'tijuanatecate' ||
+    portalUrl.includes('facturaciontij-tkt') ||
+    portalUrl.includes('tijuanatecate.com.mx') ||
+    comercio.includes('tijuana - tecate') ||
+    comercio.includes('tijuana-tecate') ||
+    comercio.includes('paso del aguila') ||
+    comercio.includes('paso del águila')
+  ) {
+    console.log('🎯 Portal detectado: Tijuana-Tecate (Kiosco Grupo IDEAL)');
+    return await facturarTijuanaTecate(datos);
   }
 
   // NexusFuel tiene DOS plantillas distintas y el TLD es lo único que las
