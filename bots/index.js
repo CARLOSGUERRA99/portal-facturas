@@ -112,11 +112,13 @@ async function detectarYFacturar(datosCrudos, db = null) {
   // ── OXXO GAS — DEBE ir antes que el chequeo genérico de "oxxo" (línea
   // ~42/239 más abajo), porque "OXXO GAS" contiene la palabra "oxxo" y
   // sería capturado por error por el bot de la tienda de conveniencia.
-  // ⚠️ Este bot NO es autónomo: requiere cookies de sesión inyectadas por
-  // variables de entorno (OXXO_GAS_CI_SESSION y similares) que el usuario
-  // debe generar iniciando sesión a mano — el login tiene reCAPTCHA v2 que
-  // este proyecto nunca resuelve. Si no hay sesión vigente, el bot regresa
+  // ⚠️ Hoy este bot no es autónomo: requiere cookies de sesión inyectadas por
+  // variables de entorno (OXXOGAS_CI_SESSION y similares) que el usuario
+  // genera iniciando sesión a mano. Si no hay sesión vigente, regresa
   // error_code:'captcha' de forma controlada (ver bots/oxxogas.js).
+  // ⚠️ Aquí decía "reCAPTCHA v2 que este proyecto nunca resuelve": era falso
+  // desde el 15-ago-2026 (ver resolverRecaptchaV2 en littlecaesars.js).
+  // Automatizar el login está aprobado — plan en CLAUDE.md, "Pendientes", 0.
   if (
     portal === 'oxxogas' ||
     portalUrl.includes('oxxogas.com') ||

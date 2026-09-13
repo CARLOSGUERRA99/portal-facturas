@@ -1024,7 +1024,7 @@
     "oxxogas": {
       "nombre": "OXXO GAS",
       "bot": "oxxogas.js",
-      "estado": "manual",
+      "estado": "manual_con_login_automatizable",
       "url_base": "https://facturacion.oxxogas.com",
       "tecnologia": "SPA con jQuery Chosen; login con reCAPTCHA v2",
       "stealth": true,
@@ -1047,7 +1047,7 @@
         ],
         "nota_deteccion": "la gasolinera. Tiene prioridad sobre \"oxxo\" siempre que aparezca la palabra GAS o haya carga de combustible."
       },
-      "notas_desarrollo": "NO es la tienda OXXO. El ticket trae \"Folio:\" de 7 digitos y \"Bomba:\". Requiere cookies de sesion inyectadas a mano: el login tiene reCAPTCHA v2 que no se resuelve. Entrar SIEMPRE por la home, nunca por deep link."
+      "notas_desarrollo": "NO es la tienda OXXO. El ticket trae \"Folio:\" de 7 digitos y \"Bomba:\". Entrar SIEMPRE por la home, nunca por deep link.\n\nESTADO HOY: requiere cookies de sesion inyectadas a mano (scripts/oxxogas-sesion.js). Sin cookie fresca todo ticket acaba en error con error_code 'captcha'.\n\n⚠️ AQUI DECIA \"el login tiene reCAPTCHA v2 que no se resuelve\". ERA FALSO desde el 15-ago-2026: resolverRecaptchaV2() con ReCaptchaV2TaskProxyLess de CapSolver esta en bots/littlecaesars.js:47-95 (y con isInvisible en youbuy.js) y corrio en vivo. AUTOMATIZAR EL LOGIN ESTA APROBADO (Carlos, 13-sep-2026); el plan por pasos esta en CLAUDE.md → Pendientes, punto 0. El formulario de facturacion NO tiene captcha en ningun paso: el unico obstaculo es entrar.\n\nLo que sigue en pie y condiciona el diseno: (1) Browserless corta a los 60 s y un reCAPTCHA v2 tarda 10-40 s, asi que el login NO cabe en la misma sesion que la facturacion — va en su propio script/cron que renueva la cookie y la guarda en la tabla config, clave 'oxxogas_sesion'. (2) La cuenta es COMPARTIDA entre clientes: solo esta verificado que la cookie inyectada pasa el WAF de Incapsula, NO que un login desde la IP de Browserless pase; si lo marcan, el bloqueo afecta a todos. (3) No tocar la marca timbradoDisparado (oxxogas.js): existe porque ya hubo un doble CFDI."
     },
     "caffenio": {
       "nombre": "CAFFENIO",

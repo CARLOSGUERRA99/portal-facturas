@@ -19,7 +19,10 @@ Residentes suben foto de ticket → OCR extrae datos → engine/bot factura en e
 - **Storage:** Cloudflare R2 (`storage/r2.js` → `subirArchivoR2(buffer, key, contentType)`)
 - **Correo SALIENTE:** **Brevo HTTP API** (`enviarCorreo()` en server.js) — porque Railway bloquea SMTP. NO usar nodemailer/SMTP en producción.
 - **Correo ENTRANTE (captura facturas):** IMAP (`mail/imap.js`) — funciona en Railway.
-- **CAPTCHA:** CapSolver (`ImageToTextTask`) para portales con captcha de imagen (7-Eleven).
+- **CAPTCHA:** CapSolver, tres tipos de tarea y conviene no confundirlos:
+  - `ImageToTextTask` — captcha de imagen. **Síncrono**: `createTask` ya devuelve `solution.text`; hacer polling da `ERROR_TASK_NOT_FOUND`. En `lib/capsolver.js` y en 7-Eleven.
+  - `ReCaptchaV2TaskProxyLess` — **reCAPTCHA v2, SÍ se resuelve** (`bots/littlecaesars.js:47-95`, y con `isInvisible:true` en `youbuy.js`). **Asíncrono**: devuelve `taskId` y hay que sondear `getTaskResult` hasta `ready`; tarda 10-40 s. El token se deposita en `#g-recaptcha-response` y se invoca el callback.
+  - `AntiTurnstileTaskProxyLess` — Cloudflare Turnstile (Home Depot, Wansoft).
 - **BD:** MySQL Railway (`db.query`)
 
 ## Variables de entorno (solo en Railway, nunca en código)
@@ -27,7 +30,7 @@ Residentes suben foto de ticket → OCR extrae datos → engine/bot factura en e
 ```
 BROWSERLESS_TOKEN   ANTHROPIC_API_KEY   SESSION_SECRET
 BREVO_API_KEY              ← correo saliente por HTTP (Railway bloquea SMTP)
-CAPSOLVER_API_KEY          ← resolver captchas (7-Eleven)
+CAPSOLVER_API_KEY          ← resolver captchas: imagen, reCAPTCHA v2 y Turnstile
 SMTP_HOST/PORT/SECURE/USER/PASS   ← legacy, en standby (Railway los bloquea)
 IMAP_HOST/PORT/USER/PASS          ← recepción de facturas (sí funciona)
 R2_ACCESS_KEY / R2_SECRET_KEY / R2_ENDPOINT / R2_BUCKET / R2_PUBLIC_URL
@@ -97,7 +100,8 @@ scripts/                   — herramientas de prueba/sondeo local (test-*, prob
 | **Dana Comida Mexicana** | `dana.js` | ✅ Alta hoy (verificado en vivo) |
 | **TUFESA** | `tufesa.js` | ✅ Alta hoy (verificado en vivo) |
 | **7-Eleven** | `7elevenmexicosadecv.js` | ✅ Verificado en vivo. CapSolver + dialog handler + recupera CFDI ya facturado |
-| **Little Caesars** | `littlecaesars.js` | 🔶 CapSolver reCAPTCHA v2 integrado (15/08). Flujo validado hasta el captcha con Chromium local; falta corrida en vivo con CAPSOLVER_API_KEY + Browserless. Gate de cola reparado (faltaba en PORTALES_FACTURABLES) |
+| **Little Caesars** | `littlecaesars.js` | 🔶 CapSolver reCAPTCHA v2 integrado (15/08) y **el solver SÍ corrió en vivo** — así se descubrió `/lc/validar/`, que está detrás del captcha, y el commit 981f418 dice "ticket #218 facturado en producción". Lo que sigue sin confirmar es el ENVÍO del paso 2 fiscal con este código. ⚠️ La cabecera del bot aún dice "el CAPTCHA lo resuelve SIEMPRE una persona": está obsoleta. ⚠️ `docs/auditoria-2026-09-13.md:812` lo marca CRÍTICO por riesgo de doble timbrado |
+| **OXXO GAS** | `oxxogas.js` | 🔶 Hoy depende de una cookie de sesión puesta a mano (`scripts/oxxogas-sesion.js`), y sin ella todo ticket acaba en error. **Automatizarlo está APROBADO** (Carlos, 13-sep-2026): su login lleva reCAPTCHA v2, que este repo ya resuelve. Falta escribirlo — ver abajo |
 | KFC (PRB) | — | ⏸️ Portal `facturacion.prb.com.mx:444` en MANTENIMIENTO |
 | Farmacias Guadalajara | `farmaciaguadalajara.js` | ⚠️ Datos (folio factura) |
 
@@ -183,7 +187,14 @@ Cuando llega un ticket de portal desconocido → `orquestador.orquestar()`:
 4. **corrector** (hasta 2 veces) lo arregla con el error + screenshots.
 5. Queda en `pendiente_aprobacion` → Admin lo aprueba → `activarBot` (escribe a disco + DB `portales_agente`).
 
-⚠️ **Límite real:** portales con CAPTCHA o que requieren ticket válido para revelar pasos finales necesitan ajuste manual. El alta 100% autónoma no aplica a todos.
+⚠️ **Límite real:** el alta 100% autónoma no aplica a todos — los portales que solo revelan los pasos finales con un ticket válido necesitan ajuste manual.
+
+⚠️ **El CAPTCHA ya NO es ese límite, y la documentación vieja de este repo decía lo contrario.**
+Desde el 15-ago-2026 hay resolutor de reCAPTCHA v2 (`ReCaptchaV2TaskProxyLess`) y de Turnstile,
+además del de imagen. Si encuentras un comentario que diga que un captcha "no se resuelve",
+comprueba la fecha antes de creértelo: varios quedaron sin actualizar. Lo que sí sigue sin
+resolverse hoy es el captcha de **texto sensible a mayúsculas** de Parisina — CapSolver acierta
+los caracteres pero no la caja (probado el 13-sep-2026, 4 intentos, 4 fallos).
 ⚠️ `portales.json` puede corromperse por escrituras concurrentes en disco efímero (no rompe routing — usa DB/disco; se restaura en deploy).
 
 ---
@@ -202,6 +213,36 @@ Cuando llega un ticket de portal desconocido → `orquestador.orquestar()`:
 - **Endpoint admin `/api/admin/tickets/:id/resetear`** ahora pone `requiere_confirmacion=0` (para que la cola lo retome).
 
 ## Pendientes / dónde seguir
+
+0. **OXXO GAS — automatizar el login (APROBADO por Carlos el 13-sep-2026).**
+   Queda **derogada** la regla que había en `bots/oxxogas.js` ("no se resuelve el reCAPTCHA v2
+   del login bajo ninguna circunstancia"): se escribió cuando el repo no sabía resolver v2, y
+   desde el 15-ago sí sabe. El formulario de facturación **no tiene captcha**; el único
+   obstáculo es entrar. Orden de trabajo:
+   1. **Recon del login** con `scripts/investigar-oxxogas-sesion.js`, anotando `name`/`id` de
+      usuario y contraseña, el `data-sitekey` del `.g-recaptcha`, si hay hidden CSRF de
+      CodeIgniter y qué devuelve el POST (302 vs JSON).
+   2. **Extraer `resolverRecaptchaV2` a `lib/capsolver.js`** en vez de copiarlo: hoy vive
+      duplicado en `littlecaesars.js` y `youbuy.js`. ⚠️ Es asíncrono (polling), no como el de
+      imagen. **No tocar `littlecaesars.js` al extraerlo** — está marcado CRÍTICO en la auditoría.
+   3. **`iniciarSesion(page)`** en `oxxogas.js`: `OXXOGAS_USER` / `OXXOGAS_PASS` ya existen en
+      `.env` y hoy no las lee nadie. Éxito = el mismo criterio que ya usa el bot (`/Hola/i`).
+   4. **Guardar la sesión** en la tabla `config`, clave `oxxogas_sesion`, reutilizando el
+      `INSERT … ON DUPLICATE KEY` de `scripts/oxxogas-sesion.js:106`. Sin esto se paga un
+      captcha por ticket.
+   5. **Reescribir los dos cortes** (`oxxogas.js:180` sin cookie y `:224` cookie muerta): en vez
+      de devolver `error_code:'captcha'`, llamar al login; el `'captcha'` se reserva para cuando
+      el login falle.
+
+   ⚠️ **Tres cosas que NO cambian y condicionan el diseño:**
+   - **El presupuesto de 60 s de Browserless.** Login + CapSolver (10-40 s) + facturación no
+     caben en una sesión, y quedarse sin tiempo justo antes de timbrar es el peor sitio.
+     El login va en su **propio script/cron** que solo renueva la cookie.
+   - **La cuenta es compartida entre clientes.** Si el WAF (Incapsula) marca el login como
+     automatizado, el bloqueo no afecta a un ticket sino a todos. Lo único verificado hasta hoy
+     es que la cookie inyectada pasa el WAF — nunca que un login desde la IP de Browserless pase.
+   - **No tocar la marca `timbradoDisparado`** (`oxxogas.js:216`, `:383`, `:470`). Existe porque
+     ya hubo un doble CFDI; cualquier reintento nuevo tiene que respetarla.
 
 1. **Rendimiento de facturación (el usuario reporta que tarda mucho):** medir y optimizar. 7-Eleven es el más lento (Browserless connect + form + sleep 5s CFDI + CapSolver + timbrado ~30s + recuperación con 2ª conexión). Ideas: reducir sleeps fijos por waits condicionales; reusar la sesión en vez de abrir 2ª conexión para recuperar; subir XML/PDF a R2 en paralelo. Revisar también límite de 2 concurrentes en `procesarCola`.
 2. **Limpiar `portales_pendientes`:** tiene muchos duplicados de portales que YA tienen bot activo (Home Depot ×3, AutoZone ×2, Rendichicas ×4, TUFESA, SushiO, El Caporal, Allegro, Little Caesars). No rompe nada pero ensucia el panel admin. Hacer dedup / borrar los que ya tienen bot.

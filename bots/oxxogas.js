@@ -32,11 +32,30 @@
 //   autenticado por la misma cookie (no hace falta navegador para eso).
 // ══════════════════════════════════════════════════════════════════════════
 //
-// ⚠️ ESTE BOT NO ES AUTÓNOMO. Requiere una cookie de sesión ya
-// autenticada MANUALMENTE por el usuario (ver más abajo). NO intenta
-// resolver el reCAPTCHA v2 del login bajo ninguna circunstancia — esa
-// regla es absoluta e innegociable en este proyecto. La única forma de
-// operar este bot es:
+// ⚠️ HOY ESTE BOT NO ES AUTÓNOMO: requiere una cookie de sesión autenticada
+// a mano por el usuario (procedimiento más abajo). Pero eso es el estado
+// actual, NO un límite del proyecto.
+//
+// ── REGLA DEROGADA (13-sep-2026, por Carlos) ────────────────────────────────
+// Aquí decía: "NO intenta resolver el reCAPTCHA v2 del login bajo ninguna
+// circunstancia — esa regla es absoluta e innegociable en este proyecto".
+// Esa regla se escribió cuando el repo NO sabía resolver reCAPTCHA v2. Desde
+// el 15-ago-2026 sí sabe: `resolverRecaptchaV2()` con `ReCaptchaV2TaskProxyLess`
+// de CapSolver está en bots/littlecaesars.js:47-95 (y con isInvisible en
+// youbuy.js), y corrió en vivo. Automatizar este login está APROBADO; el plan
+// por pasos está en CLAUDE.md → "Pendientes / dónde seguir", punto 0.
+//
+// Lo que sí sigue en pie al escribirlo, y condiciona el diseño:
+//   · Browserless corta a los 60 s y un reCAPTCHA v2 tarda 10-40 s, así que el
+//     login NO cabe en la misma sesión que la facturación: va en su propio
+//     script/cron que solo renueva la cookie y la guarda en `config`.
+//   · La cuenta es COMPARTIDA entre clientes. Lo único verificado es que la
+//     cookie inyectada pasa el WAF de Incapsula; que un LOGIN desde la IP de
+//     Browserless pase, no. Si el WAF lo marca, el bloqueo afecta a todos.
+//   · El formulario de facturación no tiene captcha: el único obstáculo es entrar.
+// ────────────────────────────────────────────────────────────────────────────
+//
+// Mientras el login automático no exista, la forma de operar este bot es:
 //   1. El usuario inicia sesión a mano en facturacion.oxxogas.com en un
 //      navegador real, resolviendo el reCAPTCHA él mismo.
 //   2. Copia el valor de la cookie `ci_sessions` (DevTools → Application
