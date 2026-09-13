@@ -87,6 +87,60 @@ function claveFormaPago(formaPago) {
   return "01";
 }
 
+// Baja los enlaces de descarga que haya en pantalla leyendo su href y haciendo
+// fetch DENTRO de la página (así van con la sesión y las cookies del portal).
+// Hacerles click no sirve: no son blobs, son enlaces normales, y la descarga la
+// gestiona el navegador sin que Puppeteer la vea.
+//
+// Dos sitios lo usan:
+//   "banner"      → la barra verde de después de timbrar ("Descargar PDF/XML").
+//   "recuperacion"→ el bloque "Descarga tu factura" que el portal saca al
+//                   buscar un folio YA facturado. Ahí los enlaces son iconos
+//                   SIN texto, por eso se buscan por su contenedor.
+async function bajarCfdi(page, modo) {
+  return page.evaluate(async (modo) => {
+    const vis = (e) => !!(e && e.offsetParent);
+    let anchors = [];
+    if (modo === "banner") {
+      anchors = Array.from(document.querySelectorAll("a"))
+        .filter((a) => vis(a) && /descargar\s*(pdf|xml)/i.test(a.innerText || ""));
+    } else {
+      const cont = Array.from(document.querySelectorAll("div,span,p"))
+        .filter((e) => vis(e) && /descarga tu factura/i.test(e.textContent || "") && (e.textContent || "").length < 300)
+        .pop();
+      const raiz = cont && cont.querySelectorAll("a").length ? cont : (cont && cont.parentElement);
+      anchors = raiz ? Array.from(raiz.querySelectorAll("a")).filter(vis) : [];
+    }
+    const out = [];
+    for (const a of anchors) {
+      const href = a.href || "";
+      const name = ((a.innerText || a.getAttribute("title") || href.split("/").pop() || "").trim() || "archivo").slice(0, 40);
+      if (!href || /#$|^javascript:/i.test(href)) { out.push({ name, motivo: "href no descargable" }); continue; }
+      try {
+        const r = await fetch(href, { credentials: "include" });
+        const b = await r.blob();
+        const dataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(b); });
+        out.push({ name, href, status: r.status, dataUrl });
+      } catch (err) { out.push({ name, href, motivo: String(err).slice(0, 120) }); }
+    }
+    return out;
+  }, modo);
+}
+
+// El nombre del enlace puede venir vacío (son iconos): el contenido nunca miente.
+function partirArchivos(descargas) {
+  let xmlBuf = null, pdfBuf = null;
+  for (const d of descargas) {
+    if (!d.dataUrl) continue;
+    const buf = Buffer.from(d.dataUrl.split(",")[1] || "", "base64");
+    if (buf.length < 100) continue;
+    const cabecera = buf.slice(0, 8).toString("latin1");
+    if (cabecera.startsWith("%PDF") || /pdf/i.test(d.name)) pdfBuf = buf;
+    else if (cabecera.includes("<?xml") || /xml/i.test(d.name)) xmlBuf = buf;
+  }
+  return { xmlBuf, pdfBuf };
+}
+
 async function facturarFiarum({
   folio,
   carril,
@@ -232,12 +286,40 @@ async function facturarFiarum({
           noEncontrada: txt(/No encontrada/i),
           fueraDeRango: txt(/fuera de rango/i),
           esperandoAprobacion: txt(/esperando aprobaci/i),
+          // El folio YA está facturado: el portal ofrece el CFDI existente.
+          yaFacturada: txt(/descarga tu factura/i),
           carrilPortal: document.getElementById("carril").value,
         };
       });
-      if (busqueda.agregar || busqueda.noEncontrada || busqueda.fueraDeRango || busqueda.esperandoAprobacion) break;
+      if (busqueda.agregar || busqueda.noEncontrada || busqueda.fueraDeRango || busqueda.esperandoAprobacion || busqueda.yaFacturada) break;
     }
     await screenshot("p2_busqueda");
+
+    // ── Folio YA facturado → recuperar, NO volver a emitir ───────────────
+    // El portal no dice "ya facturado" con un mensaje: simplemente saca el
+    // bloque "Descarga tu factura" con los iconos de PDF y XML. Es la vía
+    // buena para rescatar un CFDI que se emitió y cuyos archivos no se
+    // capturaron, y de paso hace el bot idempotente: relanzarlo no duplica.
+    if (busqueda.yaFacturada && !busqueda.agregar) {
+      console.log("♻️ El folio ya está facturado — recuperando el CFDI existente en vez de emitir otro...");
+      const rec = await bajarCfdi(page, "recuperacion");
+      console.log(`   ${rec.length} enlace(s): ${rec.map((d) => `${d.name}${d.dataUrl ? " ✓" : ` ✗ (${d.motivo || d.status})`}`).join(" | ") || "(ninguno)"}`);
+      const { xmlBuf, pdfBuf } = partirArchivos(rec);
+      await browser.close();
+
+      if (xmlBuf || pdfBuf) {
+        const marca = `${ts}_${Date.now()}`;
+        const xmlUrl = xmlBuf ? await subirArchivoR2(xmlBuf, `facturas/fiarum_${marca}.xml`, "application/xml") : null;
+        const pdfUrl = pdfBuf ? await subirArchivoR2(pdfBuf, `facturas/fiarum_${marca}.pdf`, "application/pdf") : null;
+        console.log(`✅ FIARUM recuperado — XML: ${xmlUrl} | PDF: ${pdfUrl}`);
+        return { ok: true, xmlUrl, pdfUrl, _recuperado: true };
+      }
+      return {
+        ok: false,
+        error_code: "ya_facturado",
+        msg: `FIARUM: el folio ${folioLimpio} ya está facturado y el portal ofrece la descarga, pero no se pudieron bajar los archivos. NO relanzar: emitiría un CFDI duplicado.`,
+      };
+    }
 
     if (busqueda.noEncontrada) {
       await browser.close();
@@ -432,30 +514,34 @@ async function facturarFiarum({
     await sleep(12000);
     await screenshot("p6_post_emision");
 
-    // Intento de capturar XML/PDF: primero pulsando cualquier enlace/botón de
-    // descarga que haya aparecido, luego leyendo los blobs interceptados.
-    await page.evaluate(() => {
-      Array.from(document.querySelectorAll("a,button"))
-        .filter((e) => e.offsetParent && /descargar|xml|pdf/i.test(e.textContent || e.getAttribute("title") || ""))
-        .forEach((e, i) => setTimeout(() => { try { e.click(); } catch {} }, i * 1200));
-    });
+    // ⚠️ Tras timbrar, el portal saca una barra verde al PIE de la primera
+    // pantalla ("El CFDI ha sido generado correctamente") con "Descargar PDF" y
+    // "Descargar XML". NO son blobs: son enlaces normales del propio dominio,
+    // así que el interceptor de <a download> no ve nada y hacerles click
+    // tampoco sirve (la descarga la gestiona el navegador y Puppeteer no la
+    // guarda). Hay que leer el href y bajarlo con fetch DENTRO de la página,
+    // que va con la sesión y las cookies del portal.
+    // (La pestaña "DESCARGAR FACTURAS" no vale como plan B: su propio endpoint,
+    // /cfdi/ws/generadasauto3/3/{RFC}/{folio}, contesta 404 — comprobado.)
+    const bajados = await bajarCfdi(page, "banner");
+    console.log(`   Enlaces de descarga: ${bajados.length ? bajados.map((d) => `${d.name}${d.dataUrl ? " ✓" : ` ✗ (${d.motivo || d.status})`}`).join(" | ") : "(ninguno)"}`);
 
-    let descargas = [];
-    for (let i = 0; i < 15; i++) {
-      await sleep(1000);
-      descargas = await page.evaluate(() => window.__descargas || []);
-      if (descargas.filter((d) => d.dataUrl).length >= 2) break;
+    // Plan B: si algún enlace era onclick/blob, pulsarlos y leer el interceptor.
+    let descargas = bajados.filter((d) => d.dataUrl);
+    if (!descargas.length) {
+      await page.evaluate(() => {
+        Array.from(document.querySelectorAll("a,button"))
+          .filter((e) => e.offsetParent && /descargar\s*(pdf|xml)/i.test(e.textContent || ""))
+          .forEach((e, i) => setTimeout(() => { try { e.click(); } catch {} }, i * 1200));
+      });
+      for (let i = 0; i < 12; i++) {
+        await sleep(1000);
+        descargas = await page.evaluate(() => window.__descargas || []);
+        if (descargas.filter((d) => d.dataUrl).length >= 2) break;
+      }
     }
 
-    let xmlBuf = null, pdfBuf = null;
-    for (const d of descargas) {
-      if (!d.dataUrl) continue;
-      const buf = Buffer.from(d.dataUrl.split(",")[1] || "", "base64");
-      if (buf.length < 100) continue;
-      const cabecera = buf.slice(0, 8).toString("latin1");
-      if (cabecera.startsWith("%PDF") || /\.pdf$/i.test(d.name)) pdfBuf = buf;
-      else if (cabecera.includes("<?xml") || /\.xml$/i.test(d.name)) xmlBuf = buf;
-    }
+    const { xmlBuf, pdfBuf } = partirArchivos(descargas);
 
     if (xmlBuf || pdfBuf) {
       const marca = `${ts}_${Date.now()}`;

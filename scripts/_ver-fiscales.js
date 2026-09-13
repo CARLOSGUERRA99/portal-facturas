@@ -32,6 +32,11 @@ const db = require('../lib/db');
     for (const [k, v] of Object.entries(r)) {
       if (v !== null && v !== '') console.log(`  ${k}: ${String(v).slice(0, 200)}`);
     }
+    // Cuántos CFDI hay por ticket: más de uno es un duplicado, que en un portal
+    // de autofactura no se puede deshacer y hay que cancelar ante el SAT.
+    const [f] = await db.query('SELECT id, uuid, total, creado FROM facturas WHERE ticket_id = ? ORDER BY id', [r.id]);
+    console.log(`  facturas: ${f.length}${f.length > 1 ? '  ⚠️ DUPLICADO' : ''}`);
+    for (const x of f) console.log(`     uuid=${x.uuid} total=${x.total}`);
   }
   process.exit(0);
 })().catch(e => { console.error('ERR', e.message); process.exit(1); });
